@@ -1,0 +1,136 @@
+{
+  "app": {
+    "name": "Israeli Radio Manager",
+    "tagline": "Miami's Hebrew Radio Station"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "schedule": "Schedule",
+    "library": "Library",
+    "upload": "Upload",
+    "agent": "AI Agent",
+    "settings": "Settings"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "nowPlaying": "Now Playing",
+    "upcoming": "Coming Up",
+    "recentActivity": "Recent Activity",
+    "quickStats": "Today's Stats",
+    "songsPlayed": "Songs Played",
+    "showsAired": "Shows Aired",
+    "commercials": "Commercials",
+    "noTrack": "Nothing playing"
+  },
+  "player": {
+    "play": "Play",
+    "pause": "Pause",
+    "skip": "Skip",
+    "stop": "Stop",
+    "volume": "Volume"
+  },
+  "schedule": {
+    "title": "Schedule",
+    "weekView": "Week View",
+    "dayView": "Day View",
+    "addSlot": "Add Time Slot",
+    "editSlot": "Edit Slot",
+    "deleteSlot": "Delete Slot",
+    "startTime": "Start Time",
+    "endTime": "End Time",
+    "contentType": "Content Type",
+    "genre": "Genre",
+    "priority": "Priority",
+    "enabled": "Enabled",
+    "days": {
+      "monday": "Monday",
+      "tuesday": "Tuesday",
+      "wednesday": "Wednesday",
+      "thursday": "Thursday",
+      "friday": "Friday",
+      "saturday": "Saturday",
+      "sunday": "Sunday"
+    }
+  },
+  "library": {
+    "title": "Content Library",
+    "songs": "Songs",
+    "shows": "Shows",
+    "commercials": "Commercials",
+    "search": "Search...",
+    "filter": "Filter",
+    "sortBy": "Sort by",
+    "noContent": "No content found"
+  },
+  "upload": {
+    "title": "Upload Content",
+    "dragDrop": "Drag & drop files here",
+    "orClick": "or click to browse",
+    "uploading": "Uploading...",
+    "processing": "Processing...",
+    "success": "Upload successful",
+    "error": "Upload failed"
+  },
+  "agent": {
+    "title": "AI Orchestrator",
+    "mode": "Operating Mode",
+    "fullAuto": "Full Automation",
+    "promptMode": "Prompt Mode",
+    "status": "Status",
+    "active": "Active",
+    "inactive": "Inactive",
+    "pendingActions": "Pending Actions",
+    "decisionLog": "Decision Log",
+    "approve": "Approve",
+    "reject": "Reject",
+    "noActions": "No pending actions"
+  },
+  "chat": {
+    "title": "Chat with Agent",
+    "placeholder": "Type a message...",
+    "send": "Send",
+    "thinking": "Thinking...",
+    "expand": "Expand chat",
+    "collapse": "Collapse chat"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "english": "English",
+    "hebrew": "עברית",
+    "notifications": "Notifications",
+    "email": "Email",
+    "push": "Push Notifications",
+    "sms": "SMS",
+    "googleDrive": "Google Drive",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "connected": "Connected",
+    "notConnected": "Not Connected"
+  },
+  "content": {
+    "song": "Song",
+    "show": "Show",
+    "commercial": "Commercial",
+    "title": "Title",
+    "artist": "Artist",
+    "duration": "Duration",
+    "genre": "Genre",
+    "lastPlayed": "Last Played",
+    "playCount": "Play Count"
+  },
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "confirm": "Confirm",
+    "close": "Close"
+  },
+  "errors": {
+    "generic": "An error occurred",
+    "network": "Network error",
+    "notFound": "Not found"
+  }
+}

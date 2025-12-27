@@ -1,0 +1,147 @@
+{
+  "app": {
+    "name": "מנהל רדיו ישראלי",
+    "tagline": "תחנת הרדיו העברית של מיאמי"
+  },
+  "nav": {
+    "dashboard": "ראשי",
+    "schedule": "לוח שידורים",
+    "library": "ספריית מוזיקה",
+    "upload": "העלאת קבצים",
+    "agent": "הסוכן החכם",
+    "settings": "הגדרות"
+  },
+  "dashboard": {
+    "title": "לוח בקרה ראשי",
+    "nowPlaying": "🎵 מתנגן עכשיו",
+    "upcoming": "📅 הבא בתור",
+    "recentActivity": "פעילות אחרונה",
+    "quickStats": "סטטיסטיקות היום",
+    "songsPlayed": "שירים שהושמעו",
+    "showsAired": "תוכניות ששודרו",
+    "commercials": "פרסומות",
+    "noTrack": "לא מתנגן כלום כרגע"
+  },
+  "player": {
+    "play": "נגן",
+    "pause": "השהה",
+    "skip": "דלג",
+    "stop": "עצור",
+    "volume": "עוצמה"
+  },
+  "schedule": {
+    "title": "לוח שידורים",
+    "weekView": "תצוגה שבועית",
+    "dayView": "תצוגה יומית",
+    "addSlot": "הוסף משבצת זמן",
+    "editSlot": "ערוך משבצת",
+    "deleteSlot": "מחק משבצת",
+    "startTime": "שעת התחלה",
+    "endTime": "שעת סיום",
+    "contentType": "סוג תוכן",
+    "genre": "ז'אנר",
+    "priority": "עדיפות",
+    "enabled": "פעיל",
+    "days": {
+      "monday": "יום שני",
+      "tuesday": "יום שלישי",
+      "wednesday": "יום רביעי",
+      "thursday": "יום חמישי",
+      "friday": "יום שישי",
+      "saturday": "שבת",
+      "sunday": "יום ראשון"
+    }
+  },
+  "library": {
+    "title": "ספריית תוכן",
+    "songs": "שירים",
+    "shows": "תוכניות",
+    "commercials": "פרסומות",
+    "search": "חיפוש...",
+    "filter": "סינון",
+    "sortBy": "מיון לפי",
+    "noContent": "לא נמצא תוכן"
+  },
+  "upload": {
+    "title": "העלאת תוכן",
+    "dragDrop": "גרור ושחרר קבצים כאן",
+    "orClick": "או לחץ לבחירה",
+    "uploading": "מעלה...",
+    "processing": "מעבד...",
+    "success": "העלאה הצליחה",
+    "error": "העלאה נכשלה"
+  },
+  "agent": {
+    "title": "הסוכן החכם",
+    "subtitle": "מנהל את הרדיו בשבילך",
+    "mode": "מצב פעולה",
+    "fullAuto": "🤖 אוטומטי לחלוטין",
+    "fullAutoDesc": "הסוכן מנהל הכל לבד, 24/7",
+    "promptMode": "✋ בקשת אישור",
+    "promptModeDesc": "הסוכן מבקש אישור לפעולות חשובות",
+    "status": "מצב נוכחי",
+    "active": "פעיל ועובד",
+    "inactive": "כבוי",
+    "pendingActions": "ממתין לאישורך",
+    "decisionLog": "מה הסוכן עשה",
+    "approve": "✅ אשר",
+    "reject": "❌ דחה",
+    "noActions": "אין פעולות שממתינות לאישור",
+    "decisionsToday": "פעולות היום"
+  },
+  "chat": {
+    "title": "דבר עם הסוכן",
+    "placeholder": "מה תרצה לעשות? (לדוגמה: תנגן שיר של עידן רייכל)",
+    "send": "שלח",
+    "thinking": "רגע, מטפל בבקשה...",
+    "expand": "פתח צ'אט",
+    "collapse": "סגור צ'אט",
+    "examples": "דוגמאות לפקודות",
+    "examplePlay": "תנגן את השיר 'הללויה'",
+    "exampleSchedule": "תזמן שיר לשעה 16:00",
+    "exampleSearch": "חפש שירים של אייל גולן",
+    "exampleStatus": "מה מתנגן עכשיו?",
+    "exampleGenre": "עבור לז'אנר מזרחי",
+    "exampleSkip": "דלג לשיר הבא"
+  },
+  "settings": {
+    "title": "הגדרות",
+    "language": "שפה",
+    "english": "English",
+    "hebrew": "עברית",
+    "notifications": "התראות",
+    "email": "אימייל",
+    "push": "התראות דחיפה",
+    "sms": "SMS",
+    "googleDrive": "Google Drive",
+    "connect": "התחבר",
+    "disconnect": "התנתק",
+    "connected": "מחובר",
+    "notConnected": "לא מחובר"
+  },
+  "content": {
+    "song": "שיר",
+    "show": "תוכנית",
+    "commercial": "פרסומת",
+    "title": "כותרת",
+    "artist": "אמן",
+    "duration": "אורך",
+    "genre": "ז'אנר",
+    "lastPlayed": "הושמע לאחרונה",
+    "playCount": "מספר השמעות"
+  },
+  "actions": {
+    "save": "שמור",
+    "cancel": "ביטול",
+    "delete": "מחק",
+    "edit": "ערוך",
+    "add": "הוסף",
+    "confirm": "אישור",
+    "close": "סגור"
+  },
+  "errors": {
+    "generic": "אירעה שגיאה",
+    "network": "שגיאת רשת",
+    "notFound": "לא נמצא"
+  }
+}

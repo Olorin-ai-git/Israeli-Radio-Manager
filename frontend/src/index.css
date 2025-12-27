@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* RTL Support */
+[dir="rtl"] {
+  direction: rtl;
+  text-align: right;
+}
+
+[dir="rtl"] .font-sans {
+  font-family: 'Heebo', 'Arial', sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* Dark mode scrollbar */
+.dark ::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
+
+/* Chat bubble styles */
+.chat-bubble-user {
+  @apply bg-primary-500 text-white rounded-2xl rounded-br-sm;
+}
+
+.chat-bubble-assistant {
+  @apply bg-gray-100 text-gray-800 rounded-2xl rounded-bl-sm;
+}
+
+[dir="rtl"] .chat-bubble-user {
+  @apply rounded-br-2xl rounded-bl-sm;
+}
+
+[dir="rtl"] .chat-bubble-assistant {
+  @apply rounded-bl-2xl rounded-br-sm;
+}
+
+/* Now playing animation */
+@keyframes pulse-audio {
+  0%, 100% {
+    transform: scaleY(0.5);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.audio-bar {
+  animation: pulse-audio 0.8s ease-in-out infinite;
+}
+
+.audio-bar:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.audio-bar:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.audio-bar:nth-child(4) {
+  animation-delay: 0.3s;
+}
