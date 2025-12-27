@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 from bson import ObjectId
 
 from app.models.agent import (

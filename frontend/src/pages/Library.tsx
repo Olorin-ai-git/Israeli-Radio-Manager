@@ -61,7 +61,7 @@ export default function Library() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">{t('library.title')}</h1>
+      <h1 className="text-2xl font-bold text-dark-100 mb-6">{t('library.title')}</h1>
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6">
@@ -71,16 +71,16 @@ export default function Library() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all ${
                 activeTab === tab.id
-                  ? 'bg-primary-500 text-white'
-                  : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                  ? 'glass-button-primary shadow-glow'
+                  : 'glass-button'
               }`}
             >
               <Icon size={18} />
               {tab.label}
               <span className={`px-2 py-0.5 text-xs rounded-full ${
-                activeTab === tab.id ? 'bg-white/20' : 'bg-gray-100'
+                activeTab === tab.id ? 'bg-white/20' : 'bg-dark-600/50'
               }`}>
                 {tab.count}
               </span>
@@ -92,19 +92,19 @@ export default function Library() {
       {/* Search and Filters */}
       <div className="flex gap-4 mb-6">
         <div className="flex-1 relative">
-          <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('library.search')}
-            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full pl-10 pr-4 py-2.5 glass-input"
             dir="auto"
           />
         </div>
 
         {activeTab === 'songs' && genres && genres.length > 0 && (
-          <select className="px-4 py-2 border border-gray-200 rounded-lg bg-white">
+          <select className="px-4 py-2 glass-input min-w-[150px]">
             <option value="">All Genres</option>
             {genres.map((genre: string) => (
               <option key={genre} value={genre}>{genre}</option>
@@ -114,75 +114,65 @@ export default function Library() {
       </div>
 
       {/* Content Grid */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="glass-card overflow-hidden">
         {filteredContent.length > 0 ? (
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
+          <table className="glass-table">
+            <thead>
               <tr>
-                <th className="w-12 px-4 py-3"></th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
-                  {t('content.title')}
-                </th>
+                <th className="w-12"></th>
+                <th>{t('content.title')}</th>
                 {activeTab === 'songs' && (
                   <>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
-                      {t('content.artist')}
-                    </th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
-                      {t('content.genre')}
-                    </th>
+                    <th>{t('content.artist')}</th>
+                    <th>{t('content.genre')}</th>
                   </>
                 )}
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
-                  {t('content.duration')}
-                </th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
-                  {t('content.playCount')}
-                </th>
-                <th className="w-12 px-4 py-3"></th>
+                <th>{t('content.duration')}</th>
+                <th>{t('content.playCount')}</th>
+                <th className="w-12"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody>
               {filteredContent.map((item: any) => (
-                <tr key={item._id} className="hover:bg-gray-50 group">
-                  <td className="px-4 py-3">
+                <tr key={item._id} className="group">
+                  <td>
                     <button
                       onClick={() => api.play(item._id)}
-                      className="w-8 h-8 bg-primary-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="w-8 h-8 glass-button-primary rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       <Play size={14} className="ml-0.5" />
                     </button>
                   </td>
-                  <td className="px-4 py-3">
+                  <td>
                     <div>
-                      <p className="font-medium text-gray-900">{item.title || 'Untitled'}</p>
+                      <p className="font-medium text-dark-100">{item.title || 'Untitled'}</p>
                       {item.title_he && (
-                        <p className="text-sm text-gray-500" dir="rtl">{item.title_he}</p>
+                        <p className="text-sm text-dark-400" dir="rtl">{item.title_he}</p>
                       )}
                     </div>
                   </td>
                   {activeTab === 'songs' && (
                     <>
-                      <td className="px-4 py-3 text-sm text-gray-600">
+                      <td className="text-sm text-dark-300">
                         {item.artist || '-'}
                       </td>
-                      <td className="px-4 py-3">
+                      <td>
                         {item.genre && (
-                          <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full">
+                          <span className="badge badge-info">
                             {item.genre}
                           </span>
                         )}
                       </td>
                     </>
                   )}
-                  <td className="px-4 py-3 text-sm text-gray-600 font-mono">
+                  <td className="text-sm text-dark-300 font-mono">
                     {formatDuration(item.duration_seconds)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
+                  <td className="text-sm text-dark-300">
                     {item.play_count || 0}
                   </td>
-                  <td className="px-4 py-3">
-                    <button className="p-1 text-gray-400 hover:text-gray-600">
+                  <td>
+                    <button className="p-1 text-dark-400 hover:text-dark-200 transition-colors">
                       <MoreVertical size={16} />
                     </button>
                   </td>
@@ -192,8 +182,8 @@ export default function Library() {
           </table>
         ) : (
           <div className="p-12 text-center">
-            <Music size={48} className="mx-auto mb-4 text-gray-300" />
-            <p className="text-gray-500">{t('library.noContent')}</p>
+            <Music size={48} className="mx-auto mb-4 text-dark-600" />
+            <p className="text-dark-400">{t('library.noContent')}</p>
           </div>
         )}
       </div>

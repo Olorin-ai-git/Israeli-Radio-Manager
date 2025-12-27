@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Base dark theme */
+:root {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --accent: #ef4444;
+  --glass-bg: rgba(30, 41, 59, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+body {
+  @apply bg-dark-950 text-dark-100 font-sans;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  min-height: 100vh;
+}
+
 /* RTL Support */
 [dir="rtl"] {
   direction: rtl;
@@ -12,42 +30,80 @@
   font-family: 'Heebo', 'Arial', sans-serif;
 }
 
-/* Custom scrollbar */
+/* Glassmorphism utilities */
+@layer components {
+  .glass {
+    @apply bg-dark-800/70 backdrop-blur-xl border border-white/10 shadow-glass;
+  }
+
+  .glass-light {
+    @apply bg-white/5 backdrop-blur-lg border border-white/10;
+  }
+
+  .glass-card {
+    @apply bg-dark-800/60 backdrop-blur-xl border border-white/10 rounded-2xl shadow-glass;
+  }
+
+  .glass-sidebar {
+    @apply bg-dark-900/80 backdrop-blur-2xl border-r border-white/5;
+  }
+
+  .glass-input {
+    @apply bg-dark-800/50 backdrop-blur-sm border border-white/10 rounded-xl
+           text-dark-100 placeholder-dark-400
+           focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/20 focus:outline-none
+           transition-all duration-200;
+  }
+
+  .glass-button {
+    @apply bg-dark-700/50 backdrop-blur-sm border border-white/10 rounded-xl
+           text-dark-100 hover:bg-dark-600/50 hover:border-white/20
+           transition-all duration-200;
+  }
+
+  .glass-button-primary {
+    @apply bg-primary-500/80 backdrop-blur-sm border border-primary-400/30 rounded-xl
+           text-white hover:bg-primary-500 hover:shadow-glow
+           transition-all duration-200;
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-3 mx-2 rounded-xl transition-all duration-200
+           text-dark-300 hover:text-dark-100 hover:bg-white/5;
+  }
+
+  .nav-item-active {
+    @apply bg-primary-500/20 text-primary-400 border border-primary-500/20;
+  }
+}
+
+/* Custom scrollbar for dark theme */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  @apply bg-dark-900/50;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
+  @apply bg-dark-600/80;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a1a1a1;
+  @apply bg-dark-500;
 }
 
-/* Dark mode scrollbar */
-.dark ::-webkit-scrollbar-track {
-  background: #1f2937;
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  background: #4b5563;
-}
-
-/* Chat bubble styles */
+/* Chat bubble styles - dark glassmorphic */
 .chat-bubble-user {
-  @apply bg-primary-500 text-white rounded-2xl rounded-br-sm;
+  @apply bg-primary-500/90 text-white rounded-2xl rounded-br-sm backdrop-blur-sm;
 }
 
 .chat-bubble-assistant {
-  @apply bg-gray-100 text-gray-800 rounded-2xl rounded-bl-sm;
+  @apply bg-dark-700/70 text-dark-100 rounded-2xl rounded-bl-sm backdrop-blur-sm border border-white/5;
 }
 
 [dir="rtl"] .chat-bubble-user {
@@ -58,17 +114,20 @@
   @apply rounded-bl-2xl rounded-br-sm;
 }
 
-/* Now playing animation */
+/* Now playing animation with glow */
 @keyframes pulse-audio {
   0%, 100% {
     transform: scaleY(0.5);
+    opacity: 0.7;
   }
   50% {
     transform: scaleY(1);
+    opacity: 1;
   }
 }
 
 .audio-bar {
+  @apply bg-primary-500;
   animation: pulse-audio 0.8s ease-in-out infinite;
 }
 
@@ -82,4 +141,66 @@
 
 .audio-bar:nth-child(4) {
   animation-delay: 0.3s;
+}
+
+/* Glow effects */
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(239, 68, 68, 0.5);
+  }
+}
+
+.glow-animate {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* Gradient text */
+.gradient-text {
+  @apply bg-gradient-to-r from-primary-400 to-primary-600 bg-clip-text text-transparent;
+}
+
+/* Stats card hover effect */
+.stat-card {
+  @apply glass-card p-6 hover:border-primary-500/30 hover:shadow-glow-lg transition-all duration-300;
+}
+
+/* Table styles */
+.glass-table {
+  @apply w-full;
+}
+
+.glass-table th {
+  @apply text-left text-dark-400 text-sm font-medium px-4 py-3 border-b border-white/5;
+}
+
+.glass-table td {
+  @apply px-4 py-3 text-dark-200 border-b border-white/5;
+}
+
+.glass-table tr:hover td {
+  @apply bg-white/5;
+}
+
+/* Badge styles */
+.badge {
+  @apply px-2.5 py-1 text-xs font-medium rounded-full;
+}
+
+.badge-primary {
+  @apply bg-primary-500/20 text-primary-400 border border-primary-500/30;
+}
+
+.badge-success {
+  @apply bg-emerald-500/20 text-emerald-400 border border-emerald-500/30;
+}
+
+.badge-warning {
+  @apply bg-amber-500/20 text-amber-400 border border-amber-500/30;
+}
+
+.badge-info {
+  @apply bg-sky-500/20 text-sky-400 border border-sky-500/30;
 }

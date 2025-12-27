@@ -94,19 +94,19 @@ export default function Upload() {
   const getStatusIcon = (status: UploadedFile['status']) => {
     switch (status) {
       case 'uploading':
-        return <Loader2 size={20} className="animate-spin text-primary-500" />
+        return <Loader2 size={20} className="animate-spin text-primary-400" />
       case 'success':
-        return <CheckCircle size={20} className="text-green-500" />
+        return <CheckCircle size={20} className="text-emerald-400" />
       case 'error':
-        return <XCircle size={20} className="text-red-500" />
+        return <XCircle size={20} className="text-primary-400" />
       default:
-        return <File size={20} className="text-gray-400" />
+        return <File size={20} className="text-dark-400" />
     }
   }
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">{t('upload.title')}</h1>
+      <h1 className="text-2xl font-bold text-dark-100 mb-6">{t('upload.title')}</h1>
 
       {/* Drop Zone */}
       <div
@@ -114,10 +114,10 @@ export default function Upload() {
         onDragLeave={handleDrag}
         onDragOver={handleDrag}
         onDrop={handleDrop}
-        className={`border-2 border-dashed rounded-xl p-12 text-center transition-colors ${
+        className={`glass-card border-2 border-dashed p-12 text-center transition-all ${
           dragActive
-            ? 'border-primary-500 bg-primary-50'
-            : 'border-gray-300 hover:border-gray-400'
+            ? 'border-primary-500 bg-primary-500/10'
+            : 'border-dark-600 hover:border-dark-500'
         }`}
       >
         <input
@@ -129,12 +129,16 @@ export default function Upload() {
           className="hidden"
         />
 
-        <UploadIcon size={48} className={`mx-auto mb-4 ${dragActive ? 'text-primary-500' : 'text-gray-400'}`} />
-        <p className="text-lg font-medium text-gray-700 mb-2">{t('upload.dragDrop')}</p>
-        <p className="text-gray-500 mb-4">{t('upload.orClick')}</p>
+        <div className={`w-20 h-20 mx-auto mb-4 rounded-2xl flex items-center justify-center ${
+          dragActive ? 'bg-primary-500/20 border border-primary-500/30' : 'bg-dark-700/50 border border-white/10'
+        }`}>
+          <UploadIcon size={40} className={dragActive ? 'text-primary-400' : 'text-dark-400'} />
+        </div>
+        <p className="text-lg font-medium text-dark-100 mb-2">{t('upload.dragDrop')}</p>
+        <p className="text-dark-400 mb-4">{t('upload.orClick')}</p>
         <label
           htmlFor="file-input"
-          className="inline-block px-6 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 cursor-pointer transition-colors"
+          className="inline-block px-6 py-2.5 glass-button-primary cursor-pointer"
         >
           Browse Files
         </label>
@@ -142,24 +146,24 @@ export default function Upload() {
 
       {/* Upload List */}
       {files.length > 0 && (
-        <div className="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="font-medium text-gray-900">Uploads</h2>
+        <div className="mt-6 glass-card overflow-hidden">
+          <div className="p-4 border-b border-white/5">
+            <h2 className="font-medium text-dark-100">Uploads</h2>
           </div>
-          <div className="divide-y divide-gray-200">
+          <div className="divide-y divide-white/5">
             {files.map((uf, index) => (
               <div key={index} className="flex items-center gap-4 p-4">
                 {getStatusIcon(uf.status)}
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900 truncate">{uf.file.name}</p>
-                  <p className="text-sm text-gray-500">
+                  <p className="font-medium text-dark-100 truncate">{uf.file.name}</p>
+                  <p className="text-sm text-dark-400">
                     {(uf.file.size / 1024 / 1024).toFixed(2)} MB
                   </p>
                 </div>
                 <span className={`text-sm font-medium ${
-                  uf.status === 'success' ? 'text-green-600' :
-                  uf.status === 'error' ? 'text-red-600' :
-                  uf.status === 'uploading' ? 'text-primary-600' : 'text-gray-500'
+                  uf.status === 'success' ? 'text-emerald-400' :
+                  uf.status === 'error' ? 'text-primary-400' :
+                  uf.status === 'uploading' ? 'text-sky-400' : 'text-dark-400'
                 }`}>
                   {uf.status === 'uploading' ? t('upload.uploading') :
                    uf.status === 'success' ? t('upload.success') :
@@ -173,22 +177,22 @@ export default function Upload() {
 
       {/* Pending Categorization */}
       {pendingUploads && pendingUploads.length > 0 && (
-        <div className="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-4 border-b border-gray-200 bg-yellow-50">
-            <h2 className="font-medium text-yellow-800">Pending Categorization</h2>
+        <div className="mt-6 glass-card overflow-hidden">
+          <div className="p-4 border-b border-white/5 bg-amber-500/10">
+            <h2 className="font-medium text-amber-400">Pending Categorization</h2>
           </div>
-          <div className="divide-y divide-gray-200">
+          <div className="divide-y divide-white/5">
             {pendingUploads.map((upload: any) => (
               <div key={upload._id} className="flex items-center justify-between p-4">
                 <div>
-                  <p className="font-medium text-gray-900">{upload.filename}</p>
-                  <p className="text-sm text-gray-500">AI Suggestion: {upload.suggested_type}</p>
+                  <p className="font-medium text-dark-100">{upload.filename}</p>
+                  <p className="text-sm text-dark-400">AI Suggestion: {upload.suggested_type}</p>
                 </div>
                 <div className="flex gap-2">
-                  <button className="px-3 py-1 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600">
+                  <button className="px-3 py-1.5 text-sm glass-button-primary">
                     {t('agent.approve')}
                   </button>
-                  <button className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+                  <button className="px-3 py-1.5 text-sm glass-button">
                     Edit
                   </button>
                 </div>

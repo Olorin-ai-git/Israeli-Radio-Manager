@@ -110,23 +110,25 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
 
   return (
     <div
-      className={`fixed ${isRTL ? 'left-0' : 'right-0'} top-0 h-full bg-white shadow-xl z-50
+      className={`fixed ${isRTL ? 'left-0' : 'right-0'} top-0 h-full z-50
         transition-transform duration-300 ease-in-out
         ${expanded ? 'translate-x-0' : isRTL ? '-translate-x-full' : 'translate-x-full'}
-        w-96 flex flex-col`}
+        w-96 flex flex-col glass-sidebar`}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-primary-500 text-white">
+      <div className="flex items-center justify-between p-4 border-b border-white/10 bg-primary-500/20 backdrop-blur-xl">
         <div className="flex items-center gap-3">
-          <Bot size={24} />
+          <div className="p-2 bg-primary-500/30 rounded-xl">
+            <Bot size={24} className="text-primary-400" />
+          </div>
           <div>
-            <h2 className="font-semibold">{t('chat.title')}</h2>
-            <p className="text-xs text-primary-100">{t('agent.title')}</p>
+            <h2 className="font-semibold text-dark-100">{t('chat.title')}</h2>
+            <p className="text-xs text-dark-400">{t('agent.title')}</p>
           </div>
         </div>
         <button
           onClick={onToggle}
-          className="p-2 hover:bg-primary-600 rounded-lg transition-colors"
+          className="p-2 hover:bg-white/10 rounded-xl transition-colors text-dark-300 hover:text-dark-100"
           title={t('chat.collapse')}
         >
           <X size={20} />
@@ -139,13 +141,13 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
         {messages.length === 0 && !sendMutation.isPending && showExamples && (
           <div className="space-y-4">
             <div className="text-center">
-              <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                <Sparkles size={32} className="text-primary-500" />
+              <div className="w-16 h-16 bg-primary-500/20 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-primary-500/30">
+                <Sparkles size={32} className="text-primary-400" />
               </div>
-              <h3 className="font-semibold text-gray-900 mb-1">
-                {isRTL ? 'שלום! אני הסוכן החכם 👋' : 'Hi! I\'m the Smart Agent 👋'}
+              <h3 className="font-semibold text-dark-100 mb-1">
+                {isRTL ? 'שלום! אני הסוכן החכם' : 'Hi! I\'m the Smart Agent'}
               </h3>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-dark-400">
                 {isRTL
                   ? 'אני יכול לעזור לך לנהל את תחנת הרדיו. נסה אחת מהפקודות:'
                   : 'I can help you manage the radio station. Try one of these:'}
@@ -158,16 +160,16 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
                 <button
                   key={index}
                   onClick={() => handleQuickCommand(cmd.text)}
-                  className="w-full text-start p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200"
+                  className="w-full text-start p-3 glass-card hover:bg-white/10 transition-all border border-white/5 hover:border-primary-500/30"
                   dir={isRTL ? 'rtl' : 'ltr'}
                 >
                   <span className="mr-2">{cmd.icon}</span>
-                  <span className="text-sm text-gray-700">{cmd.text}</span>
+                  <span className="text-sm text-dark-200">{cmd.text}</span>
                 </button>
               ))}
             </div>
 
-            <div className="flex items-center gap-2 text-xs text-gray-400 justify-center">
+            <div className="flex items-center gap-2 text-xs text-dark-500 justify-center">
               <HelpCircle size={14} />
               <span>{isRTL ? 'או הקלד כל בקשה בחופשיות' : 'Or type any request freely'}</span>
             </div>
@@ -175,8 +177,8 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
         )}
 
         {messages.length === 0 && !sendMutation.isPending && !showExamples && (
-          <div className="text-center text-gray-500 mt-8">
-            <Bot size={48} className="mx-auto mb-4 text-gray-300" />
+          <div className="text-center text-dark-500 mt-8">
+            <Bot size={48} className="mx-auto mb-4 text-dark-600" />
             <p className="text-sm">
               {isRTL
                 ? 'אין הודעות עדיין. התחל לשוחח!'
@@ -194,13 +196,13 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
             <div
               className={`max-w-[80%] p-3 ${
                 msg.role === 'user'
-                  ? 'bg-primary-500 text-white rounded-2xl ' + (isRTL ? 'rounded-bl-sm' : 'rounded-br-sm')
-                  : 'bg-gray-100 text-gray-800 rounded-2xl ' + (isRTL ? 'rounded-br-sm' : 'rounded-bl-sm')
+                  ? 'chat-bubble-user'
+                  : 'chat-bubble-assistant'
               }`}
             >
               <div className="flex items-start gap-2">
                 {msg.role === 'assistant' && (
-                  <Bot size={16} className="mt-0.5 flex-shrink-0 text-primary-500" />
+                  <Bot size={16} className="mt-0.5 flex-shrink-0 text-primary-400" />
                 )}
                 <p className="text-sm whitespace-pre-wrap" dir="auto">{msg.content}</p>
                 {msg.role === 'user' && (
@@ -222,8 +224,8 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
             <div className="flex justify-start">
               <div className="max-w-[80%] p-3 chat-bubble-assistant">
                 <div className="flex items-center gap-2">
-                  <Loader2 size={16} className="animate-spin text-primary-500" />
-                  <span className="text-sm text-gray-500">{t('chat.thinking')}</span>
+                  <Loader2 size={16} className="animate-spin text-primary-400" />
+                  <span className="text-sm text-dark-400">{t('chat.thinking')}</span>
                 </div>
               </div>
             </div>
@@ -234,7 +236,7 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
       </div>
 
       {/* Input */}
-      <div className="p-4 border-t border-gray-200">
+      <div className="p-4 border-t border-white/10">
         <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
           <input
             ref={inputRef}
@@ -244,13 +246,13 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
             onKeyPress={handleKeyPress}
             placeholder={t('chat.placeholder')}
             disabled={sendMutation.isPending}
-            className={`flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-100 text-base ${isRTL ? 'text-right' : 'text-left'}`}
+            className={`flex-1 px-4 py-3 glass-input text-base ${isRTL ? 'text-right' : 'text-left'}`}
             dir={isRTL ? 'rtl' : 'ltr'}
           />
           <button
             onClick={handleSend}
             disabled={!message.trim() || sendMutation.isPending}
-            className={`px-4 py-3 bg-primary-500 text-white rounded-xl hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${isRTL ? 'rotate-180' : ''}`}
+            className={`px-4 py-3 glass-button-primary disabled:opacity-50 disabled:cursor-not-allowed ${isRTL ? 'rotate-180' : ''}`}
             title={t('chat.send')}
           >
             <Send size={20} />
@@ -260,7 +262,7 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
         {!showExamples && messages.length === 0 && (
           <button
             onClick={() => setShowExamples(true)}
-            className="w-full mt-2 text-sm text-primary-500 hover:text-primary-600"
+            className="w-full mt-2 text-sm text-primary-400 hover:text-primary-300 transition-colors"
           >
             {isRTL ? '📋 הצג דוגמאות לפקודות' : '📋 Show command examples'}
           </button>
