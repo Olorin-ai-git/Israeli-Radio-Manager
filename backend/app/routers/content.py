@@ -177,3 +177,61 @@ async def delete_content(request: Request, content_id: str, hard_delete: bool = 
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Content not found")
         return {"message": "Content deactivated"}
+
+
+# ==================== Google Drive Sync Endpoints ====================
+
+@router.get("/sync/status")
+async def get_sync_status(request: Request):
+    """Get current sync status and content statistics."""
+    content_sync = request.app.state.content_sync
+    return await content_sync.get_sync_status()
+
+
+@router.post("/sync/start")
+async def start_sync(request: Request, download_files: bool = False):
+    """
+    Start syncing content from Google Drive.
+
+    Args:
+        download_files: If True, download all audio files to local cache
+    """
+    content_sync = request.app.state.content_sync
+
+    try:
+        stats = await content_sync.sync_all(download_files=download_files)
+        return {
+            "message": "Sync completed",
+            "stats": stats
+        }
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Sync failed: {str(e)}"
+        )
+
+
+@router.post("/sync/download/{content_id}")
+async def download_content(request: Request, content_id: str):
+    """Download a specific content item from Google Drive to local cache."""
+    content_sync = request.app.state.content_sync
+
+    try:
+        local_path = await content_sync.download_for_playback(content_id)
+        if local_path:
+            return {
+                "message": "Download successful",
+                "local_path": str(local_path)
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Content not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Download failed: {str(e)}"
+        )

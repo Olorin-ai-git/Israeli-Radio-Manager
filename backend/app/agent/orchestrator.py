@@ -16,6 +16,7 @@ from app.agent.prompts import SYSTEM_PROMPT, get_decision_prompt, get_classifica
 from app.agent.decisions import DecisionEngine
 from app.agent.confirmation import ConfirmationManager
 from app.agent.tasks import TaskExecutor, ParsedTask, TaskType
+from app.services.audio_player import AudioPlayerService
 
 logger = logging.getLogger(__name__)
 
@@ -39,14 +40,25 @@ class OrchestratorAgent:
     def __init__(
         self,
         db: AsyncIOMotorDatabase,
-        anthropic_api_key: Optional[str] = None
+        anthropic_api_key: Optional[str] = None,
+        audio_player: Optional[AudioPlayerService] = None,
+        content_sync=None,
+        calendar_service=None
     ):
         self.db = db
         self._client = Anthropic(api_key=anthropic_api_key or settings.anthropic_api_key)
         self._config: Optional[AgentConfig] = None
         self._decision_engine = DecisionEngine(db)
         self._confirmation_manager = ConfirmationManager(db)
-        self._task_executor = TaskExecutor(db)
+        self._audio_player = audio_player
+        self._content_sync = content_sync
+        self._calendar_service = calendar_service
+        self._task_executor = TaskExecutor(
+            db,
+            audio_player=audio_player,
+            content_sync=content_sync,
+            calendar_service=calendar_service
+        )
 
         # Conversation history for chat
         self._chat_history: List[Dict[str, str]] = []
@@ -175,7 +187,7 @@ class OrchestratorAgent:
         await self._log_decision(classification)
         return classification
 
-    async def chat(self, user_message: str) -> str:
+    async def chat(self, user_message: str) -> Dict[str, Any]:
         """
         Handle natural language chat with the user.
 
@@ -190,7 +202,7 @@ class OrchestratorAgent:
             user_message: User's message in natural language
 
         Returns:
-            Agent's response
+            Dict with 'response' text and optional 'play_track' for browser playback
         """
         # Add to history
         self._chat_history.append({
@@ -223,6 +235,8 @@ class OrchestratorAgent:
 
         # Check if response contains a task to execute
         task_result = await self._try_execute_task(assistant_message, user_message)
+        play_track = None
+
         if task_result:
             # Use the task result as the response
             final_response = task_result.get("message", assistant_message)
@@ -233,6 +247,18 @@ class OrchestratorAgent:
                 action = task_result.get("action")
                 if action:
                     await self._execute_action(action, task_result)
+
+                # Check if there's content to play in browser
+                content = task_result.get("content")
+                if content:
+                    # Convert ObjectId to string for JSON serialization
+                    play_track = {
+                        "_id": str(content.get("_id")),
+                        "title": content.get("title"),
+                        "artist": content.get("artist"),
+                        "type": content.get("type"),
+                        "duration_seconds": content.get("duration_seconds", 0)
+                    }
         else:
             final_response = assistant_message
 
@@ -251,7 +277,10 @@ class OrchestratorAgent:
             "timestamp": datetime.utcnow()
         })
 
-        return final_response
+        return {
+            "response": final_response,
+            "play_track": play_track
+        }
 
     async def _try_execute_task(self, ai_response: str, original_message: str) -> Optional[Dict[str, Any]]:
         """
@@ -342,14 +371,39 @@ class OrchestratorAgent:
 
     async def _execute_action(self, action: str, task_result: Dict[str, Any]):
         """Execute a playback action from a task result."""
-        # This would integrate with the audio player service
-        # For now, we log the action
+        # Log the action
         await self.db.action_log.insert_one({
             "action": action,
             "task_result": task_result,
             "executed_at": datetime.utcnow()
         })
-        logger.info(f"Executed action: {action}")
+        logger.info(f"Executing action: {action}")
+
+        # Execute the action on the audio player
+        if self._audio_player:
+            try:
+                if action == "skip":
+                    await self._audio_player.skip()
+                    logger.info("Audio player: Skipped to next track")
+                elif action == "pause":
+                    await self._audio_player.pause()
+                    logger.info("Audio player: Paused playback")
+                elif action == "resume":
+                    await self._audio_player.resume()
+                    logger.info("Audio player: Resumed playback")
+                elif action == "volume":
+                    level = task_result.get("level", 80)
+                    self._audio_player.set_volume(level)
+                    logger.info(f"Audio player: Volume set to {level}")
+                elif action == "stop":
+                    await self._audio_player.stop()
+                    logger.info("Audio player: Stopped playback")
+                else:
+                    logger.warning(f"Unknown audio action: {action}")
+            except Exception as e:
+                logger.error(f"Error executing audio action {action}: {e}")
+        else:
+            logger.warning("No audio player available - action not executed")
 
     async def execute_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
         """Execute an approved action."""
@@ -403,15 +457,22 @@ class OrchestratorAgent:
         """Gather context for chat responses."""
         now = datetime.utcnow()
 
-        # Get current playing
-        status = {"state": "unknown"}  # TODO: Get from audio player
+        # Get current playback status from audio player
+        playback_state = "unknown"
+        current_track_info = ""
+        if self._audio_player:
+            status = self._audio_player.get_status()
+            playback_state = status.get("state", "unknown")
+            if status.get("current_track"):
+                track = status["current_track"]
+                current_track_info = f"\nCurrent track: {track.get('title', 'Unknown')} by {track.get('artist', 'Unknown')}"
 
         # Get pending actions
         pending = await self.db.pending_actions.count_documents({"status": "pending"})
 
         context = f"""
 Current time: {now.strftime("%H:%M")} ({now.strftime("%A")})
-Playback status: {status.get('state', 'unknown')}
+Playback status: {playback_state}{current_track_info}
 Pending confirmations: {pending}
 Agent mode: {(await self.get_config()).mode.value}
 """

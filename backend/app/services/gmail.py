@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/gmail.modify',
+    'https://www.googleapis.com/auth/gmail.send',
 ]
 
 # Audio file extensions to look for
@@ -282,3 +283,141 @@ class GmailService:
         ).execute()
 
         return results.get('resultSizeEstimate', 0)
+
+    async def send_email(
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        html_body: Optional[str] = None
+    ) -> bool:
+        """
+        Send an email via Gmail API.
+
+        Args:
+            to: Recipient email address
+            subject: Email subject
+            body: Plain text body
+            html_body: Optional HTML body
+
+        Returns:
+            True if sent successfully
+        """
+        self._ensure_service()
+
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+
+        try:
+            if html_body:
+                # Multipart message with both plain text and HTML
+                message = MIMEMultipart('alternative')
+                message['to'] = to
+                message['subject'] = subject
+
+                # Attach both plain text and HTML versions
+                part1 = MIMEText(body, 'plain', 'utf-8')
+                part2 = MIMEText(html_body, 'html', 'utf-8')
+                message.attach(part1)
+                message.attach(part2)
+            else:
+                # Plain text only
+                message = MIMEText(body, 'plain', 'utf-8')
+                message['to'] = to
+                message['subject'] = subject
+
+            # Encode the message
+            encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
+
+            # Send the message
+            send_result = self._service.users().messages().send(
+                userId='me',
+                body={'raw': encoded_message}
+            ).execute()
+
+            logger.info(f"Email sent successfully to {to}, message ID: {send_result.get('id')}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to send email to {to}: {e}")
+            return False
+
+    async def send_html_notification(
+        self,
+        to: str,
+        subject: str,
+        title: str,
+        message: str,
+        action_url: Optional[str] = None,
+        action_text: str = "View Details"
+    ) -> bool:
+        """
+        Send a formatted HTML notification email.
+
+        Args:
+            to: Recipient email address
+            subject: Email subject
+            title: Notification title
+            message: Main message content
+            action_url: Optional URL for action button
+            action_text: Text for action button
+
+        Returns:
+            True if sent successfully
+        """
+        # Build HTML email
+        action_button = ""
+        if action_url:
+            action_button = f'''
+            <tr>
+                <td style="padding: 20px 0;">
+                    <a href="{action_url}"
+                       style="background-color: #4F46E5; color: white; padding: 12px 24px;
+                              text-decoration: none; border-radius: 6px; font-weight: bold;">
+                        {action_text}
+                    </a>
+                </td>
+            </tr>
+            '''
+
+        html_body = f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+        </head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                     background-color: #f3f4f6; margin: 0; padding: 20px;">
+            <table style="max-width: 600px; margin: 0 auto; background-color: white;
+                          border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <tr style="background: linear-gradient(135deg, #4F46E5, #7C3AED);">
+                    <td style="padding: 24px; text-align: center;">
+                        <h1 style="color: white; margin: 0; font-size: 24px;">
+                            🎵 Israeli Radio Manager
+                        </h1>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 32px;">
+                        <h2 style="color: #1f2937; margin: 0 0 16px 0;">{title}</h2>
+                        <p style="color: #4b5563; line-height: 1.6; margin: 0;">
+                            {message}
+                        </p>
+                    </td>
+                </tr>
+                {action_button}
+                <tr style="background-color: #f9fafb;">
+                    <td style="padding: 16px; text-align: center; color: #9ca3af; font-size: 12px;">
+                        This is an automated message from Israeli Radio Manager.
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        '''
+
+        plain_body = f"{title}\n\n{message}"
+        if action_url:
+            plain_body += f"\n\nView details: {action_url}"
+
+        return await self.send_email(to, subject, plain_body, html_body)

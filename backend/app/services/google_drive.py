@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any
 from pathlib import Path
 
 from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -32,11 +33,13 @@ class GoogleDriveService:
         self,
         credentials_path: str = "credentials.json",
         token_path: str = "token.json",
+        service_account_file: Optional[str] = None,
         root_folder_id: Optional[str] = None,
         cache_dir: str = "./cache"
     ):
         self.credentials_path = credentials_path
         self.token_path = token_path
+        self.service_account_file = service_account_file
         self.root_folder_id = root_folder_id
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -44,8 +47,17 @@ class GoogleDriveService:
         self._service = None
         self._credentials = None
 
-    def _get_credentials(self) -> Credentials:
-        """Get or refresh OAuth credentials."""
+    def _get_credentials(self):
+        """Get credentials - tries service account first, then OAuth."""
+        # Try service account first (preferred for server apps)
+        if self.service_account_file and Path(self.service_account_file).exists():
+            logger.info(f"Using service account: {self.service_account_file}")
+            return service_account.Credentials.from_service_account_file(
+                self.service_account_file,
+                scopes=SCOPES
+            )
+
+        # Fall back to OAuth
         creds = None
 
         # Load existing token
@@ -59,8 +71,9 @@ class GoogleDriveService:
             else:
                 if not Path(self.credentials_path).exists():
                     raise FileNotFoundError(
-                        f"Credentials file not found: {self.credentials_path}. "
-                        "Please download it from Google Cloud Console."
+                        f"No credentials found. Either:\n"
+                        f"1. Create a service account and save to: {self.service_account_file}\n"
+                        f"2. Or download OAuth credentials to: {self.credentials_path}"
                     )
                 flow = InstalledAppFlow.from_client_secrets_file(
                     self.credentials_path, SCOPES
@@ -79,6 +92,16 @@ class GoogleDriveService:
             self._credentials = self._get_credentials()
             self._service = build('drive', 'v3', credentials=self._credentials)
             logger.info("Google Drive service initialized")
+
+    def authenticate(self):
+        """
+        Authenticate with Google Drive API.
+
+        This will trigger OAuth flow if no valid token exists.
+        Call this at startup to ensure Drive access is ready.
+        """
+        self._ensure_service()
+        return self._service is not None
 
     async def list_folders(self, parent_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """

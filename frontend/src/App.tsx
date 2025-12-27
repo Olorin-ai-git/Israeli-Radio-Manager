@@ -3,11 +3,12 @@ import { Routes, Route } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import Layout from './components/Layout/Layout'
 import Dashboard from './pages/Dashboard'
-import Schedule from './pages/Schedule'
 import Library from './pages/Library'
 import Upload from './pages/Upload'
 import AgentControl from './pages/AgentControl'
 import Settings from './pages/Settings'
+import CalendarPlaylist from './pages/CalendarPlaylist'
+import ToastContainer from './components/Toast/ToastContainer'
 
 function App() {
   const { i18n } = useTranslation()
@@ -26,13 +27,14 @@ function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/schedule" element={<Schedule />} />
+          <Route path="/calendar" element={<CalendarPlaylist />} />
           <Route path="/library" element={<Library />} />
           <Route path="/upload" element={<Upload />} />
           <Route path="/agent" element={<AgentControl />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </Layout>
+      <ToastContainer />
     </div>
   )
 }

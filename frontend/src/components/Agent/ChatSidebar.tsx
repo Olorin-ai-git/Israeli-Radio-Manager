@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, Send, Bot, User, Loader2, Sparkles, HelpCircle } from 'lucide-react'
+import { X, Send, Bot, User, Loader2, Sparkles, HelpCircle, AlertCircle } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../services/api'
+import { usePlayerStore } from '../../store/playerStore'
 
 interface ChatMessage {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'error'
   content: string
   timestamp: string
 }
@@ -38,9 +39,11 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
   const { t, i18n } = useTranslation()
   const [message, setMessage] = useState('')
   const [showExamples, setShowExamples] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
+  const { play } = usePlayerStore()
 
   const isRTL = i18n.language === 'he'
   const lang = i18n.language as 'he' | 'en'
@@ -71,15 +74,25 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
   // Send message mutation
   const sendMutation = useMutation({
     mutationFn: (msg: string) => api.sendChatMessage(msg),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
+      setErrorMessage(null)
       queryClient.invalidateQueries({ queryKey: ['chatHistory'] })
+
+      // If there's a track to play, trigger the player
+      if (data.play_track) {
+        play(data.play_track)
+      }
+    },
+    onError: (error: any) => {
+      const detail = error.response?.data?.detail || error.message || 'Failed to send message'
+      setErrorMessage(detail)
     },
   })
 
   // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages.length, sendMutation.isPending])
+  }, [messages.length, sendMutation.isPending, errorMessage])
 
   // Focus input when expanded
   useEffect(() => {
@@ -92,6 +105,7 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
     if (!message.trim() || sendMutation.isPending) return
 
     setShowExamples(false)
+    setErrorMessage(null)
     sendMutation.mutate(message)
     setMessage('')
   }
@@ -110,9 +124,9 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
 
   return (
     <div
-      className={`fixed ${isRTL ? 'left-0' : 'right-0'} top-0 h-full z-50
+      className={`fixed right-0 top-0 h-full z-50
         transition-transform duration-300 ease-in-out
-        ${expanded ? 'translate-x-0' : isRTL ? '-translate-x-full' : 'translate-x-full'}
+        ${expanded ? 'translate-x-0' : 'translate-x-full'}
         w-96 flex flex-col glass-sidebar`}
     >
       {/* Header */}
@@ -176,7 +190,7 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
           </div>
         )}
 
-        {messages.length === 0 && !sendMutation.isPending && !showExamples && (
+        {messages.length === 0 && !sendMutation.isPending && !showExamples && !errorMessage && (
           <div className="text-center text-dark-500 mt-8">
             <Bot size={48} className="mx-auto mb-4 text-dark-600" />
             <p className="text-sm">
@@ -190,7 +204,7 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`flex ${msg.role === 'user' ? (isRTL ? 'justify-start' : 'justify-end') : (isRTL ? 'justify-end' : 'justify-start')}`}
+            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             dir={isRTL ? 'rtl' : 'ltr'}
           >
             <div
@@ -232,12 +246,38 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
           </>
         )}
 
+        {/* Error message */}
+        {errorMessage && (
+          <>
+            {sendMutation.variables && (
+              <div className="flex justify-end">
+                <div className="max-w-[80%] p-3 chat-bubble-user">
+                  <p className="text-sm">{sendMutation.variables}</p>
+                </div>
+              </div>
+            )}
+            <div className="flex justify-start">
+              <div className="max-w-[85%] p-3 bg-red-500/20 border border-red-500/30 rounded-2xl rounded-bl-sm">
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={16} className="mt-0.5 flex-shrink-0 text-red-400" />
+                  <div>
+                    <p className="text-sm text-red-400 font-medium mb-1">
+                      {isRTL ? 'שגיאה' : 'Error'}
+                    </p>
+                    <p className="text-sm text-red-300">{errorMessage}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
       <div className="p-4 border-t border-white/10">
-        <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+        <div className="flex gap-2">
           <input
             ref={inputRef}
             type="text"
@@ -252,7 +292,7 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
           <button
             onClick={handleSend}
             disabled={!message.trim() || sendMutation.isPending}
-            className={`px-4 py-3 glass-button-primary disabled:opacity-50 disabled:cursor-not-allowed ${isRTL ? 'rotate-180' : ''}`}
+            className="px-4 py-3 glass-button-primary disabled:opacity-50 disabled:cursor-not-allowed"
             title={t('chat.send')}
           >
             <Send size={20} />

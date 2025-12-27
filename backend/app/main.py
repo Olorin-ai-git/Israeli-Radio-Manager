@@ -8,7 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.config import settings
-from app.routers import content, schedule, playback, upload, agent, websocket
+from app.routers import content, schedule, playback, upload, agent, websocket, calendar, flows
+from app.services.audio_player import AudioPlayerService
+from app.services.google_drive import GoogleDriveService
+from app.services.content_sync import ContentSyncService
+from app.services.google_calendar import GoogleCalendarService
+from app.services.calendar_watcher import CalendarWatcherService
 
 # Configure logging
 logging.basicConfig(
@@ -32,14 +37,69 @@ async def lifespan(app: FastAPI):
     # Initialize collections with indexes
     await init_database(app.state.db)
 
-    # TODO: Initialize audio player
-    # TODO: Initialize background workers
-    # TODO: Initialize AI agent
+    # Initialize audio player
+    app.state.audio_player = AudioPlayerService(cache_dir=settings.cache_dir)
+    logger.info("Audio player service initialized")
+
+    # Initialize Google Drive service with OAuth
+    app.state.drive_service = GoogleDriveService(
+        credentials_path=settings.google_credentials_file,
+        token_path=settings.google_drive_token_file,
+        service_account_file=settings.google_service_account_file,
+        root_folder_id=settings.google_drive_root_folder_id,
+        cache_dir=settings.cache_dir
+    )
+    # Authenticate Drive service (will trigger OAuth if needed)
+    try:
+        app.state.drive_service.authenticate()
+        logger.info("Google Drive service initialized and authenticated")
+    except Exception as e:
+        logger.warning(f"Google Drive authentication failed: {e}. Drive features will be limited.")
+        # Keep the service but it won't be able to download files
+
+    # Initialize content sync service
+    app.state.content_sync = ContentSyncService(
+        db=app.state.db,
+        drive_service=app.state.drive_service
+    )
+    logger.info("Content sync service initialized")
+
+    # Initialize Google Calendar service
+    app.state.calendar_service = GoogleCalendarService(
+        credentials_file=settings.google_credentials_file,
+        token_file=settings.google_token_file,
+        calendar_id=settings.google_calendar_id
+    )
+    # Try to authenticate (may fail if no credentials)
+    try:
+        await app.state.calendar_service.authenticate()
+        logger.info("Google Calendar service initialized and authenticated")
+    except Exception as e:
+        logger.warning(f"Google Calendar authentication failed: {e}. Calendar features will be unavailable.")
+        app.state.calendar_service = None
+
+    # Initialize and start calendar watcher (background task)
+    app.state.calendar_watcher = None
+    if app.state.calendar_service:
+        app.state.calendar_watcher = CalendarWatcherService(
+            db=app.state.db,
+            calendar_service=app.state.calendar_service,
+            audio_player=app.state.audio_player,
+            drive_service=app.state.drive_service,
+            check_interval=15,  # Check every 15 seconds
+            lookahead_minutes=2  # Look 2 minutes ahead
+        )
+        await app.state.calendar_watcher.start()
+        logger.info("Calendar watcher started - monitoring scheduled events")
 
     yield
 
     # Shutdown
     logger.info("Shutting down Israeli Radio Manager...")
+    if app.state.calendar_watcher:
+        await app.state.calendar_watcher.stop()
+    if hasattr(app.state, 'audio_player'):
+        app.state.audio_player.cleanup()
     app.state.mongo_client.close()
 
 
@@ -90,6 +150,8 @@ app.include_router(playback.router, prefix="/api/playback", tags=["Playback"])
 app.include_router(upload.router, prefix="/api/upload", tags=["Upload"])
 app.include_router(agent.router, prefix="/api/agent", tags=["AI Agent"])
 app.include_router(websocket.router, prefix="/ws", tags=["WebSocket"])
+app.include_router(calendar.router, prefix="/api/calendar", tags=["Calendar"])
+app.include_router(flows.router, prefix="/api/flows", tags=["Auto Flows"])
 
 
 @app.get("/")

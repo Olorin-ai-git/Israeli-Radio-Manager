@@ -144,15 +144,51 @@ class NotificationService:
         body: str,
         data: Optional[Dict[str, Any]] = None
     ) -> bool:
-        """Send email notification."""
+        """Send email notification via Gmail API."""
         if not self._admin_email:
             logger.warning("No admin email configured")
             return False
 
-        # TODO: Implement Gmail API email sending
-        # For now, just log
-        logger.info(f"Would send email to {self._admin_email}: {subject}")
-        return True
+        try:
+            from app.services.gmail import GmailService
+            from app.config import settings
+            import asyncio
+
+            # Get or create Gmail service
+            if not hasattr(self, '_gmail_service') or self._gmail_service is None:
+                credentials_path = settings.google_credentials_path
+                token_path = settings.google_token_path
+
+                self._gmail_service = GmailService(
+                    credentials_path=credentials_path,
+                    token_path=token_path
+                )
+
+            # Build email content
+            email_body = body
+            if data:
+                email_body += f"\n\nAdditional data:\n{json.dumps(data, indent=2, default=str)}"
+
+            # Send the email
+            result = await self._gmail_service.send_email(
+                to=self._admin_email,
+                subject=f"[Israeli Radio Manager] {subject}",
+                body=email_body
+            )
+
+            if result:
+                logger.info(f"Email sent to {self._admin_email}: {subject}")
+                return True
+            else:
+                logger.error(f"Failed to send email to {self._admin_email}")
+                return False
+
+        except ImportError:
+            logger.warning("Gmail service not available - email not sent")
+            return False
+        except Exception as e:
+            logger.error(f"Error sending email: {e}")
+            return False
 
     async def _send_push(
         self,

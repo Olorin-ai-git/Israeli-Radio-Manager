@@ -85,12 +85,29 @@ async def get_agent_status(request: Request):
         "created_at": {"$gte": datetime.utcnow().replace(hour=0, minute=0, second=0)}
     })
 
+    # Check if audio player is active (agent is considered active if playback system is available)
+    audio_player = getattr(request.app.state, 'audio_player', None)
+    is_active = audio_player is not None
+
+    # Get most recent decision
+    last_decision_doc = await db.agent_decisions.find_one(
+        {},
+        sort=[("created_at", -1)]
+    )
+    last_decision = None
+    if last_decision_doc:
+        last_decision = {
+            "action_type": last_decision_doc.get("action_type"),
+            "reasoning": last_decision_doc.get("reasoning"),
+            "created_at": last_decision_doc.get("created_at").isoformat() if last_decision_doc.get("created_at") else None
+        }
+
     return {
         "mode": mode,
-        "active": True,  # TODO: Check if agent is actually running
+        "active": is_active,
         "pending_actions": pending_count,
         "decisions_today": decisions_today,
-        "last_decision": None  # TODO: Get most recent decision
+        "last_decision": last_decision
     }
 
 
@@ -169,9 +186,34 @@ async def approve_action(
         }
     )
 
-    # TODO: Trigger the agent to execute the action
+    # Execute the approved action via the orchestrator agent
+    from app.agent.orchestrator import OrchestratorAgent
+    audio_player = getattr(request.app.state, 'audio_player', None)
+    content_sync = getattr(request.app.state, 'content_sync', None)
+    calendar_service = getattr(request.app.state, 'calendar_service', None)
 
-    return {"message": "Action approved", "final_action": final_action}
+    agent = OrchestratorAgent(
+        db,
+        audio_player=audio_player,
+        content_sync=content_sync,
+        calendar_service=calendar_service
+    )
+
+    execution_result = await agent.execute_action(final_action)
+
+    # Log the execution
+    await db.action_log.insert_one({
+        "action_id": action_id,
+        "action": final_action,
+        "result": execution_result,
+        "executed_at": datetime.utcnow()
+    })
+
+    return {
+        "message": "Action approved and executed",
+        "final_action": final_action,
+        "execution_result": execution_result
+    }
 
 
 @router.post("/pending/{action_id}/reject")
@@ -237,10 +279,50 @@ async def get_decision(request: Request, decision_id: str):
 @router.post("/trigger")
 async def trigger_agent(request: Request, action_type: ActionType):
     """Manually trigger the agent to perform an action."""
-    # TODO: Actually trigger the agent
+    db = request.app.state.db
+
+    from app.agent.orchestrator import OrchestratorAgent
+    audio_player = getattr(request.app.state, 'audio_player', None)
+    content_sync = getattr(request.app.state, 'content_sync', None)
+    calendar_service = getattr(request.app.state, 'calendar_service', None)
+
+    agent = OrchestratorAgent(
+        db,
+        audio_player=audio_player,
+        content_sync=content_sync,
+        calendar_service=calendar_service
+    )
+
+    result = None
+    try:
+        if action_type == ActionType.SELECT_NEXT_TRACK:
+            result = await agent.decide_next_track()
+        elif action_type == ActionType.CATEGORIZE_CONTENT:
+            # List pending uploads that need classification
+            pending = await db.pending_uploads.find({"status": "pending"}).to_list(10)
+            results = []
+            for upload in pending:
+                classification = await agent.classify_content(
+                    upload.get("filename", "unknown"),
+                    upload.get("metadata", {})
+                )
+                results.append(classification)
+            result = {"classifications": results}
+        elif action_type == ActionType.INSERT_COMMERCIAL:
+            # Trigger commercial insertion check
+            from app.agent.decisions import DecisionEngine
+            engine = DecisionEngine(db)
+            result = await engine.check_commercial_timing()
+        else:
+            result = {"message": f"No handler for action type: {action_type.value}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Agent trigger failed: {str(e)}")
+
     return {
         "message": f"Agent triggered for {action_type.value}",
-        "queued": True
+        "queued": False,
+        "executed": True,
+        "result": result
     }
 
 
@@ -252,6 +334,7 @@ class ChatMessage(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     timestamp: str
+    play_track: Optional[dict] = None  # Track to play in browser
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -269,18 +352,44 @@ async def chat_with_agent(request: Request, chat: ChatMessage):
     """
     from app.agent.orchestrator import OrchestratorAgent
     from datetime import datetime
+    import anthropic
 
     db = request.app.state.db
 
     # Initialize agent (in production, this would be a singleton)
-    agent = OrchestratorAgent(db)
+    audio_player = request.app.state.audio_player
+    content_sync = request.app.state.content_sync
+    calendar_service = getattr(request.app.state, 'calendar_service', None)
+    agent = OrchestratorAgent(
+        db,
+        audio_player=audio_player,
+        content_sync=content_sync,
+        calendar_service=calendar_service
+    )
 
-    # Get response from agent
-    response = await agent.chat(chat.message)
+    try:
+        # Get response from agent
+        result = await agent.chat(chat.message)
+    except anthropic.AuthenticationError:
+        raise HTTPException(
+            status_code=503,
+            detail="AI service unavailable: Invalid API key. Please configure ANTHROPIC_API_KEY in .env"
+        )
+    except anthropic.APIError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"AI service error: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Chat error: {str(e)}"
+        )
 
     return ChatResponse(
-        response=response,
-        timestamp=datetime.utcnow().isoformat()
+        response=result["response"],
+        timestamp=datetime.utcnow().isoformat(),
+        play_track=result.get("play_track")
     )
 
 

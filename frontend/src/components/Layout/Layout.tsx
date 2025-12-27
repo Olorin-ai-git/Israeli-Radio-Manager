@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   LayoutDashboard,
-  Calendar,
+  CalendarDays,
   Library,
   Upload,
   Bot,
@@ -12,6 +12,9 @@ import {
   Globe
 } from 'lucide-react'
 import ChatSidebar from '../Agent/ChatSidebar'
+import AudioPlayer from '../Player/AudioPlayer'
+import FlowsPanel from '../Flows/FlowsPanel'
+import { usePlayerStore } from '../../store/playerStore'
 
 interface LayoutProps {
   children: ReactNode
@@ -21,12 +24,14 @@ export default function Layout({ children }: LayoutProps) {
   const { t, i18n } = useTranslation()
   const location = useLocation()
   const [chatExpanded, setChatExpanded] = useState(false)
+  const [flowsCollapsed, setFlowsCollapsed] = useState(true)
+  const { currentTrack, playNext } = usePlayerStore()
 
   const isRTL = i18n.language === 'he'
 
   const navItems = [
     { path: '/', icon: LayoutDashboard, label: t('nav.dashboard') },
-    { path: '/schedule', icon: Calendar, label: t('nav.schedule') },
+    { path: '/calendar', icon: CalendarDays, label: isRTL ? 'לוח שידורים' : 'Broadcast Schedule' },
     { path: '/library', icon: Library, label: t('nav.library') },
     { path: '/upload', icon: Upload, label: t('nav.upload') },
     { path: '/agent', icon: Bot, label: t('nav.agent') },
@@ -45,6 +50,12 @@ export default function Layout({ children }: LayoutProps) {
       {/* Decorative blur circles */}
       <div className="fixed top-20 left-20 w-96 h-96 bg-primary-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="fixed bottom-20 right-20 w-80 h-80 bg-primary-600/5 rounded-full blur-3xl pointer-events-none" />
+
+      {/* Flows Panel - Left side collapsible */}
+      <FlowsPanel
+        collapsed={flowsCollapsed}
+        onToggle={() => setFlowsCollapsed(!flowsCollapsed)}
+      />
 
       {/* Sidebar Navigation */}
       <nav className="relative z-10 w-64 glass-sidebar flex flex-col">
@@ -97,14 +108,25 @@ export default function Layout({ children }: LayoutProps) {
       </nav>
 
       {/* Main Content */}
-      <main className="relative z-10 flex-1 overflow-auto">
-        {children}
+      <main className="relative z-10 flex-1 overflow-auto flex flex-col">
+        <div className="flex-1 overflow-auto">
+          {children}
+        </div>
+
+        {/* Audio Player - Fixed at bottom */}
+        <div className="flex-shrink-0 p-4 border-t border-white/5">
+          <AudioPlayer
+            track={currentTrack}
+            onTrackEnd={playNext}
+            onNext={playNext}
+          />
+        </div>
       </main>
 
-      {/* Chat Sidebar Toggle Button */}
+      {/* Chat Sidebar Toggle Button - Always on right */}
       <button
         onClick={() => setChatExpanded(!chatExpanded)}
-        className={`fixed ${isRTL ? 'left-0 rounded-r-xl' : 'right-0 rounded-l-xl'} top-1/2 -translate-y-1/2 z-40
+        className={`fixed right-0 rounded-l-xl top-1/2 -translate-y-1/2 z-40
           glass-button-primary p-3 shadow-glow
           ${chatExpanded ? 'opacity-0 pointer-events-none' : 'opacity-100'}
           flex items-center gap-2 transition-all duration-300`}

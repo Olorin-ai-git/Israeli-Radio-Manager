@@ -1,11 +1,17 @@
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { Play, Pause, SkipForward, Volume2, Music, Radio, Megaphone, Clock } from 'lucide-react'
+import { Music, Radio, Megaphone, Clock, Calendar } from 'lucide-react'
 import { api } from '../services/api'
+import { usePlayerStore } from '../store/playerStore'
 
 export default function Dashboard() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const isRTL = i18n.language === 'he'
 
+  // Browser-based player state (primary)
+  const { currentTrack, isPlaying: browserIsPlaying } = usePlayerStore()
+
+  // Server-side playback status (for VLC backend playback - fallback)
   const { data: playbackStatus } = useQuery({
     queryKey: ['playbackStatus'],
     queryFn: api.getPlaybackStatus,
@@ -18,12 +24,29 @@ export default function Dashboard() {
     refetchInterval: 10000,
   })
 
-  const { data: upcomingSchedule } = useQuery({
-    queryKey: ['upcomingSchedule'],
-    queryFn: () => api.getUpcomingSchedule(24),
+  // Use Google Calendar events for upcoming schedule
+  const { data: calendarEvents } = useQuery({
+    queryKey: ['calendarEvents'],
+    queryFn: () => api.getCalendarEvents(7),
+    refetchInterval: 30000,
   })
 
-  const isPlaying = playbackStatus?.state === 'playing'
+  // Get recent playback history
+  const { data: playbackHistory } = useQuery({
+    queryKey: ['playbackHistory'],
+    queryFn: () => api.getPlaybackHistory(10),
+    refetchInterval: 15000,
+  })
+
+  // Filter to only show upcoming events (not past)
+  const upcomingEvents = calendarEvents?.filter((event: any) => {
+    const startTime = new Date(event.start?.dateTime || event.start?.date)
+    return startTime > new Date()
+  }) || []
+
+  // Use browser player state, fallback to backend VLC status
+  const isPlaying = browserIsPlaying || playbackStatus?.state === 'playing'
+  const displayTrack = currentTrack || playbackStatus?.current_track
 
   return (
     <div className="p-6">
@@ -51,58 +74,46 @@ export default function Dashboard() {
               </div>
 
               <div className="flex-1">
-                {playbackStatus?.current_track ? (
+                {displayTrack ? (
                   <>
-                    <h3 className="text-xl font-bold text-dark-100">{playbackStatus.current_track.title}</h3>
-                    <p className="text-dark-400">{playbackStatus.current_track.artist}</p>
-                    {/* Progress bar */}
-                    <div className="mt-3">
-                      <div className="h-1.5 bg-dark-700/50 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-primary-500 to-primary-400 rounded-full transition-all shadow-glow"
-                          style={{
-                            width: `${(playbackStatus.position_seconds / playbackStatus.duration_seconds) * 100}%`,
-                          }}
-                        />
-                      </div>
-                      <div className="flex justify-between text-xs text-dark-400 mt-1">
-                        <span>{formatTime(playbackStatus.position_seconds)}</span>
-                        <span>{formatTime(playbackStatus.duration_seconds)}</span>
-                      </div>
+                    <h3 className="text-xl font-bold text-dark-100" dir="auto">{displayTrack.title}</h3>
+                    {displayTrack.artist && (
+                      <p className="text-dark-300 text-lg">{displayTrack.artist}</p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                      {displayTrack.type && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                          displayTrack.type === 'song' ? 'bg-sky-500/20 text-sky-400 border-sky-500/30' :
+                          displayTrack.type === 'commercial' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' :
+                          displayTrack.type === 'show' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
+                          'bg-dark-500/20 text-dark-400 border-dark-500/30'
+                        }`}>
+                          {displayTrack.type}
+                        </span>
+                      )}
+                      {displayTrack.genre && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-400 border border-primary-500/30">
+                          {displayTrack.genre}
+                        </span>
+                      )}
+                      {displayTrack.duration_seconds && (
+                        <span className="text-xs text-dark-400">
+                          {Math.floor(displayTrack.duration_seconds / 60)}:{String(displayTrack.duration_seconds % 60).padStart(2, '0')}
+                        </span>
+                      )}
                     </div>
                   </>
                 ) : (
-                  <p className="text-dark-400">{t('dashboard.noTrack')}</p>
+                  <div className="text-center py-2">
+                    <p className="text-dark-400">{t('dashboard.noTrack')}</p>
+                    <p className="text-xs text-dark-500 mt-1">
+                      {isRTL ? 'בחר שיר מהספרייה כדי לנגן' : 'Select a song from the library to play'}
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
 
-            {/* Player controls */}
-            <div className="flex items-center justify-center gap-4 mt-6">
-              <button
-                onClick={() => isPlaying ? api.pause() : api.play()}
-                className="w-14 h-14 glass-button-primary rounded-full flex items-center justify-center shadow-glow"
-              >
-                {isPlaying ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
-              </button>
-              <button
-                onClick={() => api.skip()}
-                className="w-12 h-12 glass-button rounded-full flex items-center justify-center"
-              >
-                <SkipForward size={20} />
-              </button>
-              <div className="flex items-center gap-2 ml-4">
-                <Volume2 size={20} className="text-dark-400" />
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={playbackStatus?.volume || 80}
-                  onChange={(e) => api.setVolume(Number(e.target.value))}
-                  className="w-24 accent-primary-500"
-                />
-              </div>
-            </div>
           </div>
         </div>
 
@@ -172,32 +183,55 @@ export default function Dashboard() {
 
         {/* Upcoming Schedule */}
         <div className="lg:col-span-2 glass-card p-6">
-          <h2 className="text-lg font-semibold text-dark-100 mb-4">{t('dashboard.upcoming')}</h2>
+          <h2 className="text-lg font-semibold text-dark-100 mb-4 flex items-center gap-2">
+            <Calendar size={20} className="text-primary-400" />
+            {t('dashboard.upcoming')}
+          </h2>
 
           <div className="space-y-3">
-            {upcomingSchedule && upcomingSchedule.length > 0 ? (
-              upcomingSchedule.slice(0, 5).map((slot: any, index: number) => (
-                <div
-                  key={slot._id || index}
-                  className="flex items-center gap-4 p-3 bg-dark-700/30 rounded-xl border border-white/5 hover:border-primary-500/30 transition-all"
-                >
-                  <div className="w-10 h-10 bg-primary-500/20 rounded-xl flex items-center justify-center border border-primary-500/30">
-                    <Clock size={20} className="text-primary-400" />
+            {upcomingEvents.length > 0 ? (
+              upcomingEvents.slice(0, 5).map((event: any) => {
+                const startTime = new Date(event.start?.dateTime || event.start?.date)
+                const contentType = event.extendedProperties?.private?.radio_content_type || 'content'
+                const typeColors: Record<string, string> = {
+                  song: 'bg-sky-500/20 border-sky-500/30 text-sky-400',
+                  commercial: 'bg-orange-500/20 border-orange-500/30 text-orange-400',
+                  show: 'bg-purple-500/20 border-purple-500/30 text-purple-400',
+                  content: 'bg-primary-500/20 border-primary-500/30 text-primary-400',
+                }
+                const TypeIcon = contentType === 'song' ? Music
+                  : contentType === 'commercial' ? Megaphone
+                  : contentType === 'show' ? Radio
+                  : Clock
+
+                return (
+                  <div
+                    key={event.id}
+                    className="flex items-center gap-4 p-3 bg-dark-700/30 rounded-xl border border-white/5 hover:border-primary-500/30 transition-all"
+                  >
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${typeColors[contentType] || typeColors.content}`}>
+                      <TypeIcon size={20} />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-dark-100" dir="auto">
+                        {event.summary}
+                      </p>
+                      <p className="text-sm text-dark-400">
+                        {startTime.toLocaleDateString(isRTL ? 'he-IL' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                        {' '}
+                        {startTime.toLocaleTimeString(isRTL ? 'he-IL' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded-full border ${typeColors[contentType] || typeColors.content}`}>
+                      {contentType}
+                    </span>
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-dark-100">
-                      {slot.content_type === 'song' && slot.genre
-                        ? `${slot.genre} Songs`
-                        : slot.content_type}
-                    </p>
-                    <p className="text-sm text-dark-400">
-                      {slot.start_time} - {slot.end_time}
-                    </p>
-                  </div>
-                </div>
-              ))
+                )
+              })
             ) : (
-              <p className="text-dark-400 text-center py-4">No upcoming schedule</p>
+              <p className="text-dark-400 text-center py-4">
+                {isRTL ? 'אין אירועים מתוכננים' : 'No upcoming events'}
+              </p>
             )}
           </div>
         </div>
@@ -205,9 +239,43 @@ export default function Dashboard() {
         {/* Recent Activity */}
         <div className="glass-card p-6">
           <h2 className="text-lg font-semibold text-dark-100 mb-4">{t('dashboard.recentActivity')}</h2>
-          <div className="text-dark-500 text-center py-8">
-            <Clock size={40} className="mx-auto mb-2 text-dark-600" />
-            <p className="text-sm">No recent activity</p>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {playbackHistory && playbackHistory.length > 0 ? (
+              playbackHistory.slice(0, 8).map((item: any) => {
+                const playedAt = new Date(item.started_at)
+                const typeColors: Record<string, string> = {
+                  song: 'text-sky-400',
+                  commercial: 'text-orange-400',
+                  show: 'text-purple-400',
+                }
+                const TypeIcon = item.type === 'song' ? Music
+                  : item.type === 'commercial' ? Megaphone
+                  : item.type === 'show' ? Radio
+                  : Music
+
+                return (
+                  <div
+                    key={item._id}
+                    className="flex items-center gap-3 p-2 bg-dark-700/30 rounded-lg"
+                  >
+                    <TypeIcon size={16} className={typeColors[item.type] || 'text-dark-400'} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-dark-200 truncate" dir="auto">
+                        {item.title}
+                      </p>
+                      <p className="text-xs text-dark-500">
+                        {playedAt.toLocaleTimeString(isRTL ? 'he-IL' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })
+            ) : (
+              <div className="text-dark-500 text-center py-8">
+                <Clock size={40} className="mx-auto mb-2 text-dark-600" />
+                <p className="text-sm">{isRTL ? 'אין פעילות אחרונה' : 'No recent activity'}</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

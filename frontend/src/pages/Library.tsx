@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { Music, Radio, Megaphone, Search, Play, MoreVertical } from 'lucide-react'
+import { Music, Radio, Megaphone, Search, Play, Plus, MoreVertical, Cloud, HardDrive, AlertTriangle } from 'lucide-react'
 import { api } from '../services/api'
+import { usePlayerStore } from '../store/playerStore'
+import { toast } from '../store/toastStore'
 
 type ContentTab = 'songs' | 'shows' | 'commercials'
 
@@ -10,6 +12,7 @@ export default function Library() {
   const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<ContentTab>('songs')
   const [searchQuery, setSearchQuery] = useState('')
+  const { play, addToQueue } = usePlayerStore()
 
   const { data: songs } = useQuery({
     queryKey: ['songs'],
@@ -136,12 +139,22 @@ export default function Library() {
               {filteredContent.map((item: any) => (
                 <tr key={item._id} className="group">
                   <td>
-                    <button
-                      onClick={() => api.play(item._id)}
-                      className="w-8 h-8 glass-button-primary rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Play size={14} className="ml-0.5" />
-                    </button>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => play(item)}
+                        className="w-8 h-8 glass-button-primary rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        title={t('player.play')}
+                      >
+                        <Play size={14} className="ml-0.5" />
+                      </button>
+                      <button
+                        onClick={() => addToQueue(item)}
+                        className="w-8 h-8 glass-button rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        title={t('player.addToQueue')}
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
                   </td>
                   <td>
                     <div>

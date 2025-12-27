@@ -47,6 +47,9 @@ export const api = {
     client.post('/playback/volume', { level }).then((r) => r.data),
   getPlaybackHistory: (limit?: number) =>
     client.get('/playback/history', { params: { limit } }).then((r) => r.data),
+  getStreamUrl: (contentId: string) => `/api/playback/stream/${contentId}`,
+  logPlayStart: (contentId: string) =>
+    client.post(`/playback/log-play/${contentId}`).then((r) => r.data),
 
   // Upload
   uploadFile: (file: File, data?: any) => {
@@ -88,6 +91,79 @@ export const api = {
   getChatHistory: (limit?: number) =>
     client.get('/agent/chat/history', { params: { limit } }).then((r) => r.data),
   clearChatHistory: () => client.delete('/agent/chat/history').then((r) => r.data),
+
+  // Calendar
+  getCalendarEvents: (days?: number, contentType?: string) =>
+    client.get('/calendar/events', { params: { days, content_type: contentType } }).then((r) => r.data),
+  getTodaySchedule: () => client.get('/calendar/events/today').then((r) => r.data),
+  getDaySchedule: (date: string) => client.get(`/calendar/events/day/${date}`).then((r) => r.data),
+  getWeekSchedule: (startDate?: string) =>
+    client.get('/calendar/week', { params: { start_date: startDate } }).then((r) => r.data),
+  getCalendarEvent: (eventId: string) => client.get(`/calendar/events/${eventId}`).then((r) => r.data),
+  createCalendarEvent: (data: {
+    content_id: string
+    start_time: string
+    end_time?: string
+    description?: string
+    recurrence?: string
+    recurrence_count?: number
+    recurrence_days?: string[]
+    recurrence_interval?: number
+    reminder_minutes?: number
+    reminder_method?: string
+    all_day?: boolean
+  }) => client.post('/calendar/events', data).then((r) => r.data),
+  updateCalendarEvent: (eventId: string, data: {
+    summary?: string
+    description?: string
+    start_time?: string
+    end_time?: string
+    all_day?: boolean
+  }) => client.put(`/calendar/events/${eventId}`, data).then((r) => r.data),
+  deleteCalendarEvent: (eventId: string) =>
+    client.delete(`/calendar/events/${eventId}`).then((r) => r.data),
+
+  // Flows
+  getFlows: (status?: string) =>
+    client.get('/flows/', { params: { status } }).then((r) => r.data),
+  getActiveFlows: () =>
+    client.get('/flows/active').then((r) => r.data),
+  getFlow: (flowId: string) =>
+    client.get(`/flows/${flowId}`).then((r) => r.data),
+  createFlow: (data: {
+    name: string
+    name_he?: string
+    description?: string
+    actions: Array<{
+      action_type: string
+      genre?: string
+      content_id?: string
+      commercial_count?: number
+      duration_minutes?: number
+      volume_level?: number
+      description?: string
+    }>
+    trigger_type?: 'scheduled' | 'manual' | 'event'
+    schedule?: {
+      days_of_week: number[]
+      start_time: string
+      end_time?: string
+    }
+    priority?: number
+    loop?: boolean
+  }) => client.post('/flows/', data).then((r) => r.data),
+  updateFlow: (flowId: string, data: any) =>
+    client.put(`/flows/${flowId}`, data).then((r) => r.data),
+  deleteFlow: (flowId: string) =>
+    client.delete(`/flows/${flowId}`).then((r) => r.data),
+  toggleFlow: (flowId: string) =>
+    client.post(`/flows/${flowId}/toggle`).then((r) => r.data),
+  runFlow: (flowId: string) =>
+    client.post(`/flows/${flowId}/run`).then((r) => r.data),
+  getFlowExecutions: (flowId: string, limit?: number) =>
+    client.get(`/flows/${flowId}/executions`, { params: { limit } }).then((r) => r.data),
+  parseNaturalFlow: (text: string) =>
+    client.post('/flows/parse-natural', null, { params: { text } }).then((r) => r.data),
 }
 
 export default api

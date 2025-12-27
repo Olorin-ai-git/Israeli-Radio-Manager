@@ -11,31 +11,63 @@ router = APIRouter()
 
 
 class ConnectionManager:
-    """Manages WebSocket connections."""
+    """Manages WebSocket connections with subscription support."""
 
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        # Map of websocket to subscribed channels
+        self.subscriptions: dict[WebSocket, set[str]] = {}
 
     async def connect(self, websocket: WebSocket):
         """Accept and track a new connection."""
         await websocket.accept()
         self.active_connections.append(websocket)
+        self.subscriptions[websocket] = set()  # No subscriptions by default
 
     def disconnect(self, websocket: WebSocket):
-        """Remove a connection."""
+        """Remove a connection and its subscriptions."""
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
+        if websocket in self.subscriptions:
+            del self.subscriptions[websocket]
+
+    def subscribe(self, websocket: WebSocket, channels: List[str]):
+        """Subscribe a connection to specific channels."""
+        if websocket in self.subscriptions:
+            self.subscriptions[websocket].update(channels)
+
+    def unsubscribe(self, websocket: WebSocket, channels: List[str]):
+        """Unsubscribe a connection from specific channels."""
+        if websocket in self.subscriptions:
+            self.subscriptions[websocket] -= set(channels)
+
+    def get_subscriptions(self, websocket: WebSocket) -> List[str]:
+        """Get list of channels a websocket is subscribed to."""
+        return list(self.subscriptions.get(websocket, set()))
 
     async def send_personal(self, message: dict, websocket: WebSocket):
         """Send a message to a specific client."""
         await websocket.send_json(message)
 
-    async def broadcast(self, message: dict):
-        """Broadcast a message to all connected clients."""
+    async def broadcast(self, message: dict, channel: str = None):
+        """
+        Broadcast a message to connected clients.
+
+        If channel is specified, only sends to clients subscribed to that channel.
+        If channel is None, sends to all connected clients.
+        """
         disconnected = []
         for connection in self.active_connections:
             try:
-                await connection.send_json(message)
+                # If channel specified, check if client is subscribed
+                if channel:
+                    client_channels = self.subscriptions.get(connection, set())
+                    # Send if subscribed to this channel or to "all"
+                    if channel in client_channels or "all" in client_channels or not client_channels:
+                        await connection.send_json(message)
+                else:
+                    # No channel filter - send to everyone
+                    await connection.send_json(message)
             except Exception:
                 disconnected.append(connection)
 
@@ -74,10 +106,28 @@ async def websocket_endpoint(websocket: WebSocket):
 
             elif message.get("type") == "subscribe":
                 # Client subscribing to specific event types
-                # TODO: Implement subscription management
+                channels = message.get("channels", [])
+                manager.subscribe(websocket, channels)
                 await manager.send_personal({
                     "type": "subscribed",
-                    "channels": message.get("channels", [])
+                    "channels": manager.get_subscriptions(websocket)
+                }, websocket)
+
+            elif message.get("type") == "unsubscribe":
+                # Client unsubscribing from event types
+                channels = message.get("channels", [])
+                manager.unsubscribe(websocket, channels)
+                await manager.send_personal({
+                    "type": "unsubscribed",
+                    "channels": channels,
+                    "remaining": manager.get_subscriptions(websocket)
+                }, websocket)
+
+            elif message.get("type") == "get_subscriptions":
+                # Client requesting current subscriptions
+                await manager.send_personal({
+                    "type": "subscriptions",
+                    "channels": manager.get_subscriptions(websocket)
                 }, websocket)
 
     except WebSocketDisconnect:
