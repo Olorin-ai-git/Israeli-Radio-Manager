@@ -120,6 +120,11 @@ function SortableQueueItem({
   )
 }
 
+// Fade duration constants
+const FADE_IN_DURATION = 2000 // 2 seconds fade in
+const FADE_OUT_DURATION = 3000 // 3 seconds fade out
+const FADE_OUT_BEFORE_END = 4 // Start fade out 4 seconds before track ends
+
 export default function AudioPlayer({
   track,
   onTrackEnd,
@@ -129,6 +134,8 @@ export default function AudioPlayer({
 }: AudioPlayerProps) {
   const { i18n } = useTranslation()
   const audioRef = useRef<HTMLAudioElement>(null)
+  const fadeAnimationRef = useRef<number | null>(null)
+  const isFadingOutRef = useRef(false)
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [hasError, setHasError] = useState(false)
@@ -137,6 +144,7 @@ export default function AudioPlayer({
   const [volume, setVolume] = useState(80)
   const [isMuted, setIsMuted] = useState(false)
   const [queueExpanded, setQueueExpanded] = useState(false)
+  const [isFading, setIsFading] = useState(false)
 
   const { queue, removeFromQueue, clearQueue, reorderQueue } = usePlayerStore()
   const isRTL = i18n.language === 'he'
@@ -162,6 +170,91 @@ export default function AudioPlayer({
     }
   }
 
+  // Cancel any ongoing fade animation
+  const cancelFade = () => {
+    if (fadeAnimationRef.current) {
+      cancelAnimationFrame(fadeAnimationRef.current)
+      fadeAnimationRef.current = null
+    }
+  }
+
+  // Fade in function - smoothly increases volume from 0 to target
+  const fadeIn = () => {
+    if (!audioRef.current) return
+
+    cancelFade()
+    isFadingOutRef.current = false
+    setIsFading(true)
+
+    const targetVolume = isMuted ? 0 : volume / 100
+    const startTime = performance.now()
+    audioRef.current.volume = 0
+
+    const animate = (currentTime: number) => {
+      if (!audioRef.current) return
+
+      const elapsed = currentTime - startTime
+      const progress = Math.min(elapsed / FADE_IN_DURATION, 1)
+      // Use easeOutCubic for smoother fade in
+      const easedProgress = 1 - Math.pow(1 - progress, 3)
+
+      audioRef.current.volume = targetVolume * easedProgress
+
+      if (progress < 1) {
+        fadeAnimationRef.current = requestAnimationFrame(animate)
+      } else {
+        setIsFading(false)
+        fadeAnimationRef.current = null
+      }
+    }
+
+    fadeAnimationRef.current = requestAnimationFrame(animate)
+  }
+
+  // Fade out function - smoothly decreases volume to 0
+  const fadeOut = (callback?: () => void) => {
+    if (!audioRef.current) return
+
+    cancelFade()
+    isFadingOutRef.current = true
+    setIsFading(true)
+
+    const startTime = performance.now()
+    const startVolume = audioRef.current.volume
+
+    const animate = (currentTime: number) => {
+      if (!audioRef.current) {
+        callback?.()
+        return
+      }
+
+      const elapsed = currentTime - startTime
+      const progress = Math.min(elapsed / FADE_OUT_DURATION, 1)
+      // Use easeInCubic for smoother fade out
+      const easedProgress = Math.pow(progress, 3)
+
+      audioRef.current.volume = startVolume * (1 - easedProgress)
+
+      if (progress < 1) {
+        fadeAnimationRef.current = requestAnimationFrame(animate)
+      } else {
+        setIsFading(false)
+        isFadingOutRef.current = false
+        fadeAnimationRef.current = null
+        callback?.()
+      }
+    }
+
+    fadeAnimationRef.current = requestAnimationFrame(animate)
+  }
+
+  // Cleanup fade animation on unmount
+  useEffect(() => {
+    return () => {
+      cancelFade()
+    }
+  }, [])
+
   // Auto-expand queue when items are added
   useEffect(() => {
     if (queue.length > 0 && !queueExpanded) {
@@ -172,8 +265,13 @@ export default function AudioPlayer({
   // Load new track when track changes
   useEffect(() => {
     if (track && audioRef.current) {
+      // Cancel any ongoing fade from previous track
+      cancelFade()
+      isFadingOutRef.current = false
+
       const streamUrl = api.getStreamUrl(track._id)
       audioRef.current.src = streamUrl
+      audioRef.current.volume = 0 // Start at 0 for fade in
       setIsLoading(true)
       setHasError(false)
       setCurrentTime(0)
@@ -207,12 +305,12 @@ export default function AudioPlayer({
     toast.error(errorMsg)
   }
 
-  // Update volume
+  // Update volume (but don't override during fades)
   useEffect(() => {
-    if (audioRef.current) {
+    if (audioRef.current && !isFading) {
       audioRef.current.volume = isMuted ? 0 : volume / 100
     }
-  }, [volume, isMuted])
+  }, [volume, isMuted, isFading])
 
   const handlePlayPause = () => {
     if (!audioRef.current) return
@@ -226,7 +324,17 @@ export default function AudioPlayer({
 
   const handleTimeUpdate = () => {
     if (audioRef.current) {
-      setCurrentTime(audioRef.current.currentTime)
+      const current = audioRef.current.currentTime
+      const total = audioRef.current.duration
+      setCurrentTime(current)
+
+      // Start fade out when approaching end of track
+      if (total && total > FADE_OUT_BEFORE_END + 1) {
+        const timeRemaining = total - current
+        if (timeRemaining <= FADE_OUT_BEFORE_END && !isFadingOutRef.current && isPlaying) {
+          fadeOut()
+        }
+      }
     }
   }
 
@@ -240,6 +348,64 @@ export default function AudioPlayer({
   const handleEnded = () => {
     setIsPlaying(false)
     onTrackEnd?.()
+  }
+
+  // Handle skip with quick fade out (faster than natural end)
+  const handleSkipNext = () => {
+    if (!onNext) return
+
+    // If already fading out or nearly at end, just skip immediately
+    if (isFadingOutRef.current || (audioRef.current && duration - currentTime < 1)) {
+      cancelFade()
+      onNext()
+      return
+    }
+
+    // Quick fade out (500ms) before skipping
+    if (audioRef.current) {
+      cancelFade()
+      isFadingOutRef.current = true
+      setIsFading(true)
+
+      const startTime = performance.now()
+      const startVolume = audioRef.current.volume
+      const quickFadeDuration = 500 // Quick fade for skips
+
+      const animate = (currentTime: number) => {
+        if (!audioRef.current) {
+          onNext()
+          return
+        }
+
+        const elapsed = currentTime - startTime
+        const progress = Math.min(elapsed / quickFadeDuration, 1)
+        audioRef.current.volume = startVolume * (1 - progress)
+
+        if (progress < 1) {
+          fadeAnimationRef.current = requestAnimationFrame(animate)
+        } else {
+          setIsFading(false)
+          isFadingOutRef.current = false
+          fadeAnimationRef.current = null
+          onNext()
+        }
+      }
+
+      fadeAnimationRef.current = requestAnimationFrame(animate)
+    } else {
+      onNext()
+    }
+  }
+
+  const handleSkipPrevious = () => {
+    if (!onPrevious) return
+
+    // Quick volume drop for previous (instant for responsiveness)
+    if (audioRef.current && audioRef.current.volume > 0.1) {
+      cancelFade()
+      audioRef.current.volume = 0
+    }
+    onPrevious()
   }
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -334,7 +500,13 @@ export default function AudioPlayer({
           ref={audioRef}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
-          onPlay={() => setIsPlaying(true)}
+          onPlay={() => {
+            setIsPlaying(true)
+            // Trigger fade in when playback starts
+            if (!isFadingOutRef.current) {
+              fadeIn()
+            }
+          }}
           onPause={() => setIsPlaying(false)}
           onEnded={handleEnded}
           onCanPlay={() => { setIsLoading(false); setHasError(false); }}
@@ -369,7 +541,7 @@ export default function AudioPlayer({
         {/* Controls */}
         <div className="flex items-center gap-2">
           <button
-            onClick={onPrevious}
+            onClick={handleSkipPrevious}
             disabled={!onPrevious}
             className="p-2 hover:bg-white/10 rounded-lg transition-colors disabled:opacity-30"
           >
@@ -389,7 +561,7 @@ export default function AudioPlayer({
           </button>
 
           <button
-            onClick={onNext}
+            onClick={handleSkipNext}
             disabled={!onNext}
             className="p-2 hover:bg-white/10 rounded-lg transition-colors disabled:opacity-30"
           >
