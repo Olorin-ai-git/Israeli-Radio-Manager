@@ -2,41 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Base dark theme */
-:root {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-tertiary: #334155;
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --accent: #ef4444;
-  --glass-bg: rgba(30, 41, 59, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.1);
-}
+@layer base {
+  /* Base dark theme */
+  :root {
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-tertiary: #334155;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --accent: #ef4444;
+    --glass-bg: rgba(30, 41, 59, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.1);
+  }
 
-body {
-  @apply bg-dark-950 text-dark-100;
-  font-family: 'Inter', system-ui, sans-serif;
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
-  min-height: 100vh;
-}
+  /* Force consistent font across all elements */
+  *,
+  *::before,
+  *::after {
+    font-family: 'Inter', '-apple-system', 'system-ui', 'sans-serif' !important;
+  }
 
-/* RTL Support with Heebo font */
-[dir="rtl"],
-[dir="rtl"] * {
-  direction: rtl;
-  text-align: right;
-  font-family: 'Heebo', 'Arial', sans-serif;
-}
+  /* Form elements must inherit */
+  button,
+  input,
+  textarea,
+  select,
+  option {
+    font-family: inherit !important;
+  }
 
-/* Force consistent font across all elements */
-* {
-  font-family: inherit;
-}
+  body {
+    @apply bg-dark-950 text-dark-100;
+    font-family: 'Inter', '-apple-system', 'system-ui', 'sans-serif' !important;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+    min-height: 100vh;
+  }
 
-/* Ensure button and input elements also inherit fonts */
-button, input, textarea, select {
-  font-family: inherit;
+  /* RTL Support with Heebo font */
+  [dir="rtl"],
+  [dir="rtl"] *,
+  [dir="rtl"] *::before,
+  [dir="rtl"] *::after {
+    direction: rtl;
+    text-align: right;
+    font-family: 'Heebo', 'Arial', 'sans-serif' !important;
+  }
 }
 
 /* Glassmorphism utilities */
