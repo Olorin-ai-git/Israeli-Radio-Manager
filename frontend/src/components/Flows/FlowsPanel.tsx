@@ -261,6 +261,8 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
   const [expandedFlow, setExpandedFlow] = useState<string | null>(null)
   const [showSuggested, setShowSuggested] = useState(false)
   const [flowDescription, setFlowDescription] = useState('')
+  const [triggerType, setTriggerType] = useState<'scheduled' | 'manual'>('scheduled')
+  const [editTriggerType, setEditTriggerType] = useState<'scheduled' | 'manual'>('scheduled')
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>('weekly')
   const [editRecurrenceType, setEditRecurrenceType] = useState<RecurrenceType>('weekly')
   const [editFlowDescription, setEditFlowDescription] = useState('')
@@ -404,13 +406,14 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
 
   const closeEditModal = () => {
     setEditingFlow(null)
+    setEditTriggerType('scheduled')
     setEditFlowDescription('')
     setEditParsedActions([])
     setActionsManuallyModified(false)
     setShowAddActionModal(false)
+    setOverlapError(null)
     setSelectedActionType('play_genre')
     setSelectedCommercials(new Set())
-    setOverlapError(null)
   }
 
   // Handle drag end for reordering actions
@@ -472,7 +475,6 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
 
     const name = formData.get('name') as string
     const description = formData.get('description') as string
-    const triggerType = formData.get('trigger_type') as string
     const loop = formData.get('loop') === 'on'
 
     // Use the pre-parsed preview actions
@@ -483,7 +485,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
       description: 'Play mixed music',
     }]
 
-    // Build schedule object if scheduled
+    // Build schedule object if scheduled (using state, not form data)
     let schedule = undefined
     if (triggerType === 'scheduled') {
       if (recurrenceType === 'none') {
@@ -539,7 +541,9 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
   const handleCloseCreateModal = () => {
     setShowCreateModal(false)
     setFlowDescription('')
+    setTriggerType('scheduled')
     setRecurrenceType('weekly')
+    setOverlapError(null)
   }
 
   const handleUseSuggested = (suggested: typeof SUGGESTED_FLOWS[0]) => {
@@ -778,9 +782,11 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                 <button
                   onClick={() => {
                     setEditingFlow(flow)
+                    setEditTriggerType(flow.trigger_type === 'scheduled' ? 'scheduled' : 'manual')
                     setEditRecurrenceType(flow.schedule?.recurrence || 'weekly')
                     setEditFlowDescription(flow.description || '')
                     setEditParsedActions(flow.actions || [])
+                    setOverlapError(null)
                   }}
                   className="glass-button py-1.5 px-2 text-xs text-blue-400 hover:bg-blue-500/20"
                   title={isRTL ? 'ערוך' : 'Edit'}
@@ -899,13 +905,18 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                 <label className="block text-dark-300 text-sm mb-2">
                   {isRTL ? 'סוג הפעלה' : 'Trigger Type'}
                 </label>
-                <select name="trigger_type" className="w-full glass-input" defaultValue="manual">
-                  <option value="manual">{isRTL ? 'ידני' : 'Manual'}</option>
+                <select
+                  value={triggerType}
+                  onChange={(e) => setTriggerType(e.target.value as 'scheduled' | 'manual')}
+                  className="w-full glass-input"
+                >
                   <option value="scheduled">{isRTL ? 'מתוזמן' : 'Scheduled'}</option>
+                  <option value="manual">{isRTL ? 'ידני' : 'Manual'}</option>
                 </select>
               </div>
 
-              {/* Schedule Fields */}
+              {/* Schedule Fields - Only show if scheduled */}
+              {triggerType === 'scheduled' && (
               <div className="space-y-3 p-3 bg-dark-800/30 rounded-lg">
                 <p className="text-xs text-dark-400">
                   {isRTL ? 'הגדרות תזמון (לזרימות מתוזמנות)' : 'Schedule Settings (for scheduled flows)'}
@@ -1062,6 +1073,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   </div>
                 )}
               </div>
+              )}
 
               {/* Loop Option */}
               <div className="p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
@@ -1234,12 +1246,11 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
               onSubmit={(e) => {
                 e.preventDefault()
                 const formData = new FormData(e.currentTarget)
-                const triggerType = formData.get('trigger_type') as string
                 const loop = formData.get('loop') === 'on'
 
-                // Build schedule object
+                // Build schedule object (using state editTriggerType, not form data)
                 let schedule = undefined
-                if (triggerType === 'scheduled') {
+                if (editTriggerType === 'scheduled') {
                   if (editRecurrenceType === 'none') {
                     // One-time/multi-day event: use datetime-local inputs
                     const startDatetime = formData.get('start_datetime') as string
@@ -1282,7 +1293,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   data: {
                     name: formData.get('name') as string,
                     description: editFlowDescription,
-                    trigger_type: triggerType,
+                    trigger_type: editTriggerType,
                     schedule,
                     actions: editParsedActions.length > 0 ? editParsedActions : editingFlow.actions,
                     loop,
@@ -1324,16 +1335,17 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   {isRTL ? 'סוג הפעלה' : 'Trigger Type'}
                 </label>
                 <select
-                  name="trigger_type"
+                  value={editTriggerType}
+                  onChange={(e) => setEditTriggerType(e.target.value as 'scheduled' | 'manual')}
                   className="w-full glass-input"
-                  defaultValue={editingFlow.trigger_type}
                 >
-                  <option value="manual">{isRTL ? 'ידני' : 'Manual'}</option>
                   <option value="scheduled">{isRTL ? 'מתוזמן' : 'Scheduled'}</option>
+                  <option value="manual">{isRTL ? 'ידני' : 'Manual'}</option>
                 </select>
               </div>
 
-              {/* Schedule Fields */}
+              {/* Schedule Fields - Only show if scheduled */}
+              {editTriggerType === 'scheduled' && (
               <div className="space-y-3 p-3 bg-dark-800/30 rounded-lg">
                 <p className="text-xs text-dark-400">
                   {isRTL ? 'הגדרות תזמון' : 'Schedule Settings'}
@@ -1505,6 +1517,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   </div>
                 )}
               </div>
+              )}
 
               {/* Live Preview of Parsed Actions */}
               <div className="p-3 bg-dark-800/50 rounded-lg border border-primary-500/30">
