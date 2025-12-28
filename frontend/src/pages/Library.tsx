@@ -44,7 +44,7 @@ function AlbumCover({ contentId, isPlaying, type }: { contentId: string; isPlayi
 type ContentTab = 'songs' | 'shows' | 'commercials'
 
 export default function Library() {
-  const { t, i18n } = useTranslation()
+  const { i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
   const [activeTab, setActiveTab] = useState<ContentTab>('songs')
   const [searchQuery, setSearchQuery] = useState('')
@@ -68,7 +68,7 @@ export default function Library() {
           : `Metadata updated: ${data.stats.updated} items`
       )
     },
-    onError: (error: any) => {
+    onError: () => {
       toast.error(
         isRTL
           ? 'שגיאה בעדכון מטה-דאטה'
@@ -183,7 +183,7 @@ export default function Library() {
   }
 
   const selectAll = () => {
-    const allIds = new Set(filteredContent.map((item: any) => item._id))
+    const allIds = new Set<string>(filteredContent.map((item: any) => item._id))
     setSelectedItems(allIds)
   }
 
@@ -223,15 +223,6 @@ export default function Library() {
     const mins = Math.floor(seconds / 60)
     const secs = Math.floor(seconds % 60)
     return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'song': return Music
-      case 'show': return Radio
-      case 'commercial': return Megaphone
-      default: return Disc3
-    }
   }
 
   return (

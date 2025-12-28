@@ -1,6 +1,10 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, Send, Bot, User, Loader2, Sparkles, HelpCircle, AlertCircle, Trash2 } from 'lucide-react'
+import {
+  X, Send, Bot, User, Loader2, Sparkles, HelpCircle, AlertCircle, Trash2,
+  Play, Pause, SkipForward, Volume2, ListPlus, Info, Search, Clock, Music,
+  Megaphone, Calendar, Workflow, Users, type LucideIcon
+} from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../services/api'
 import { usePlayerStore } from '../../store/playerStore'
@@ -37,6 +41,53 @@ const QUICK_COMMANDS = {
   ]
 }
 
+// Action templates for @ mention popup
+interface ActionTemplate {
+  id: string
+  label: string
+  labelHe: string
+  icon: LucideIcon
+  template: string
+  templateHe: string
+  category: 'playback' | 'scheduling' | 'calendar' | 'flows' | 'library'
+}
+
+const ACTION_TEMPLATES: ActionTemplate[] = [
+  // Playback
+  { id: 'play_content', label: 'Play', labelHe: 'נגן', icon: Play, template: 'Play [song/artist name]', templateHe: 'תנגן [שם שיר/אמן]', category: 'playback' },
+  { id: 'pause_playback', label: 'Pause', labelHe: 'השהה', icon: Pause, template: 'Pause playback', templateHe: 'עצור את הנגינה', category: 'playback' },
+  { id: 'resume_playback', label: 'Resume', labelHe: 'המשך', icon: Play, template: 'Resume playback', templateHe: 'המשך לנגן', category: 'playback' },
+  { id: 'skip_current', label: 'Skip', labelHe: 'דלג', icon: SkipForward, template: 'Skip to next song', templateHe: 'דלג לשיר הבא', category: 'playback' },
+  { id: 'set_volume', label: 'Volume', labelHe: 'עוצמה', icon: Volume2, template: 'Set volume to [0-100]', templateHe: 'קבע עוצמה ל-[0-100]', category: 'playback' },
+  { id: 'add_to_queue', label: 'Add to Queue', labelHe: 'הוסף לתור', icon: ListPlus, template: 'Add [song name] to queue', templateHe: 'הוסף [שם שיר] לתור', category: 'playback' },
+  { id: 'get_status', label: 'Status', labelHe: 'סטטוס', icon: Info, template: "What's playing now?", templateHe: 'מה מתנגן עכשיו?', category: 'playback' },
+  { id: 'search_content', label: 'Search', labelHe: 'חפש', icon: Search, template: 'Search for [query]', templateHe: 'חפש [מילות חיפוש]', category: 'playback' },
+
+  // Scheduling
+  { id: 'schedule_content', label: 'Schedule', labelHe: 'תזמן', icon: Clock, template: 'Schedule [song] for [time]', templateHe: 'תזמן [שיר] לשעה [זמן]', category: 'scheduling' },
+  { id: 'change_genre', label: 'Genre', labelHe: "ז'אנר", icon: Music, template: 'Switch to [genre] genre', templateHe: "עבור לז'אנר [ז'אנר]", category: 'scheduling' },
+  { id: 'insert_commercial', label: 'Commercial', labelHe: 'פרסומת', icon: Megaphone, template: 'Play a commercial break', templateHe: 'נגן הפסקת פרסומות', category: 'scheduling' },
+
+  // Calendar
+  { id: 'schedule_to_calendar', label: 'Add to Calendar', labelHe: 'הוסף ליומן', icon: Calendar, template: 'Add [event] to calendar at [time]', templateHe: 'הוסף [אירוע] ליומן בשעה [זמן]', category: 'calendar' },
+  { id: 'list_calendar_events', label: 'Calendar Events', labelHe: 'אירועי יומן', icon: Calendar, template: 'Show calendar events for [today/tomorrow]', templateHe: 'הצג אירועי יומן ל[היום/מחר]', category: 'calendar' },
+  { id: 'get_day_schedule', label: 'Day Schedule', labelHe: 'לוח יום', icon: Calendar, template: "Show today's schedule", templateHe: 'הצג את לוח הזמנים להיום', category: 'calendar' },
+  { id: 'update_calendar_event', label: 'Update Event', labelHe: 'עדכן אירוע', icon: Calendar, template: 'Update [event name] to [new time]', templateHe: 'עדכן [שם אירוע] ל[זמן חדש]', category: 'calendar' },
+  { id: 'delete_calendar_event', label: 'Delete Event', labelHe: 'מחק אירוע', icon: Calendar, template: 'Delete [event name] from calendar', templateHe: 'מחק [שם אירוע] מהיומן', category: 'calendar' },
+
+  // Flows
+  { id: 'create_flow', label: 'Create Flow', labelHe: 'צור זרימה', icon: Workflow, template: 'Create a flow: [description]', templateHe: 'צור זרימה: [תיאור]', category: 'flows' },
+  { id: 'list_flows', label: 'List Flows', labelHe: 'הצג זרימות', icon: Workflow, template: 'Show all flows', templateHe: 'הצג את כל הזרימות', category: 'flows' },
+  { id: 'run_flow', label: 'Run Flow', labelHe: 'הרץ זרימה', icon: Play, template: 'Run flow [flow name]', templateHe: 'הרץ זרימה [שם זרימה]', category: 'flows' },
+  { id: 'update_flow', label: 'Update Flow', labelHe: 'עדכן זרימה', icon: Workflow, template: 'Update flow [flow name]: [changes]', templateHe: 'עדכן זרימה [שם זרימה]: [שינויים]', category: 'flows' },
+  { id: 'delete_flow', label: 'Delete Flow', labelHe: 'מחק זרימה', icon: Workflow, template: 'Delete flow [flow name]', templateHe: 'מחק זרימה [שם זרימה]', category: 'flows' },
+  { id: 'toggle_flow', label: 'Toggle Flow', labelHe: 'החלף זרימה', icon: Workflow, template: 'Toggle flow [flow name]', templateHe: 'החלף מצב זרימה [שם זרימה]', category: 'flows' },
+
+  // Library
+  { id: 'list_artists', label: 'Artists', labelHe: 'אמנים', icon: Users, template: 'List all artists', templateHe: 'הצג את כל האמנים', category: 'library' },
+  { id: 'list_genres', label: 'Genres', labelHe: "ז'אנרים", icon: Music, template: 'List all genres', templateHe: "הצג את כל הז'אנרים", category: 'library' },
+]
+
 export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeStart }: ChatSidebarProps) {
   const { t, i18n } = useTranslation()
   const [message, setMessage] = useState('')
@@ -46,6 +97,13 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
   const inputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
   const { play } = usePlayerStore()
+
+  // @ action popup state
+  const [showActionPopup, setShowActionPopup] = useState(false)
+  const [actionFilter, setActionFilter] = useState('')
+  const [selectedActionIndex, setSelectedActionIndex] = useState(0)
+  const [atPosition, setAtPosition] = useState<number | null>(null)
+  const popupRef = useRef<HTMLDivElement>(null)
 
   const isRTL = i18n.language === 'he'
   const lang = i18n.language as 'he' | 'en'
@@ -113,6 +171,109 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
     }
   }, [expanded])
 
+  // Filter actions based on search text
+  const filteredActions = useMemo(() => {
+    if (!actionFilter) return ACTION_TEMPLATES
+    const lowerFilter = actionFilter.toLowerCase()
+    return ACTION_TEMPLATES.filter(action =>
+      action.label.toLowerCase().includes(lowerFilter) ||
+      action.labelHe.includes(actionFilter) ||
+      action.id.includes(lowerFilter) ||
+      action.template.toLowerCase().includes(lowerFilter) ||
+      action.templateHe.includes(actionFilter)
+    )
+  }, [actionFilter])
+
+  // Reset selected index when filtered actions change
+  useEffect(() => {
+    setSelectedActionIndex(0)
+  }, [filteredActions.length])
+
+  // Handle input change - detect '@' for action popup
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    const cursorPos = e.target.selectionStart || 0
+    setMessage(value)
+
+    // Find the last '@' before cursor
+    const textBeforeCursor = value.slice(0, cursorPos)
+    const lastAtIndex = textBeforeCursor.lastIndexOf('@')
+
+    if (lastAtIndex !== -1) {
+      const textAfterAt = value.slice(lastAtIndex + 1, cursorPos)
+      // Show popup if @ is followed by no space or partial text (filtering)
+      if (!textAfterAt.includes(' ')) {
+        setShowActionPopup(true)
+        setAtPosition(lastAtIndex)
+        setActionFilter(textAfterAt)
+        return
+      }
+    }
+    setShowActionPopup(false)
+    setAtPosition(null)
+  }
+
+  // Handle action selection from popup
+  const handleSelectAction = (action: ActionTemplate) => {
+    if (atPosition === null) return
+
+    const template = isRTL ? action.templateHe : action.template
+    // Replace @query with the template
+    const before = message.slice(0, atPosition)
+    const after = message.slice(atPosition + 1 + actionFilter.length)
+    const newMessage = before + template + after
+    setMessage(newMessage)
+    setShowActionPopup(false)
+    setAtPosition(null)
+    setActionFilter('')
+
+    // Focus input and position cursor at end of template
+    setTimeout(() => {
+      inputRef.current?.focus()
+      const cursorPos = before.length + template.length
+      inputRef.current?.setSelectionRange(cursorPos, cursorPos)
+    }, 0)
+  }
+
+  // Handle keyboard navigation in popup
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (showActionPopup && filteredActions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedActionIndex(i => Math.min(i + 1, filteredActions.length - 1))
+        // Scroll selected item into view
+        setTimeout(() => {
+          popupRef.current?.querySelector(`[data-index="${Math.min(selectedActionIndex + 1, filteredActions.length - 1)}"]`)?.scrollIntoView({ block: 'nearest' })
+        }, 0)
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSelectedActionIndex(i => Math.max(i - 1, 0))
+        setTimeout(() => {
+          popupRef.current?.querySelector(`[data-index="${Math.max(selectedActionIndex - 1, 0)}"]`)?.scrollIntoView({ block: 'nearest' })
+        }, 0)
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+        handleSelectAction(filteredActions[selectedActionIndex])
+        return
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowActionPopup(false)
+        setAtPosition(null)
+        return
+      } else if (e.key === 'Tab') {
+        e.preventDefault()
+        handleSelectAction(filteredActions[selectedActionIndex])
+        return
+      }
+    }
+
+    // Normal Enter handling (send message)
+    if (e.key === 'Enter' && !e.shiftKey && !showActionPopup) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
   const handleSend = () => {
     if (!message.trim() || sendMutation.isPending) return
 
@@ -125,13 +286,6 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
   const handleQuickCommand = (command: string) => {
     setMessage(command)
     inputRef.current?.focus()
-  }
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
   }
 
   return (
@@ -312,26 +466,80 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
 
       {/* Input */}
       <div className="p-4 border-t border-white/10">
-        <div className="flex gap-2">
-          <input
-            ref={inputRef}
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder={t('chat.placeholder')}
-            disabled={sendMutation.isPending}
-            className={`flex-1 px-4 py-3 glass-input text-base ${isRTL ? 'text-right' : 'text-left'}`}
-            dir={isRTL ? 'rtl' : 'ltr'}
-          />
-          <button
-            onClick={handleSend}
-            disabled={!message.trim() || sendMutation.isPending}
-            className="px-4 py-3 glass-button-primary disabled:opacity-50 disabled:cursor-not-allowed"
-            title={t('chat.send')}
-          >
-            <Send size={20} />
-          </button>
+        <div className="relative">
+          {/* @ Action Popup */}
+          {showActionPopup && filteredActions.length > 0 && (
+            <div
+              ref={popupRef}
+              className="absolute bottom-full left-0 right-0 mb-2 glass-card p-2 max-h-64 overflow-auto z-50 border border-primary-500/30"
+            >
+              <div className="text-xs text-dark-500 px-2 py-1 mb-1 flex items-center gap-1">
+                <span>@</span>
+                <span>{isRTL ? 'בחר פעולה' : 'Select an action'}</span>
+                <span className="ml-auto text-dark-600">
+                  {isRTL ? '↑↓ לניווט • Enter לבחירה' : '↑↓ navigate • Enter select'}
+                </span>
+              </div>
+              {filteredActions.map((action, idx) => {
+                const Icon = action.icon
+                return (
+                  <button
+                    key={action.id}
+                    data-index={idx}
+                    onClick={() => handleSelectAction(action)}
+                    onMouseEnter={() => setSelectedActionIndex(idx)}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                      idx === selectedActionIndex
+                        ? 'bg-primary-500/20 border border-primary-500/30'
+                        : 'hover:bg-white/5 border border-transparent'
+                    }`}
+                  >
+                    <Icon size={16} className="text-primary-400 flex-shrink-0" />
+                    <div className="flex-1 min-w-0 text-left" dir={isRTL ? 'rtl' : 'ltr'}>
+                      <div className="text-sm text-dark-100 font-medium">
+                        {isRTL ? action.labelHe : action.label}
+                      </div>
+                      <div className="text-xs text-dark-400 truncate">
+                        {isRTL ? action.templateHe : action.template}
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-dark-600 px-1.5 py-0.5 bg-dark-800/50 rounded">
+                      {action.category}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* No results message */}
+          {showActionPopup && filteredActions.length === 0 && (
+            <div className="absolute bottom-full left-0 right-0 mb-2 glass-card p-4 text-center text-dark-400 text-sm">
+              {isRTL ? 'לא נמצאו פעולות' : 'No actions found'}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={message}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder={isRTL ? 'הקלד הודעה או @ לפעולות...' : 'Type a message or @ for actions...'}
+              disabled={sendMutation.isPending}
+              className={`flex-1 px-4 py-3 glass-input text-base ${isRTL ? 'text-right' : 'text-left'}`}
+              dir={isRTL ? 'rtl' : 'ltr'}
+            />
+            <button
+              onClick={handleSend}
+              disabled={!message.trim() || sendMutation.isPending}
+              className="px-4 py-3 glass-button-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              title={t('chat.send')}
+            >
+              <Send size={20} />
+            </button>
+          </div>
         </div>
         {/* Show examples button if hidden */}
         {!showExamples && messages.length === 0 && (

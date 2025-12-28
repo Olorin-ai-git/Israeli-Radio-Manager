@@ -19,7 +19,8 @@ import {
   Sparkles,
   Eye,
   CheckCircle,
-  GripVertical
+  GripVertical,
+  RotateCcw
 } from 'lucide-react'
 import {
   DndContext,
@@ -252,7 +253,7 @@ function SortableActionItem({
 }
 
 export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPanelProps) {
-  const { t, i18n } = useTranslation()
+  const { i18n } = useTranslation()
   const queryClient = useQueryClient()
   const isRTL = i18n.language === 'he'
 
@@ -366,6 +367,11 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
 
   const runMutation = useMutation({
     mutationFn: (flowId: string) => api.runFlow(flowId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['flows'] }),
+  })
+
+  const resetMutation = useMutation({
+    mutationFn: (flowId: string) => api.resetFlow(flowId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['flows'] }),
   })
 
@@ -803,21 +809,39 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                 >
                   {flow.status === 'active' ? <Pause size={12} /> : <Play size={12} />}
                 </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    runMutation.mutate(flow._id)
-                  }}
-                  disabled={runMutation.isPending || flow.status === 'running'}
-                  className="flex-1 glass-button py-1.5 text-xs flex items-center justify-center gap-1 text-green-400 hover:bg-green-500/20"
-                  title={isRTL ? 'הפעל עכשיו' : 'Run Now'}
-                >
-                  {runMutation.isPending ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <Play size={12} />
-                  )}
-                </button>
+                {flow.status === 'running' ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      resetMutation.mutate(flow._id)
+                    }}
+                    disabled={resetMutation.isPending}
+                    className="flex-1 glass-button py-1.5 text-xs flex items-center justify-center gap-1 text-yellow-400 hover:bg-yellow-500/20"
+                    title={isRTL ? 'אפס סטטוס' : 'Reset Status'}
+                  >
+                    {resetMutation.isPending ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <RotateCcw size={12} />
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      runMutation.mutate(flow._id)
+                    }}
+                    disabled={runMutation.isPending}
+                    className="flex-1 glass-button py-1.5 text-xs flex items-center justify-center gap-1 text-green-400 hover:bg-green-500/20"
+                    title={isRTL ? 'הפעל עכשיו' : 'Run Now'}
+                  >
+                    {runMutation.isPending ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <Play size={12} />
+                    )}
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setEditingFlow(flow)
@@ -1147,7 +1171,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                       : 'This flow overlaps with the following flows:'}
                   </p>
                   <ul className="space-y-1" dir={isRTL ? 'rtl' : 'ltr'}>
-                    {overlapError.conflicting_flows.map((flow: any) => (
+                    {overlapError.conflictingFlows.map((flow: any) => (
                       <li key={flow._id} className="text-sm text-red-200 flex items-start gap-2">
                         <span className="text-red-400 mt-0.5">•</span>
                         <div>
@@ -1640,7 +1664,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                       : 'This flow overlaps with the following flows:'}
                   </p>
                   <ul className="space-y-1" dir={isRTL ? 'rtl' : 'ltr'}>
-                    {overlapError.conflicting_flows.map((flow: any) => (
+                    {overlapError.conflictingFlows.map((flow: any) => (
                       <li key={flow._id} className="text-sm text-red-200 flex items-start gap-2">
                         <span className="text-red-400 mt-0.5">•</span>
                         <div>

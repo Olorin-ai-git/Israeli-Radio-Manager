@@ -696,6 +696,28 @@ async def toggle_flow_status(request: Request, flow_id: str):
     return {"message": f"Flow status changed to {new_status}", "status": new_status}
 
 
+@router.post("/{flow_id}/reset", response_model=dict)
+async def reset_flow_status(request: Request, flow_id: str):
+    """Reset a stuck flow status from 'running' to 'active'."""
+    db = request.app.state.db
+
+    flow = await db.flows.find_one({"_id": ObjectId(flow_id)})
+    if not flow:
+        raise HTTPException(status_code=404, detail="Flow not found")
+
+    if flow.get("status") != "running":
+        return {"message": "Flow is not in running state", "status": flow.get("status")}
+
+    # Reset to active
+    await db.flows.update_one(
+        {"_id": ObjectId(flow_id)},
+        {"$set": {"status": "active"}}
+    )
+
+    logger.info(f"Reset stuck flow {flow_id} from 'running' to 'active'")
+    return {"message": "Flow status reset to active", "status": "active"}
+
+
 @router.post("/resync-calendar")
 async def resync_all_flows_to_calendar(request: Request):
     """Re-sync all active scheduled flows to Google Calendar."""

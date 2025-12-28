@@ -26,6 +26,7 @@ interface PlayerState {
   queue: Track[]
   isPlaying: boolean
   volume: number
+  hasUserInteracted: boolean  // Track if user has interacted with page (for autoplay policy)
 
   // Actions
   setCurrentTrack: (track: Track | null) => void
@@ -42,6 +43,7 @@ interface PlayerState {
   playNext: () => Promise<void>
   setIsPlaying: (playing: boolean) => void
   setVolume: (volume: number) => void
+  setUserInteracted: () => void  // Mark that user has interacted with the page
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
@@ -49,6 +51,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   queue: [],
   isPlaying: false,
   volume: 80,
+  hasUserInteracted: false,
 
   setCurrentTrack: (track) => set({ currentTrack: track }),
 
@@ -169,7 +172,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   setIsPlaying: (playing) => set({ isPlaying: playing }),
 
-  setVolume: (volume) => set({ volume })
+  setVolume: (volume) => set({ volume }),
+
+  setUserInteracted: () => set({ hasUserInteracted: true })
 }))
 
 // Fetch queue on store initialization

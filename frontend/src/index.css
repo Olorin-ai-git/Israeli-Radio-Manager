@@ -193,6 +193,38 @@
   animation: slide-in 0.3s ease-out forwards;
 }
 
+/* Slide up animation for panels */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out forwards;
+}
+
+/* Block drop animation */
+@keyframes block-drop {
+  0% {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-block-drop {
+  animation: block-drop 0.3s ease-out forwards;
+}
+
 /* Gradient text */
 .gradient-text {
   @apply bg-gradient-to-r from-primary-400 to-primary-600 bg-clip-text text-transparent;

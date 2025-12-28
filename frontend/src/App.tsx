@@ -8,6 +8,7 @@ import Upload from './pages/Upload'
 import AgentControl from './pages/AgentControl'
 import Settings from './pages/Settings'
 import CalendarPlaylist from './pages/CalendarPlaylist'
+import ActionsStudio from './pages/ActionsStudio'
 import ToastContainer from './components/Toast/ToastContainer'
 
 function App() {
@@ -32,6 +33,8 @@ function App() {
           <Route path="/upload" element={<Upload />} />
           <Route path="/agent" element={<AgentControl />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/actions-studio" element={<ActionsStudio />} />
+          <Route path="/actions-studio/:flowId" element={<ActionsStudio />} />
         </Routes>
       </Layout>
       <ToastContainer />
