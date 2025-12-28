@@ -26,8 +26,16 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const [chatExpanded, setChatExpanded] = useState(false)
   const [flowsCollapsed, setFlowsCollapsed] = useState(true)
-  const { currentTrack, playNext, playOrQueue } = usePlayerStore()
+  const { currentTrack, queue, playNext, playOrQueue } = usePlayerStore()
   const wsRef = useRef<WebSocket | null>(null)
+
+  // Auto-play from queue when nothing is playing
+  useEffect(() => {
+    if (!currentTrack && queue.length > 0) {
+      console.log('Auto-playing from queue - no current track but queue has items')
+      playNext()
+    }
+  }, [currentTrack, queue.length, playNext])
 
   // Panel width state with localStorage persistence
   const [flowsPanelWidth, setFlowsPanelWidth] = useState(() => {

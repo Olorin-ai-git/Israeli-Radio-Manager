@@ -65,20 +65,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   addToQueue: async (track) => {
+    const { currentTrack, isPlaying } = get()
+
+    // If nothing is playing, play immediately instead of queuing
+    if (!currentTrack || !isPlaying) {
+      set({ currentTrack: track, isPlaying: true })
+      return
+    }
+
     // Add to local queue state
     set((state) => ({ queue: [...state.queue, track] }))
 
-    // Call backend API to handle auto-play logic
+    // Call backend API to sync queue
     try {
-      const response = await api.addToQueue(track._id)
-      console.log('Queue response:', response)
-
-      // If backend auto-played it, update our state
-      if (response.auto_played) {
-        set({ currentTrack: track, isPlaying: true, queue: get().queue.filter(t => t._id !== track._id) })
-      }
+      await api.addToQueue(track._id)
     } catch (error) {
-      console.error('Failed to add to queue:', error)
+      console.error('Failed to sync queue to backend:', error)
     }
   },
 
