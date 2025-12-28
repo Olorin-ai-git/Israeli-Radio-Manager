@@ -694,6 +694,68 @@ async def toggle_flow_status(request: Request, flow_id: str):
     return {"message": f"Flow status changed to {new_status}", "status": new_status}
 
 
+@router.post("/resync-calendar")
+async def resync_all_flows_to_calendar(request: Request):
+    """Re-sync all active scheduled flows to Google Calendar."""
+    db = request.app.state.db
+
+    # Get all active scheduled flows
+    flows = await db.flows.find({
+        "trigger_type": "scheduled",
+        "status": "active",
+        "schedule": {"$exists": True}
+    }).to_list(None)
+
+    synced_count = 0
+    errors = []
+
+    for flow in flows:
+        try:
+            flow_id = str(flow["_id"])
+            schedule = flow.get("schedule", {})
+            existing_event_id = schedule.get("calendar_event_id")
+
+            # Delete existing calendar event if it exists
+            if existing_event_id:
+                try:
+                    calendar = GoogleCalendarService()
+                    await calendar.authenticate()
+                    await calendar.delete_event(existing_event_id)
+                    logger.info(f"Deleted old calendar event {existing_event_id} for flow {flow_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete old calendar event: {e}")
+
+            # Create new calendar event with correct recurrence
+            calendar_event_id = await sync_flow_to_calendar(
+                flow_id=flow_id,
+                flow_name=flow.get("name", "Unnamed Flow"),
+                flow_description=flow.get("description", ""),
+                schedule=schedule,
+                existing_event_id=None  # Force create new event
+            )
+
+            if calendar_event_id:
+                # Update flow with new calendar event ID
+                await db.flows.update_one(
+                    {"_id": ObjectId(flow_id)},
+                    {"$set": {"schedule.calendar_event_id": calendar_event_id}}
+                )
+                synced_count += 1
+                logger.info(f"Re-synced flow {flow_id} to calendar: {calendar_event_id}")
+            else:
+                errors.append(f"Failed to sync flow {flow.get('name')}")
+        except Exception as e:
+            logger.error(f"Error re-syncing flow {flow.get('name')}: {e}")
+            errors.append(f"Error syncing {flow.get('name')}: {str(e)}")
+
+    return {
+        "message": f"Re-synced {synced_count} flows to calendar",
+        "synced_count": synced_count,
+        "total_flows": len(flows),
+        "errors": errors
+    }
+
+
 async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
     """
     Execute flow actions. Returns the number of actions completed.
