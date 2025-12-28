@@ -266,6 +266,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
   const [showAddActionModal, setShowAddActionModal] = useState(false)
   const [selectedActionType, setSelectedActionType] = useState('play_genre')
   const [selectedCommercials, setSelectedCommercials] = useState<Set<string>>(new Set())
+  const [flowToPause, setFlowToPause] = useState<Flow | null>(null)
 
   // Fetch commercials for selection
   const { data: commercials } = useQuery({
@@ -694,7 +695,15 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
               {/* Action Buttons */}
               <div className="flex items-center gap-1 mt-2 pt-2 border-t border-white/5">
                 <button
-                  onClick={() => toggleMutation.mutate(flow._id)}
+                  onClick={() => {
+                    // If pausing an active flow, show confirmation
+                    if (flow.status === 'active') {
+                      setFlowToPause(flow)
+                    } else {
+                      // Resuming - no confirmation needed
+                      toggleMutation.mutate(flow._id)
+                    }
+                  }}
                   className="flex-1 glass-button py-1.5 text-xs flex items-center justify-center gap-1"
                   title={flow.status === 'active' ? (isRTL ? 'השהה' : 'Pause') : (isRTL ? 'הפעל' : 'Enable')}
                 >
@@ -1621,6 +1630,82 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Pause Flow Confirmation Modal */}
+      {flowToPause && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="glass-card p-6 w-full max-w-md mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-yellow-500/20 rounded-xl">
+                <Pause size={24} className="text-yellow-400" />
+              </div>
+              <h3 className="font-semibold text-dark-100 text-lg">
+                {isRTL ? 'השהיית זרימה' : 'Pause Flow'}
+              </h3>
+            </div>
+
+            <div className="space-y-3 mb-6">
+              <p className="text-dark-200">
+                {isRTL
+                  ? `האם אתה בטוח שברצונך להשהות את "${flowToPause.name}"?`
+                  : `Are you sure you want to pause "${flowToPause.name}"?`}
+              </p>
+
+              <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                <p className="text-sm text-yellow-200">
+                  {isRTL
+                    ? 'השהיית זרימה תבצע את הפעולות הבאות:'
+                    : 'Pausing this flow will:'}
+                </p>
+                <ul className="mt-2 space-y-1 text-sm text-dark-300" dir={isRTL ? 'rtl' : 'ltr'}>
+                  <li className="flex items-start gap-2">
+                    <span className="text-yellow-400 mt-0.5">•</span>
+                    <span>
+                      {isRTL
+                        ? 'מחק את האירוע מיומן Google Calendar'
+                        : 'Delete the event from Google Calendar'}
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-yellow-400 mt-0.5">•</span>
+                    <span>
+                      {isRTL
+                        ? 'עצור את הזרימה מלרוץ אוטומטית בזמנים המתוזמנים'
+                        : 'Stop the flow from running automatically at scheduled times'}
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-yellow-400 mt-0.5">•</span>
+                    <span>
+                      {isRTL
+                        ? 'ניתן יהיה להפעיל מחדש את הזרימה בכל עת'
+                        : 'You can resume the flow at any time'}
+                    </span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setFlowToPause(null)}
+                className="flex-1 glass-button py-2"
+              >
+                {isRTL ? 'ביטול' : 'Cancel'}
+              </button>
+              <button
+                onClick={() => {
+                  toggleMutation.mutate(flowToPause._id)
+                  setFlowToPause(null)
+                }}
+                className="flex-1 bg-yellow-500/80 hover:bg-yellow-500 text-dark-950 font-medium py-2 rounded-xl transition-colors"
+              >
+                {isRTL ? 'השהה זרימה' : 'Pause Flow'}
+              </button>
+            </div>
           </div>
         </div>
       )}

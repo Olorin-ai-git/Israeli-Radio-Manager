@@ -355,8 +355,9 @@ async def delete_flow(request: Request, flow_id: str):
 
 @router.post("/{flow_id}/toggle", response_model=dict)
 async def toggle_flow_status(request: Request, flow_id: str):
-    """Toggle flow between active and paused."""
+    """Toggle flow between active and paused. Updates Google Calendar accordingly."""
     db = request.app.state.db
+    calendar = request.app.state.google_calendar
 
     try:
         flow = await db.flows.find_one({"_id": ObjectId(flow_id)})
@@ -375,10 +376,52 @@ async def toggle_flow_status(request: Request, flow_id: str):
     else:
         new_status = FlowStatus.ACTIVE.value
 
+    # Update database
     await db.flows.update_one(
         {"_id": ObjectId(flow_id)},
         {"$set": {"status": new_status, "updated_at": datetime.utcnow()}}
     )
+
+    # Update Google Calendar if flow is scheduled and has a calendar event ID
+    calendar_event_id = flow.get("calendar_event_id")
+    if calendar_event_id and flow.get("trigger_type") == "scheduled":
+        try:
+            if new_status == FlowStatus.PAUSED.value:
+                # Delete the calendar event when paused
+                await calendar.delete_event(calendar_event_id)
+                logger.info(f"Deleted calendar event {calendar_event_id} for paused flow {flow_id}")
+
+                # Remove calendar_event_id from flow
+                await db.flows.update_one(
+                    {"_id": ObjectId(flow_id)},
+                    {"$unset": {"calendar_event_id": ""}}
+                )
+            else:
+                # Re-create calendar event when re-enabled
+                schedule = flow.get("schedule", {})
+                if schedule:
+                    event_data = await calendar.create_event(
+                        title=f"Flow: {flow.get('name', 'Unnamed')}",
+                        description=flow.get("description", ""),
+                        start_time=schedule.get("start_time"),
+                        end_time=schedule.get("end_time"),
+                        recurrence=schedule.get("recurrence"),
+                        days_of_week=schedule.get("days_of_week"),
+                        day_of_month=schedule.get("day_of_month"),
+                        month=schedule.get("month"),
+                        metadata={"flow_id": str(flow_id), "type": "flow"}
+                    )
+
+                    if event_data:
+                        # Store new calendar event ID
+                        await db.flows.update_one(
+                            {"_id": ObjectId(flow_id)},
+                            {"$set": {"calendar_event_id": event_data["id"]}}
+                        )
+                        logger.info(f"Created calendar event {event_data['id']} for resumed flow {flow_id}")
+        except Exception as e:
+            logger.error(f"Failed to update calendar for flow {flow_id}: {e}")
+            # Don't fail the toggle operation if calendar update fails
 
     return {"message": f"Flow status changed to {new_status}", "status": new_status}
 
