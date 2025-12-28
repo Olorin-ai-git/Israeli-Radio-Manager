@@ -261,6 +261,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
   const [editRecurrenceType, setEditRecurrenceType] = useState<RecurrenceType>('weekly')
   const [editFlowDescription, setEditFlowDescription] = useState('')
   const [editParsedActions, setEditParsedActions] = useState<any[]>([])
+  const [actionsManuallyModified, setActionsManuallyModified] = useState(false)
   const [previewActions, setPreviewActions] = useState<FlowAction[]>([])
   const [showAddActionModal, setShowAddActionModal] = useState(false)
   const [selectedActionType, setSelectedActionType] = useState('play_genre')
@@ -317,8 +318,13 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     return () => clearTimeout(timer)
   }, [flowDescription])
 
-  // Parse edit flow description using LLM API
+  // Parse edit flow description using LLM API (only if not manually modified)
   useEffect(() => {
+    // Skip auto-parsing if user has manually modified actions
+    if (actionsManuallyModified) {
+      return
+    }
+
     if (!editFlowDescription.trim()) {
       setEditParsedActions([])
       return
@@ -336,7 +342,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     }, 500) // Debounce 500ms
 
     return () => clearTimeout(timer)
-  }, [editFlowDescription])
+  }, [editFlowDescription, actionsManuallyModified])
 
   // Fetch flows
   const { data: flows, isLoading } = useQuery<Flow[]>({
@@ -380,6 +386,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     setEditingFlow(null)
     setEditFlowDescription('')
     setEditParsedActions([])
+    setActionsManuallyModified(false)
     setShowAddActionModal(false)
     setSelectedActionType('play_genre')
     setSelectedCommercials(new Set())
@@ -389,6 +396,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (over && active.id !== over.id) {
+      setActionsManuallyModified(true)
       setEditParsedActions((items) => {
         // Extract indices from the IDs (format: "action-0", "action-1", etc.)
         const oldIndex = parseInt(String(active.id).split('-')[1])
@@ -400,6 +408,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
 
   // Handle remove action
   const handleRemoveAction = (index: number) => {
+    setActionsManuallyModified(true)
     setEditParsedActions((items) => items.filter((_, idx) => idx !== index))
   }
 
@@ -429,6 +438,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
         : Array.from(selectedCommercials).join(',') // Specific commercials
     }
 
+    setActionsManuallyModified(true)
     setEditParsedActions((items) => [...items, newAction])
     setShowAddActionModal(false)
     setSelectedActionType('play_genre')
