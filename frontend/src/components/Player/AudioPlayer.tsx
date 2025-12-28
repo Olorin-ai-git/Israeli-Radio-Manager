@@ -136,6 +136,7 @@ export default function AudioPlayer({
   const audioRef = useRef<HTMLAudioElement>(null)
   const fadeAnimationRef = useRef<number | null>(null)
   const isFadingOutRef = useRef(false)
+  const needsFadeInRef = useRef(false) // Track if new track needs fade in
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [hasError, setHasError] = useState(false)
@@ -265,9 +266,11 @@ export default function AudioPlayer({
   // Load new track when track changes
   useEffect(() => {
     if (track && audioRef.current) {
-      // Cancel any ongoing fade from previous track
+      // Cancel any ongoing fade from previous track and reset all fade state
       cancelFade()
       isFadingOutRef.current = false
+      needsFadeInRef.current = true // Mark that this new track needs fade in
+      setIsFading(false) // Reset fading state
 
       const streamUrl = api.getStreamUrl(track._id)
       audioRef.current.src = streamUrl
@@ -281,6 +284,7 @@ export default function AudioPlayer({
           console.error('Playback error:', error)
           setIsLoading(false)
           setHasError(true)
+          needsFadeInRef.current = false // Don't fade in if error
           const errorMsg = isRTL
             ? `לא ניתן לנגן: ${track.title}. הקובץ לא נמצא.`
             : `Cannot play: ${track.title}. File not found.`
@@ -299,6 +303,7 @@ export default function AudioPlayer({
     setIsLoading(false)
     setHasError(true)
     setIsPlaying(false)
+    needsFadeInRef.current = false // Don't try to fade in on error
     const errorMsg = isRTL
       ? `שגיאה בניגון: ${track.title}. ייתכן שהקובץ לא קיים או שאין הרשאות גישה.`
       : `Playback error: ${track.title}. File may not exist or access denied.`
@@ -512,14 +517,22 @@ export default function AudioPlayer({
           onLoadedMetadata={handleLoadedMetadata}
           onPlay={() => {
             setIsPlaying(true)
-            // Trigger fade in when playback starts
-            if (!isFadingOutRef.current) {
+            // For resume from pause (not new track), fade in
+            if (!needsFadeInRef.current && !isFadingOutRef.current && audioRef.current) {
               fadeIn()
             }
           }}
           onPause={() => setIsPlaying(false)}
           onEnded={handleEnded}
-          onCanPlay={() => { setIsLoading(false); setHasError(false); }}
+          onCanPlay={() => {
+            setIsLoading(false)
+            setHasError(false)
+            // Trigger fade in for new tracks when audio is ready
+            if (needsFadeInRef.current) {
+              needsFadeInRef.current = false
+              fadeIn()
+            }
+          }}
           onWaiting={() => setIsLoading(true)}
           onError={handleError}
         />
