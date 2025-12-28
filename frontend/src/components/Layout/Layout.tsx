@@ -29,12 +29,21 @@ export default function Layout({ children }: LayoutProps) {
   const { currentTrack, queue, playNext, playNow } = usePlayerStore()
   const wsRef = useRef<WebSocket | null>(null)
   const lastPlayedIdRef = useRef<string | null>(null) // Prevent duplicate playback
+  const isAutoPlayingRef = useRef(false) // Prevent recursive auto-play
 
   // Auto-play from queue when nothing is playing
   useEffect(() => {
+    // Guard against rapid successive calls
+    if (isAutoPlayingRef.current) return
+
     if (!currentTrack && queue.length > 0) {
+      isAutoPlayingRef.current = true
       console.log('Auto-playing from queue - no current track but queue has items')
       playNext()
+      // Reset guard after a short delay
+      setTimeout(() => {
+        isAutoPlayingRef.current = false
+      }, 100)
     }
   }, [currentTrack, queue.length, playNext])
 
