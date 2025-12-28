@@ -14,7 +14,8 @@ import {
   Plus,
   Loader2,
   X,
-  RefreshCw
+  RefreshCw,
+  Repeat
 } from 'lucide-react'
 import { api } from '../services/api'
 import { usePlayerStore } from '../store/playerStore'
@@ -26,6 +27,7 @@ interface CalendarEvent {
   end: { dateTime?: string; date?: string }
   description?: string
   htmlLink?: string
+  recurrence?: string[]
   extendedProperties?: {
     private?: {
       radio_content_id?: string
@@ -332,6 +334,7 @@ export default function CalendarPlaylist() {
                   ) : (
                     events.map((event) => {
                       const contentType = event.extendedProperties?.private?.radio_content_type
+                      const isRecurring = event.recurrence && event.recurrence.length > 0
                       return (
                         <button
                           key={event.id}
@@ -345,6 +348,9 @@ export default function CalendarPlaylist() {
                             <span className="text-xs text-dark-400">
                               {formatTime(event.start.dateTime)}
                             </span>
+                            {isRecurring && (
+                              <Repeat size={12} className="text-primary-400" title="Recurring event" />
+                            )}
                           </div>
                           <p className="text-sm text-dark-100 truncate" dir="auto">
                             {event.summary}

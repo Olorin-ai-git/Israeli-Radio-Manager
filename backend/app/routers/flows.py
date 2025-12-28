@@ -99,12 +99,15 @@ async def sync_flow_to_calendar(
             # Recurring event with time of day
             start_time_str = schedule.get("start_time")
             end_time_str = schedule.get("end_time")
+            recurrence_type = schedule.get("recurrence", "weekly")
 
             if not start_time_str or not end_time_str:
                 logger.error("Recurring flow missing start_time or end_time")
                 return None
 
             days_of_week = schedule.get("days_of_week", [0, 1, 2, 3, 4, 5, 6])
+            day_of_month = schedule.get("day_of_month")
+            month = schedule.get("month")
 
             # Calculate next occurrence
             now = datetime.now()
@@ -115,9 +118,23 @@ async def sync_flow_to_calendar(
             if start_dt < now:
                 start_dt += timedelta(days=1)
 
-            # Find next valid day
-            while start_dt.weekday() not in [(d + 6) % 7 for d in days_of_week]:
-                start_dt += timedelta(days=1)
+            # Find next valid day based on recurrence type
+            if recurrence_type == "weekly":
+                # Convert Sunday=0 to Python's Monday=0 format
+                python_days = [(d + 6) % 7 for d in days_of_week]
+                while start_dt.weekday() not in python_days:
+                    start_dt += timedelta(days=1)
+            elif recurrence_type == "monthly":
+                # Find next occurrence of the day_of_month
+                if day_of_month:
+                    while start_dt.day != day_of_month:
+                        start_dt += timedelta(days=1)
+            elif recurrence_type == "yearly":
+                # Find next occurrence of the month and day
+                if month and day_of_month:
+                    while start_dt.month != month or start_dt.day != day_of_month:
+                        start_dt += timedelta(days=1)
+            # For daily, no need to adjust - any day works
 
             # Calculate end time
             end_hour, end_minute = map(int, end_time_str.split(":"))
@@ -125,11 +142,28 @@ async def sync_flow_to_calendar(
             if end_dt <= start_dt:
                 end_dt += timedelta(days=1)
 
-            # Build recurrence rule
-            recurrence = {
-                "frequency": "WEEKLY",
-                "by_day": [DAY_NAMES[d] for d in days_of_week]
-            }
+            # Build recurrence rule based on recurrence type
+            recurrence = None
+            if recurrence_type == "daily":
+                recurrence = {
+                    "frequency": "DAILY"
+                }
+            elif recurrence_type == "weekly":
+                recurrence = {
+                    "frequency": "WEEKLY",
+                    "by_day": [DAY_NAMES[d] for d in days_of_week]
+                }
+            elif recurrence_type == "monthly":
+                recurrence = {
+                    "frequency": "MONTHLY",
+                    "by_month_day": day_of_month
+                }
+            elif recurrence_type == "yearly":
+                recurrence = {
+                    "frequency": "YEARLY",
+                    "by_month": month,
+                    "by_month_day": day_of_month
+                }
 
             if existing_event_id:
                 try:
