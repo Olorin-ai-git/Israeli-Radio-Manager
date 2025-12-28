@@ -28,6 +28,7 @@ export default function Layout({ children }: LayoutProps) {
   const [flowsCollapsed, setFlowsCollapsed] = useState(true)
   const { currentTrack, queue, playNext, playNow } = usePlayerStore()
   const wsRef = useRef<WebSocket | null>(null)
+  const lastPlayedIdRef = useRef<string | null>(null) // Prevent duplicate playback
 
   // Auto-play from queue when nothing is playing
   useEffect(() => {
@@ -73,6 +74,21 @@ export default function Layout({ children }: LayoutProps) {
           if (message.type === 'scheduled_playback') {
             // Chat-requested content should play immediately
             const content = message.data
+
+            // Prevent duplicate playback (multiple WS connections or re-renders)
+            if (lastPlayedIdRef.current === content._id) {
+              console.log('Skipping duplicate playback for:', content.title)
+              return
+            }
+            lastPlayedIdRef.current = content._id
+
+            // Clear the duplicate check after 2 seconds to allow replaying same song
+            setTimeout(() => {
+              if (lastPlayedIdRef.current === content._id) {
+                lastPlayedIdRef.current = null
+              }
+            }, 2000)
+
             console.log('Chat playback triggered:', content)
 
             const track = {

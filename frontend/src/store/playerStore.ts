@@ -55,18 +55,27 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   // Interrupt current playback and play immediately (for chat requests)
   playNow: (track) => {
-    const { currentTrack } = get()
+    const { currentTrack, queue } = get()
 
-    // If something is playing, optionally save it to front of queue
+    // If same track is already playing, just ensure it's playing
+    if (currentTrack && currentTrack._id === track._id) {
+      set({ isPlaying: true })
+      return
+    }
+
+    // Remove this track from queue if it's already there (prevent duplicates)
+    const filteredQueue = queue.filter(t => t._id !== track._id)
+
+    // If something different is playing, save it to front of queue
     if (currentTrack) {
       // Put current track at front of queue so it can resume after
-      set((state) => ({
+      set({
         currentTrack: track,
         isPlaying: true,
-        queue: [currentTrack, ...state.queue]
-      }))
+        queue: [currentTrack, ...filteredQueue]
+      })
     } else {
-      set({ currentTrack: track, isPlaying: true })
+      set({ currentTrack: track, isPlaying: true, queue: filteredQueue })
     }
   },
 
