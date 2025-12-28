@@ -328,11 +328,11 @@ export default function Dashboard() {
         </div>
 
         {/* Recent Activity */}
-        <div className="glass-card p-6">
+        <div className="glass-card p-6 flex flex-col max-h-[600px]">
           <h2 className="text-lg font-semibold text-dark-100 mb-4">{t('dashboard.recentActivity')}</h2>
-          <div className="space-y-2 max-h-80 overflow-y-auto">
+          <div className="space-y-2 flex-1 overflow-y-auto pr-2">
             {playbackHistory && playbackHistory.length > 0 ? (
-              playbackHistory.slice(0, 8).map((item: any) => {
+              playbackHistory.map((item: any) => {
                 const playedAt = new Date(item.started_at)
                 const typeColors: Record<string, string> = {
                   song: 'text-sky-400',
@@ -362,8 +362,8 @@ export default function Dashboard() {
                 )
               })
             ) : (
-              <div className="text-dark-500 text-center py-8">
-                <Clock size={40} className="mx-auto mb-2 text-dark-600" />
+              <div className="flex-1 flex flex-col items-center justify-center text-dark-500">
+                <Clock size={40} className="mb-2 text-dark-600" />
                 <p className="text-sm">{isRTL ? 'אין פעילות אחרונה' : 'No recent activity'}</p>
               </div>
             )}

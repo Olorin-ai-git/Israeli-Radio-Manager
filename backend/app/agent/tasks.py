@@ -1060,53 +1060,124 @@ class TaskExecutor:
     # Flow execution methods
 
     async def _execute_create_flow(self, task: ParsedTask) -> Dict[str, Any]:
-        """Create a new auto flow from natural language description."""
+        """Create a new auto flow from natural language description using Claude AI."""
         description = task.parameters.get("description", task.original_text)
 
-        # Use the parse endpoint to convert natural language to flow
-        from app.routers.flows import router as flows_router
-        import re
+        # Use Claude AI to parse the flow description (same mechanism as /parse-natural endpoint)
+        import anthropic
+        import json
+        from app.config import settings
 
-        # Parse the description into actions
         actions = []
-        parts = re.split(r',\s*then\s*|,\s*אז\s*|,\s*ואז\s*', description, flags=re.IGNORECASE)
+        schedule = None
 
-        genre_map = {
-            "חסידי": "hasidi", "חסידית": "hasidi",
-            "מזרחי": "mizrahi", "מזרחית": "mizrahi",
-            "פופ": "pop", "רוק": "rock",
-            "ים תיכוני": "mediterranean", "קלאסי": "classic", "עברי": "hebrew",
-        }
+        if not settings.anthropic_api_key:
+            logger.warning("ANTHROPIC_API_KEY not set, falling back to regex parsing")
+            # Fallback to basic regex parsing
+            import re
+            parts = re.split(r',\s*then\s*|,\s*אז\s*|,\s*ואז\s*', description, flags=re.IGNORECASE)
+            genre_map = {
+                "חסידי": "hasidi", "חסידית": "hasidi",
+                "מזרחי": "mizrahi", "מזרחית": "mizrahi",
+                "פופ": "pop", "רוק": "rock",
+                "ים תיכוני": "mediterranean", "קלאסי": "classic", "עברי": "hebrew",
+            }
+            for part in parts:
+                part = part.strip().lower()
+                genre_match = re.search(r'(?:play|נגן|השמע)\s+(\w+)\s+(?:music|מוזיקה)?', part)
+                if genre_match:
+                    genre = genre_match.group(1)
+                    genre = genre_map.get(genre, genre)
+                    duration_match = re.search(r'(?:for|במשך)\s+(\d+)\s*(?:minutes?|min|דקות?)', part)
+                    duration = int(duration_match.group(1)) if duration_match else 30
+                    actions.append({
+                        "action_type": "play_genre",
+                        "genre": genre,
+                        "duration_minutes": duration,
+                        "description": f"Play {genre} music for {duration} minutes"
+                    })
+                    continue
+                commercial_match = re.search(r'(?:play|נגן|השמע)\s+(\d+)\s+(?:commercials?|פרסומות?)', part)
+                if commercial_match:
+                    count = int(commercial_match.group(1))
+                    actions.append({
+                        "action_type": "play_commercials",
+                        "commercial_count": count,
+                        "description": f"Play {count} commercial(s)"
+                    })
+        else:
+            # Use Claude AI for parsing
+            try:
+                client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
-        for part in parts:
-            part = part.strip().lower()
+                prompt = f"""Parse this radio flow description into structured actions. Return ONLY a JSON array of actions, no explanations.
 
-            # Parse genre
-            genre_match = re.search(r'(?:play|נגן|השמע)\s+(\w+)\s+(?:music|מוזיקה)?', part)
-            if genre_match:
-                genre = genre_match.group(1)
-                genre = genre_map.get(genre, genre)
-                duration_match = re.search(r'(?:for|במשך)\s+(\d+)\s*(?:minutes?|min|דקות?)', part)
-                duration = int(duration_match.group(1)) if duration_match else 30
+Available action types:
+- play_genre: Play music from a genre (hasidi, mizrahi, happy, israeli, pop, rock, mediterranean, classic, hebrew, all, mixed)
+- play_commercials: Play commercials. Support:
+  * Specific count: commercial_count (number)
+  * Batch number: batch_number (1, 2, 3, etc.) - refers to predefined commercial batches
+  * Use 999 for ALL commercials
+  * If "Batch-1", "Batch-2" etc mentioned, set batch_number field
+- wait: Wait for a duration
+- set_volume: Set volume level
 
-                actions.append({
-                    "action_type": "play_genre",
-                    "genre": genre,
-                    "duration_minutes": duration,
-                    "description": f"Play {genre} music for {duration} minutes"
-                })
-                continue
+Description: {description}
 
-            # Parse commercials
-            commercial_match = re.search(r'(?:play|נגן|השמע)\s+(\d+)\s+(?:commercials?|פרסומות?)', part)
-            if commercial_match:
-                count = int(commercial_match.group(1))
-                actions.append({
-                    "action_type": "play_commercials",
-                    "commercial_count": count,
-                    "description": f"Play {count} commercial(s)"
-                })
-                continue
+PARSING RULES:
+1. If description mentions ALTERNATING patterns (e.g., "every 30 minutes", "on the hour do X, on the half-hour do Y"), create a sequence that can loop
+2. For time-based patterns, create actions in the order they would execute in one cycle
+3. Each commercial batch mention should be a SEPARATE action
+4. IMPORTANT: After EVERY commercial action, add a music action to continue playing
+5. If the last action is commercials, ALWAYS add a final music action so the loop is complete
+6. If "repeat" or "loop" is mentioned, the flow should loop - still create the action sequence for one cycle
+
+Examples:
+
+Input: "Play happy music, then 2 commercials, then mizrahi"
+Output:
+[
+  {{"action_type": "play_genre", "genre": "happy", "duration_minutes": 30, "description": "Play happy music"}},
+  {{"action_type": "play_commercials", "commercial_count": 2, "description": "Play 2 commercials"}},
+  {{"action_type": "play_genre", "genre": "mizrahi", "duration_minutes": 30, "description": "Play mizrahi music"}}
+]
+
+Input: "Play music, every 30 min check time: on the hour play Batch-1 commercials, on half-hour play Batch-2 commercials, then continue music"
+Output:
+[
+  {{"action_type": "play_genre", "genre": "mixed", "duration_minutes": 30, "description": "Play music"}},
+  {{"action_type": "play_commercials", "batch_number": 1, "description": "Play Batch-1 commercials (on the hour)"}},
+  {{"action_type": "play_genre", "genre": "mixed", "duration_minutes": 30, "description": "Continue playing music"}},
+  {{"action_type": "play_commercials", "batch_number": 2, "description": "Play Batch-2 commercials (on half-hour)"}},
+  {{"action_type": "play_genre", "genre": "mixed", "duration_minutes": 30, "description": "Continue playing music"}}
+]
+
+Now parse this description: {description}
+
+Return the JSON array:"""
+
+                response = client.messages.create(
+                    model="claude-3-haiku-20240307",
+                    max_tokens=1024,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+
+                # Extract JSON from response
+                response_text = response.content[0].text.strip()
+
+                # Remove markdown code blocks if present
+                if response_text.startswith("```"):
+                    lines = response_text.split("\n")
+                    response_text = "\n".join(lines[1:-1])
+                if response_text.startswith("json"):
+                    response_text = response_text[4:].strip()
+
+                actions = json.loads(response_text)
+                logger.info(f"Claude parsed {len(actions)} actions from: {description}")
+
+            except Exception as e:
+                logger.error(f"Failed to parse with Claude: {e}")
+                # actions will remain empty, and we'll return an error below
 
         if not actions:
             return {
@@ -1115,19 +1186,32 @@ class TaskExecutor:
                 "message_en": "Couldn't parse flow. Try: 'play hasidi music, then play 2 commercials, then play mizrahi'"
             }
 
-        # Extract schedule if present
-        schedule = None
-        time_match = re.search(r'(?:between|from|at|בין|מ-?|ב-?)\s*(\d{1,2})(?::(\d{2}))?\s*(?:am|בבוקר)?', description, re.IGNORECASE)
+        # Extract schedule from text
+        import re
+        time_match = re.search(
+            r'(?:between|from|at|בין|מ-?|ב-?)\s*(\d{1,2})(?::(\d{2}))?\s*(?:am|בבוקר)?(?:\s*(?:-|to|עד)\s*(\d{1,2})(?::(\d{2}))?\s*(?:am|pm|בבוקר|בערב)?)?',
+            description, re.IGNORECASE
+        )
         if time_match:
             start_hour = int(time_match.group(1))
             start_min = int(time_match.group(2) or 0)
             schedule = {
+                "recurrence": "weekly",
                 "start_time": f"{start_hour:02d}:{start_min:02d}",
-                "days_of_week": [0, 1, 2, 3, 4, 5, 6]
+                "days_of_week": task.parameters.get("schedule_days", [0, 1, 2, 3, 4, 5, 6])
             }
+            if time_match.group(3):
+                end_hour = int(time_match.group(3))
+                end_min = int(time_match.group(4) or 0)
+                schedule["end_time"] = f"{end_hour:02d}:{end_min:02d}"
+
+        # Check for loop keyword
+        loop = task.parameters.get("loop", False)
+        if not loop and re.search(r'\b(loop|repeat|חזור|לולאה)\b', description, re.IGNORECASE):
+            loop = True
 
         # Create the flow
-        flow_name = task.parameters.get("name", f"Flow {datetime.now().strftime('%H:%M')}")
+        flow_name = task.parameters.get("name", f"Flow from chat {datetime.now().strftime('%Y-%m-%d %H:%M')}")
         flow_doc = {
             "name": flow_name,
             "name_he": flow_name,
@@ -1137,7 +1221,7 @@ class TaskExecutor:
             "schedule": schedule,
             "status": "active",
             "priority": 0,
-            "loop": False,
+            "loop": loop,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
             "last_run": None,

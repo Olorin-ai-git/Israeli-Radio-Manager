@@ -565,10 +565,13 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
       <div className="w-12 h-full glass-sidebar flex flex-col items-center py-4 gap-4 relative overflow-visible">
         <button
           onClick={onToggle}
-          className="absolute -right-4 top-4 z-30 glass-button-primary p-2 rounded-full shadow-glow"
+          className="absolute -right-4 top-1/2 -translate-y-1/2 z-30 glass-button-primary p-3 rounded-r-xl shadow-glow flex items-center gap-2"
           title={isRTL ? 'הצג זרימות' : 'Show Flows'}
         >
-          <ChevronRight size={16} />
+          <Workflow size={24} />
+          <span className="text-sm font-medium hidden md:inline">
+            {isRTL ? 'זרימות' : 'Flows'}
+          </span>
         </button>
         <Workflow size={20} className="text-primary-400" />
         {flows?.slice(0, 5).map((flow) => (

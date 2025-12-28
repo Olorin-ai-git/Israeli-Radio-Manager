@@ -77,7 +77,11 @@ export default function CalendarPlaylist() {
 
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null)
   const [showScheduleModal, setShowScheduleModal] = useState(false)
+  const [scheduleType, setScheduleType] = useState<'content' | 'flow'>('content')
   const [selectedContentId, setSelectedContentId] = useState<string>('')
+  const [selectedFlowId, setSelectedFlowId] = useState<string>('')
+  const [contentTypeFilter, setContentTypeFilter] = useState<string>('all')
+  const [genreFilter, setGenreFilter] = useState<string>('all')
   const [preselectedDate, setPreselectedDate] = useState<string>('')
   const [scheduleRecurrence, setScheduleRecurrence] = useState<'none' | 'daily' | 'weekly'>('none')
   const [scheduleDaysOfWeek, setScheduleDaysOfWeek] = useState<number[]>([0, 1, 2, 3, 4, 5, 6])
@@ -102,6 +106,35 @@ export default function CalendarPlaylist() {
     queryFn: () => api.getContent(),
   })
 
+  // Fetch flows for scheduling
+  const { data: allFlows } = useQuery({
+    queryKey: ['flows'],
+    queryFn: () => api.getFlows(),
+  })
+
+  // Fetch commercials for batch info
+  const { data: commercials } = useQuery({
+    queryKey: ['commercials'],
+    queryFn: () => api.getCommercials(),
+  })
+
+  // Filter content based on type and genre
+  const filteredContent = allContent?.filter((content: any) => {
+    if (contentTypeFilter !== 'all' && content.type !== contentTypeFilter) {
+      return false
+    }
+    if (genreFilter !== 'all' && content.genre !== genreFilter) {
+      return false
+    }
+    return true
+  })
+
+  // Get unique genres from content
+  const genres = [...new Set(allContent?.map((c: any) => c.genre).filter(Boolean))] as string[]
+
+  // Get commercial batches
+  const commercialBatches = [...new Set(commercials?.map((c: any) => c.batch_number).filter((b: number) => b))] as number[]
+
   // Delete event mutation
   const deleteMutation = useMutation({
     mutationFn: (eventId: string) => api.deleteCalendarEvent(eventId),
@@ -120,7 +153,13 @@ export default function CalendarPlaylist() {
       queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
       setShowScheduleModal(false)
       setSelectedContentId('')
+      setSelectedFlowId('')
       setScheduleError(null)
+      setScheduleType('content')
+      setContentTypeFilter('all')
+      setGenreFilter('all')
+      setScheduleRecurrence('none')
+      setScheduleDaysOfWeek([0, 1, 2, 3, 4, 5, 6])
     },
     onError: (error: any) => {
       const message = error?.response?.data?.detail || error.message || 'Failed to schedule content'
@@ -197,45 +236,88 @@ export default function CalendarPlaylist() {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
 
-    const contentId = selectedContentId
-    if (!contentId) return
+    if (scheduleType === 'flow') {
+      // Schedule a flow execution
+      const flowId = selectedFlowId
+      if (!flowId) return
 
-    if (scheduleRecurrence === 'none') {
-      // One-time event: use datetime-local
-      const startDatetime = formData.get('start_datetime') as string
-      if (!startDatetime) return
+      // For flows, we just trigger them to run (flows handle their own scheduling)
+      // This creates a calendar marker for when the flow will run
+      if (scheduleRecurrence === 'none') {
+        const startDatetime = formData.get('start_datetime') as string
+        if (!startDatetime) return
+        const startTime = new Date(startDatetime)
 
-      const startTime = new Date(startDatetime)
+        createMutation.mutate({
+          flow_id: flowId,
+          start_time: startTime.toISOString(),
+          reminder_minutes: 30,
+          reminder_method: 'popup',
+        })
+      } else {
+        const time = formData.get('time') as string
+        if (!time) return
 
-      createMutation.mutate({
-        content_id: contentId,
-        start_time: startTime.toISOString(),
-        reminder_minutes: 30,
-        reminder_method: 'popup',
-      })
+        const today = new Date()
+        const [hours, minutes] = time.split(':')
+        today.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+
+        const eventData: any = {
+          flow_id: flowId,
+          start_time: today.toISOString(),
+          reminder_minutes: 30,
+          reminder_method: 'popup',
+          recurrence: scheduleRecurrence,
+        }
+
+        if (scheduleRecurrence === 'weekly') {
+          eventData.days_of_week = scheduleDaysOfWeek
+        }
+
+        createMutation.mutate(eventData)
+      }
     } else {
-      // Recurring event: use time with recurrence
-      const time = formData.get('time') as string
-      if (!time) return
+      // Schedule content
+      const contentId = selectedContentId
+      if (!contentId) return
 
-      // Use today's date as the starting point
-      const today = new Date()
-      const [hours, minutes] = time.split(':')
-      today.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+      if (scheduleRecurrence === 'none') {
+        // One-time event: use datetime-local
+        const startDatetime = formData.get('start_datetime') as string
+        if (!startDatetime) return
 
-      const eventData: any = {
-        content_id: contentId,
-        start_time: today.toISOString(),
-        reminder_minutes: 30,
-        reminder_method: 'popup',
-        recurrence: scheduleRecurrence,
+        const startTime = new Date(startDatetime)
+
+        createMutation.mutate({
+          content_id: contentId,
+          start_time: startTime.toISOString(),
+          reminder_minutes: 30,
+          reminder_method: 'popup',
+        })
+      } else {
+        // Recurring event: use time with recurrence
+        const time = formData.get('time') as string
+        if (!time) return
+
+        // Use today's date as the starting point
+        const today = new Date()
+        const [hours, minutes] = time.split(':')
+        today.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+
+        const eventData: any = {
+          content_id: contentId,
+          start_time: today.toISOString(),
+          reminder_minutes: 30,
+          reminder_method: 'popup',
+          recurrence: scheduleRecurrence,
+        }
+
+        if (scheduleRecurrence === 'weekly') {
+          eventData.days_of_week = scheduleDaysOfWeek
+        }
+
+        createMutation.mutate(eventData)
       }
-
-      if (scheduleRecurrence === 'weekly') {
-        eventData.days_of_week = scheduleDaysOfWeek
-      }
-
-      createMutation.mutate(eventData)
     }
   }
 
@@ -273,6 +355,11 @@ export default function CalendarPlaylist() {
               setPreselectedDate('')
               setShowScheduleModal(true)
               setScheduleError(null)
+              setScheduleType('content')
+              setContentTypeFilter('all')
+              setGenreFilter('all')
+              setSelectedContentId('')
+              setSelectedFlowId('')
             }}
             className="glass-button-primary flex items-center gap-2 px-4 py-2"
           >
@@ -479,6 +566,11 @@ export default function CalendarPlaylist() {
                   setScheduleRecurrence('none')
                   setScheduleDaysOfWeek([0, 1, 2, 3, 4, 5, 6])
                   setScheduleError(null)
+                  setScheduleType('content')
+                  setContentTypeFilter('all')
+                  setGenreFilter('all')
+                  setSelectedContentId('')
+                  setSelectedFlowId('')
                 }}
                 className="p-2 hover:bg-white/10 rounded-lg"
               >
@@ -493,24 +585,153 @@ export default function CalendarPlaylist() {
                 </div>
               )}
 
+              {/* Schedule Type Selection */}
               <div>
                 <label className="block text-dark-300 text-sm mb-2">
-                  {isRTL ? 'בחר תוכן' : 'Select Content'}
+                  {isRTL ? 'סוג תזמון' : 'Schedule Type'}
                 </label>
-                <select
-                  value={selectedContentId}
-                  onChange={(e) => setSelectedContentId(e.target.value)}
-                  className="w-full glass-input"
-                  required
-                >
-                  <option value="">{isRTL ? '-- בחר --' : '-- Select --'}</option>
-                  {allContent?.map((content: any) => (
-                    <option key={content._id} value={content._id}>
-                      {content.title} {content.artist ? `- ${content.artist}` : ''} ({content.type})
-                    </option>
-                  ))}
-                </select>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScheduleType('content')
+                      setSelectedFlowId('')
+                    }}
+                    className={`flex-1 py-2 px-4 rounded-lg text-sm transition-colors ${
+                      scheduleType === 'content'
+                        ? 'bg-primary-500/20 text-primary-400 border border-primary-500/50'
+                        : 'glass-button'
+                    }`}
+                  >
+                    {isRTL ? 'תוכן' : 'Content'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScheduleType('flow')
+                      setSelectedContentId('')
+                    }}
+                    className={`flex-1 py-2 px-4 rounded-lg text-sm transition-colors ${
+                      scheduleType === 'flow'
+                        ? 'bg-primary-500/20 text-primary-400 border border-primary-500/50'
+                        : 'glass-button'
+                    }`}
+                  >
+                    {isRTL ? 'תזרים' : 'Flow'}
+                  </button>
+                </div>
               </div>
+
+              {/* Content Selection */}
+              {scheduleType === 'content' && (
+                <>
+                  {/* Content Type Filter */}
+                  <div>
+                    <label className="block text-dark-300 text-xs mb-1">
+                      {isRTL ? 'סוג תוכן' : 'Content Type'}
+                    </label>
+                    <select
+                      value={contentTypeFilter}
+                      onChange={(e) => {
+                        setContentTypeFilter(e.target.value)
+                        setGenreFilter('all')
+                      }}
+                      className="w-full glass-input text-sm"
+                    >
+                      <option value="all">{isRTL ? 'הכל' : 'All'}</option>
+                      <option value="song">{isRTL ? 'שירים' : 'Songs'}</option>
+                      <option value="show">{isRTL ? 'תוכניות' : 'Shows'}</option>
+                      <option value="commercial">{isRTL ? 'פרסומות' : 'Commercials'}</option>
+                    </select>
+                  </div>
+
+                  {/* Genre Filter (only for songs) */}
+                  {contentTypeFilter !== 'commercial' && (
+                    <div>
+                      <label className="block text-dark-300 text-xs mb-1">
+                        {isRTL ? 'ז׳אנר' : 'Genre'}
+                      </label>
+                      <select
+                        value={genreFilter}
+                        onChange={(e) => setGenreFilter(e.target.value)}
+                        className="w-full glass-input text-sm"
+                      >
+                        <option value="all">{isRTL ? 'כל הז׳אנרים' : 'All Genres'}</option>
+                        {genres.map((genre) => (
+                          <option key={genre} value={genre}>
+                            {genre}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Commercial Batches Info */}
+                  {contentTypeFilter === 'commercial' && commercialBatches.length > 0 && (
+                    <div className="p-2 bg-dark-800/30 rounded-lg">
+                      <p className="text-xs text-dark-400 mb-1">
+                        {isRTL ? 'אצוות זמינות' : 'Available Batches'}
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {commercialBatches.map((batch) => (
+                          <span
+                            key={batch}
+                            className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded text-xs"
+                          >
+                            #{batch}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Content Selector */}
+                  <div>
+                    <label className="block text-dark-300 text-sm mb-2">
+                      {isRTL ? 'בחר תוכן' : 'Select Content'}
+                    </label>
+                    <select
+                      value={selectedContentId}
+                      onChange={(e) => setSelectedContentId(e.target.value)}
+                      className="w-full glass-input"
+                      required
+                    >
+                      <option value="">{isRTL ? '-- בחר --' : '-- Select --'}</option>
+                      {filteredContent?.map((content: any) => (
+                        <option key={content._id} value={content._id}>
+                          {content.title}
+                          {content.artist ? ` - ${content.artist}` : ''}
+                          {content.type === 'commercial' && content.batch_number ? ` [Batch #${content.batch_number}]` : ''}
+                          {content.genre && content.type === 'song' ? ` (${content.genre})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {/* Flow Selection */}
+              {scheduleType === 'flow' && (
+                <div>
+                  <label className="block text-dark-300 text-sm mb-2">
+                    {isRTL ? 'בחר תזרים' : 'Select Flow'}
+                  </label>
+                  <select
+                    value={selectedFlowId}
+                    onChange={(e) => setSelectedFlowId(e.target.value)}
+                    className="w-full glass-input"
+                    required
+                  >
+                    <option value="">{isRTL ? '-- בחר --' : '-- Select --'}</option>
+                    {allFlows?.map((flow: any) => (
+                      <option key={flow._id} value={flow._id}>
+                        {isRTL && flow.name_he ? flow.name_he : flow.name}
+                        {flow.schedule?.recurrence && ` (${flow.schedule.recurrence})`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Schedule Settings */}
               <div className="space-y-3 p-3 bg-dark-800/30 rounded-lg">
@@ -604,6 +825,11 @@ export default function CalendarPlaylist() {
                     setScheduleRecurrence('none')
                     setScheduleDaysOfWeek([0, 1, 2, 3, 4, 5, 6])
                     setScheduleError(null)
+                    setScheduleType('content')
+                    setContentTypeFilter('all')
+                    setGenreFilter('all')
+                    setSelectedContentId('')
+                    setSelectedFlowId('')
                   }}
                   className="flex-1 glass-button py-2"
                 >
