@@ -547,12 +547,8 @@ export default function AudioPlayer({
           onLoadedMetadata={handleLoadedMetadata}
           onPlay={() => {
             setIsPlaying(true)
-            // Fade in on play - for both new tracks and resume from pause
-            if (!isFadingOutRef.current && audioRef.current) {
-              // Clear the new track flag if set
-              if (needsFadeInRef.current) {
-                needsFadeInRef.current = false
-              }
+            // Fade in on resume from pause (not for new tracks - those use onCanPlay)
+            if (!isFadingOutRef.current && audioRef.current && !needsFadeInRef.current) {
               fadeIn()
             }
           }}
@@ -561,6 +557,11 @@ export default function AudioPlayer({
           onCanPlay={() => {
             setIsLoading(false)
             setHasError(false)
+            // Trigger fade in when audio is ready and we need it
+            if (needsFadeInRef.current && audioRef.current && !isFadingOutRef.current) {
+              needsFadeInRef.current = false
+              fadeIn()
+            }
           }}
           onWaiting={() => setIsLoading(true)}
           onError={handleError}
