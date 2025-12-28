@@ -137,6 +137,7 @@ export default function AudioPlayer({
   const fadeAnimationRef = useRef<number | null>(null)
   const isFadingOutRef = useRef(false)
   const needsFadeInRef = useRef(false) // Track if new track needs fade in
+  const currentTrackIdRef = useRef<string | null>(null) // Prevent reloading same track
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [hasError, setHasError] = useState(false)
@@ -266,6 +267,13 @@ export default function AudioPlayer({
   // Load new track when track changes
   useEffect(() => {
     if (track && audioRef.current) {
+      // Skip if same track (prevents duplicate loading from multiple renders)
+      if (currentTrackIdRef.current === track._id) {
+        console.log('Skipping duplicate track load:', track.title)
+        return
+      }
+      currentTrackIdRef.current = track._id
+
       // Cancel any ongoing fade from previous track and reset all fade state
       cancelFade()
       isFadingOutRef.current = false
@@ -294,6 +302,9 @@ export default function AudioPlayer({
 
       // Log playback start
       api.logPlayStart(track._id).catch(console.error)
+    } else if (!track) {
+      // Reset when track is cleared
+      currentTrackIdRef.current = null
     }
   }, [track, autoPlay, isRTL])
 
