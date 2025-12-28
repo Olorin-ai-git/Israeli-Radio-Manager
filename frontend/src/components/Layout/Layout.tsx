@@ -29,6 +29,19 @@ export default function Layout({ children }: LayoutProps) {
   const { currentTrack, playNext, playOrQueue } = usePlayerStore()
   const wsRef = useRef<WebSocket | null>(null)
 
+  // Panel width state with localStorage persistence
+  const [flowsPanelWidth, setFlowsPanelWidth] = useState(() => {
+    const saved = localStorage.getItem('flowsPanelWidth')
+    return saved ? parseInt(saved) : 288 // Default 288px (18rem)
+  })
+  const [chatPanelWidth, setChatPanelWidth] = useState(() => {
+    const saved = localStorage.getItem('chatPanelWidth')
+    return saved ? parseInt(saved) : 384 // Default 384px (24rem)
+  })
+
+  const isResizingFlows = useRef(false)
+  const isResizingChat = useRef(false)
+
   const isRTL = i18n.language === 'he'
 
   // WebSocket connection for real-time updates (scheduled playback)
@@ -130,6 +143,71 @@ export default function Layout({ children }: LayoutProps) {
     i18n.changeLanguage(i18n.language === 'en' ? 'he' : 'en')
   }
 
+  // Resize handlers for Flows panel
+  const handleFlowsResizeStart = () => {
+    isResizingFlows.current = true
+    document.body.style.cursor = 'ew-resize'
+    document.body.style.userSelect = 'none'
+  }
+
+  const handleFlowsResizeMove = (e: MouseEvent) => {
+    if (!isResizingFlows.current) return
+    const newWidth = Math.max(200, Math.min(600, e.clientX))
+    setFlowsPanelWidth(newWidth)
+  }
+
+  const handleFlowsResizeEnd = () => {
+    if (isResizingFlows.current) {
+      isResizingFlows.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      localStorage.setItem('flowsPanelWidth', flowsPanelWidth.toString())
+    }
+  }
+
+  // Resize handlers for Chat panel
+  const handleChatResizeStart = () => {
+    isResizingChat.current = true
+    document.body.style.cursor = 'ew-resize'
+    document.body.style.userSelect = 'none'
+  }
+
+  const handleChatResizeMove = (e: MouseEvent) => {
+    if (!isResizingChat.current) return
+    const newWidth = Math.max(300, Math.min(800, window.innerWidth - e.clientX))
+    setChatPanelWidth(newWidth)
+  }
+
+  const handleChatResizeEnd = () => {
+    if (isResizingChat.current) {
+      isResizingChat.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      localStorage.setItem('chatPanelWidth', chatPanelWidth.toString())
+    }
+  }
+
+  // Add global mouse event listeners
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      handleFlowsResizeMove(e)
+      handleChatResizeMove(e)
+    }
+
+    const handleMouseUp = () => {
+      handleFlowsResizeEnd()
+      handleChatResizeEnd()
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [flowsPanelWidth, chatPanelWidth])
+
   return (
     <div className="h-screen bg-dark-950 overflow-hidden">
       {/* Background gradient overlay */}
@@ -140,17 +218,29 @@ export default function Layout({ children }: LayoutProps) {
       <div className="fixed bottom-20 right-20 w-80 h-80 bg-primary-600/5 rounded-full blur-3xl pointer-events-none" />
 
       {/* Flows Panel - Fixed on left side */}
-      <div className={`fixed left-0 top-0 h-full z-20 transition-all duration-300 overflow-visible ${flowsCollapsed ? 'w-12' : 'w-72'}`}>
+      <div
+        className="fixed left-0 top-0 h-full z-20 overflow-visible"
+        style={{ width: flowsCollapsed ? '48px' : `${flowsPanelWidth}px` }}
+      >
         <FlowsPanel
           collapsed={flowsCollapsed}
           onToggle={() => setFlowsCollapsed(!flowsCollapsed)}
         />
+        {/* Resize Handle */}
+        {!flowsCollapsed && (
+          <div
+            className="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-primary-500/50 transition-colors group"
+            onMouseDown={handleFlowsResizeStart}
+          >
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-12 bg-primary-500/30 group-hover:bg-primary-500 rounded-full transition-colors" />
+          </div>
+        )}
       </div>
 
       {/* Main layout container - offset by flows panel width */}
       <div
-        className={`h-full flex transition-all duration-300`}
-        style={{ marginLeft: flowsCollapsed ? '3rem' : '18rem' }}
+        className="h-full flex transition-none"
+        style={{ marginLeft: flowsCollapsed ? '48px' : `${flowsPanelWidth}px` }}
       >
         {/* Sidebar Navigation - Right side for English, Left side for Hebrew */}
         <nav className={`relative z-10 w-64 glass-sidebar flex flex-col flex-shrink-0 ${isRTL ? '' : 'order-last'}`}>
@@ -245,6 +335,8 @@ export default function Layout({ children }: LayoutProps) {
       <ChatSidebar
         expanded={chatExpanded}
         onToggle={() => setChatExpanded(!chatExpanded)}
+        width={chatPanelWidth}
+        onResizeStart={handleChatResizeStart}
       />
     </div>
   )

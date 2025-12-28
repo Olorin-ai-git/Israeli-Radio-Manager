@@ -15,6 +15,8 @@ interface ChatMessage {
 interface ChatSidebarProps {
   expanded: boolean
   onToggle: () => void
+  width?: number
+  onResizeStart?: () => void
 }
 
 // Quick command examples for users
@@ -35,7 +37,7 @@ const QUICK_COMMANDS = {
   ]
 }
 
-export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
+export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeStart }: ChatSidebarProps) {
   const { t, i18n } = useTranslation()
   const [message, setMessage] = useState('')
   const [showExamples, setShowExamples] = useState(true)
@@ -137,8 +139,19 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
       className={`fixed right-0 top-0 h-full z-50
         transition-transform duration-300 ease-in-out
         ${expanded ? 'translate-x-0' : 'translate-x-full'}
-        w-96 flex flex-col glass-sidebar`}
+        flex flex-col glass-sidebar`}
+      style={{ width: `${width}px` }}
     >
+      {/* Resize Handle */}
+      {expanded && onResizeStart && (
+        <div
+          className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-primary-500/50 transition-colors group z-10"
+          onMouseDown={onResizeStart}
+        >
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-12 bg-primary-500/30 group-hover:bg-primary-500 rounded-full transition-colors" />
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-white/10 bg-primary-500/20 backdrop-blur-xl">
         <div className="flex items-center gap-3">
