@@ -346,6 +346,10 @@ export default function AudioPlayer({
   }
 
   const handleEnded = () => {
+    // Reset fade state before next track starts
+    cancelFade()
+    isFadingOutRef.current = false
+    setIsFading(false)
     setIsPlaying(false)
     onTrackEnd?.()
   }
@@ -357,6 +361,8 @@ export default function AudioPlayer({
     // If already fading out or nearly at end, just skip immediately
     if (isFadingOutRef.current || (audioRef.current && duration - currentTime < 1)) {
       cancelFade()
+      isFadingOutRef.current = false
+      setIsFading(false)
       onNext()
       return
     }
@@ -373,6 +379,8 @@ export default function AudioPlayer({
 
       const animate = (currentTime: number) => {
         if (!audioRef.current) {
+          isFadingOutRef.current = false
+          setIsFading(false)
           onNext()
           return
         }
@@ -401,8 +409,10 @@ export default function AudioPlayer({
     if (!onPrevious) return
 
     // Quick volume drop for previous (instant for responsiveness)
-    if (audioRef.current && audioRef.current.volume > 0.1) {
-      cancelFade()
+    cancelFade()
+    isFadingOutRef.current = false
+    setIsFading(false)
+    if (audioRef.current) {
       audioRef.current.volume = 0
     }
     onPrevious()
