@@ -79,6 +79,8 @@ export default function CalendarPlaylist() {
   const [selectedFlowId, setSelectedFlowId] = useState<string>('')
   const [contentTypeFilter, setContentTypeFilter] = useState<string>('all')
   const [genreFilter, setGenreFilter] = useState<string>('all')
+  const [_preselectedDate, setPreselectedDate] = useState<string>('')
+  void _preselectedDate // Planned feature: pre-fill date in schedule modal
   const [scheduleRecurrence, setScheduleRecurrence] = useState<'none' | 'daily' | 'weekly'>('none')
   const [scheduleDaysOfWeek, setScheduleDaysOfWeek] = useState<number[]>([0, 1, 2, 3, 4, 5, 6])
 
