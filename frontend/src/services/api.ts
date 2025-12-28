@@ -24,6 +24,12 @@ export const api = {
     client.patch(`/content/${id}`, data).then((r) => r.data),
   deleteContent: (id: string) => client.delete(`/content/${id}`).then((r) => r.data),
 
+  // Sync
+  getSyncStatus: () => client.get('/content/sync/status').then((r) => r.data),
+  startSync: (downloadFiles?: boolean) =>
+    client.post('/content/sync/start', null, { params: { download_files: downloadFiles } }).then((r) => r.data),
+  refreshMetadata: () => client.post('/content/sync/refresh-metadata').then((r) => r.data),
+
   // Schedule
   getSchedule: () => client.get('/schedule/').then((r) => r.data),
   getCurrentSlot: () => client.get('/schedule/current').then((r) => r.data),
@@ -38,6 +44,13 @@ export const api = {
   getPlaybackStatus: () => client.get('/playback/status').then((r) => r.data),
   getNowPlaying: () => client.get('/playback/now-playing').then((r) => r.data),
   getQueue: () => client.get('/playback/queue').then((r) => r.data),
+  addToQueue: (contentId: string, priority?: number) =>
+    client.post('/playback/queue', { content_id: contentId, priority: priority || 0 }).then((r) => r.data),
+  removeFromQueue: (position: number) =>
+    client.delete(`/playback/queue/${position}`).then((r) => r.data),
+  reorderQueue: (fromIndex: number, toIndex: number) =>
+    client.post('/playback/queue/reorder', { from_index: fromIndex, to_index: toIndex }).then((r) => r.data),
+  clearQueue: () => client.post('/playback/queue/clear').then((r) => r.data),
   play: (contentId?: string) =>
     client.post('/playback/play', null, { params: { content_id: contentId } }).then((r) => r.data),
   pause: () => client.post('/playback/pause').then((r) => r.data),

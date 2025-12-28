@@ -14,8 +14,26 @@ import {
   X,
   Trash2,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  GripVertical
 } from 'lucide-react'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { api } from '../../services/api'
 import { toast } from '../../store/toastStore'
 import { usePlayerStore } from '../../store/playerStore'
@@ -36,6 +54,72 @@ interface AudioPlayerProps {
   autoPlay?: boolean
 }
 
+// Sortable Queue Item Component
+function SortableQueueItem({
+  item,
+  index,
+  isRTL,
+  onRemove,
+  formatDuration
+}: {
+  item: Track
+  index: number
+  isRTL: boolean
+  onRemove: () => void
+  formatDuration: (seconds?: number) => string
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: item._id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-3 p-2 rounded-lg bg-dark-700/30 hover:bg-dark-700/50 transition-colors group"
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing p-1 hover:bg-white/10 rounded transition-colors"
+        title={isRTL ? 'גרור לסידור מחדש' : 'Drag to reorder'}
+      >
+        <GripVertical size={16} className="text-dark-500" />
+      </button>
+      <span className="text-xs text-dark-500 w-5 text-center">{index + 1}</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-dark-200 truncate" dir="auto">
+          {item.title}
+        </p>
+        <p className="text-xs text-dark-500 truncate" dir="auto">
+          {item.artist || (isRTL ? 'אמן לא ידוע' : 'Unknown Artist')}
+        </p>
+      </div>
+      <span className="text-xs text-dark-500 tabular-nums">
+        {formatDuration(item.duration_seconds)}
+      </span>
+      <button
+        onClick={onRemove}
+        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/20 transition-all"
+        title={isRTL ? 'הסר מהתור' : 'Remove from queue'}
+      >
+        <X size={14} className="text-dark-400 hover:text-red-400" />
+      </button>
+    </div>
+  )
+}
+
 export default function AudioPlayer({
   track,
   onTrackEnd,
@@ -54,8 +138,29 @@ export default function AudioPlayer({
   const [isMuted, setIsMuted] = useState(false)
   const [queueExpanded, setQueueExpanded] = useState(false)
 
-  const { queue, removeFromQueue, clearQueue } = usePlayerStore()
+  const { queue, removeFromQueue, clearQueue, reorderQueue } = usePlayerStore()
   const isRTL = i18n.language === 'he'
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+
+    if (over && active.id !== over.id) {
+      const oldIndex = queue.findIndex((item) => item._id === active.id)
+      const newIndex = queue.findIndex((item) => item._id === over.id)
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        reorderQueue(oldIndex, newIndex)
+      }
+    }
+  }
 
   // Auto-expand queue when items are added
   useEffect(() => {
@@ -188,34 +293,29 @@ export default function AudioPlayer({
           </div>
 
           {queue.length > 0 ? (
-            <div className="space-y-1">
-              {queue.map((item, index) => (
-                <div
-                  key={`${item._id}-${index}`}
-                  className="flex items-center gap-3 p-2 rounded-lg bg-dark-700/30 hover:bg-dark-700/50 transition-colors group"
-                >
-                  <span className="text-xs text-dark-500 w-5 text-center">{index + 1}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-dark-200 truncate" dir="auto">
-                      {item.title}
-                    </p>
-                    <p className="text-xs text-dark-500 truncate" dir="auto">
-                      {item.artist || (isRTL ? 'אמן לא ידוע' : 'Unknown Artist')}
-                    </p>
-                  </div>
-                  <span className="text-xs text-dark-500">
-                    {formatDuration(item.duration_seconds)}
-                  </span>
-                  <button
-                    onClick={() => removeFromQueue(index)}
-                    className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/20 transition-all"
-                    title={isRTL ? 'הסר מהתור' : 'Remove from queue'}
-                  >
-                    <X size={14} className="text-dark-400 hover:text-red-400" />
-                  </button>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={queue.map(item => item._id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-1">
+                  {queue.map((item, index) => (
+                    <SortableQueueItem
+                      key={item._id}
+                      item={item}
+                      index={index}
+                      isRTL={isRTL}
+                      onRemove={() => removeFromQueue(index)}
+                      formatDuration={formatDuration}
+                    />
+                  ))}
                 </div>
-              ))}
-            </div>
+              </SortableContext>
+            </DndContext>
           ) : (
             <div className="text-center py-6 text-dark-500">
               <ListMusic size={32} className="mx-auto mb-2 opacity-50" />

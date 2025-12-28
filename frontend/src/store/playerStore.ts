@@ -32,8 +32,9 @@ interface PlayerState {
   playOrQueue: (track: Track) => void  // Play if nothing playing, else queue next
   addToQueue: (track: Track) => void
   queueNext: (track: Track) => void    // Insert at front of queue
-  removeFromQueue: (index: number) => void
-  clearQueue: () => void
+  removeFromQueue: (index: number) => Promise<void>
+  clearQueue: () => Promise<void>
+  reorderQueue: (fromIndex: number, toIndex: number) => Promise<void>
   playNext: () => void
   setIsPlaying: (playing: boolean) => void
   setVolume: (volume: number) => void
@@ -63,8 +64,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  addToQueue: (track) => {
+  addToQueue: async (track) => {
+    // Add to local queue state
     set((state) => ({ queue: [...state.queue, track] }))
+
+    // Call backend API to handle auto-play logic
+    try {
+      const response = await api.addToQueue(track._id)
+      console.log('Queue response:', response)
+
+      // If backend auto-played it, update our state
+      if (response.auto_played) {
+        set({ currentTrack: track, isPlaying: true, queue: get().queue.filter(t => t._id !== track._id) })
+      }
+    } catch (error) {
+      console.error('Failed to add to queue:', error)
+    }
   },
 
   // Insert at front of queue (will play next after current track)
@@ -72,13 +87,50 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set((state) => ({ queue: [track, ...state.queue] }))
   },
 
-  removeFromQueue: (index) => {
+  removeFromQueue: async (index) => {
+    // Optimistically update UI
     set((state) => ({
       queue: state.queue.filter((_, i) => i !== index)
     }))
+
+    // Call backend API
+    try {
+      await api.removeFromQueue(index)
+    } catch (error) {
+      console.error('Failed to remove from queue:', error)
+    }
   },
 
-  clearQueue: () => set({ queue: [] }),
+  clearQueue: async () => {
+    // Optimistically update UI
+    set({ queue: [] })
+
+    // Call backend API
+    try {
+      await api.clearQueue()
+    } catch (error) {
+      console.error('Failed to clear queue:', error)
+    }
+  },
+
+  reorderQueue: async (fromIndex: number, toIndex: number) => {
+    const { queue } = get()
+
+    // Optimistically update UI
+    const newQueue = [...queue]
+    const [movedItem] = newQueue.splice(fromIndex, 1)
+    newQueue.splice(toIndex, 0, movedItem)
+    set({ queue: newQueue })
+
+    // Call backend API
+    try {
+      await api.reorderQueue(fromIndex, toIndex)
+    } catch (error) {
+      console.error('Failed to reorder queue:', error)
+      // Revert on error
+      set({ queue })
+    }
+  },
 
   playNext: () => {
     const { queue } = get()

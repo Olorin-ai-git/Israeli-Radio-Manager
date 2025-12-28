@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Music, Radio, Megaphone, Search, Play, Plus,
-  Clock, BarChart2, Calendar, Disc3
+  Clock, BarChart2, Calendar, Disc3, RefreshCw, ListPlus, X as XIcon
 } from 'lucide-react'
 import { api } from '../services/api'
 import { usePlayerStore } from '../store/playerStore'
@@ -49,7 +49,33 @@ export default function Library() {
   const [activeTab, setActiveTab] = useState<ContentTab>('songs')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedGenre, setSelectedGenre] = useState('')
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
   const { play, addToQueue, currentTrack } = usePlayerStore()
+  const queryClient = useQueryClient()
+
+  // Metadata refresh mutation
+  const refreshMetadataMutation = useMutation({
+    mutationFn: api.refreshMetadata,
+    onSuccess: (data) => {
+      // Invalidate queries to refetch with new metadata
+      queryClient.invalidateQueries({ queryKey: ['songs'] })
+      queryClient.invalidateQueries({ queryKey: ['shows'] })
+      queryClient.invalidateQueries({ queryKey: ['commercials'] })
+
+      toast.success(
+        isRTL
+          ? `מטה-דאטה עודכן: ${data.stats.updated} פריטים`
+          : `Metadata updated: ${data.stats.updated} items`
+      )
+    },
+    onError: (error: any) => {
+      toast.error(
+        isRTL
+          ? 'שגיאה בעדכון מטה-דאטה'
+          : 'Failed to refresh metadata'
+      )
+    }
+  })
 
   const { data: songs, isLoading: loadingSongs } = useQuery({
     queryKey: ['songs'],
@@ -107,6 +133,48 @@ export default function Library() {
     toast.info(isRTL ? `נוסף לתור: ${item.title}` : `Added to queue: ${item.title}`)
   }
 
+  const toggleItemSelection = (itemId: string) => {
+    setSelectedItems(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId)
+      } else {
+        newSet.add(itemId)
+      }
+      return newSet
+    })
+  }
+
+  const selectAll = () => {
+    const allIds = new Set(filteredContent.map((item: any) => item._id))
+    setSelectedItems(allIds)
+  }
+
+  const clearSelection = () => {
+    setSelectedItems(new Set())
+  }
+
+  const handleAddSelectedToQueue = async () => {
+    const selectedContent = content.filter((item: any) => selectedItems.has(item._id))
+
+    for (const item of selectedContent) {
+      await addToQueue(item)
+    }
+
+    toast.success(
+      isRTL
+        ? `${selectedItems.size} שירים נוספו לתור`
+        : `Added ${selectedItems.size} songs to queue`
+    )
+    clearSelection()
+  }
+
+  // Clear selection when changing tabs
+  const handleTabChange = (tab: ContentTab) => {
+    setActiveTab(tab)
+    clearSelection()
+  }
+
   const tabs = [
     { id: 'songs' as const, label: isRTL ? 'שירים' : 'Songs', icon: Music, count: songs?.length || 0 },
     { id: 'shows' as const, label: isRTL ? 'תוכניות' : 'Shows', icon: Radio, count: shows?.length || 0 },
@@ -135,8 +203,21 @@ export default function Library() {
         <h1 className="text-2xl font-bold text-dark-100">
           {isRTL ? 'ספריית מדיה' : 'Media Library'}
         </h1>
-        <div className="text-sm text-dark-400">
-          {filteredContent.length} {isRTL ? 'פריטים' : 'items'}
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => refreshMetadataMutation.mutate()}
+            disabled={refreshMetadataMutation.isPending}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-dark-800 text-dark-100 hover:bg-dark-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title={isRTL ? 'רענן מטה-דאטה מקבצי שמע' : 'Refresh metadata from audio files'}
+          >
+            <RefreshCw size={16} className={refreshMetadataMutation.isPending ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">
+              {isRTL ? 'רענן מטה-דאטה' : 'Refresh Metadata'}
+            </span>
+          </button>
+          <div className="text-sm text-dark-400">
+            {filteredContent.length} {isRTL ? 'פריטים' : 'items'}
+          </div>
         </div>
       </div>
 
@@ -147,7 +228,7 @@ export default function Library() {
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabChange(tab.id)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all ${
                 activeTab === tab.id
                   ? 'bg-primary-500 text-white shadow-glow'
@@ -194,6 +275,41 @@ export default function Library() {
         )}
       </div>
 
+      {/* Bulk Actions Bar */}
+      {selectedItems.size > 0 && (
+        <div className="flex items-center justify-between p-4 mb-4 rounded-xl bg-primary-500/20 border border-primary-500/30">
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-dark-100">
+              {isRTL
+                ? `${selectedItems.size} נבחרו`
+                : `${selectedItems.size} selected`}
+            </span>
+            <button
+              onClick={clearSelection}
+              className="text-sm text-dark-400 hover:text-dark-100 transition-colors flex items-center gap-1"
+            >
+              <XIcon size={14} />
+              {isRTL ? 'בטל בחירה' : 'Clear selection'}
+            </button>
+            <button
+              onClick={selectAll}
+              className="text-sm text-dark-400 hover:text-dark-100 transition-colors"
+            >
+              {isRTL ? 'בחר הכל' : 'Select all'}
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAddSelectedToQueue}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white transition-colors"
+            >
+              <ListPlus size={18} />
+              {isRTL ? 'הוסף לתור' : 'Add to Queue'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Content List */}
       <div className="flex-1 overflow-auto">
         {isLoading ? (
@@ -205,15 +321,28 @@ export default function Library() {
             {filteredContent.map((item: any) => {
               const isCurrentlyPlaying = currentTrack?._id === item._id
 
+              const isSelected = selectedItems.has(item._id)
+
               return (
                 <div
                   key={item._id}
                   className={`group flex items-center gap-4 p-4 rounded-xl transition-all ${
                     isCurrentlyPlaying
                       ? 'bg-primary-500/20 border border-primary-500/30'
+                      : isSelected
+                      ? 'bg-primary-500/10 border border-primary-500/20'
                       : 'glass-card hover:bg-white/5'
                   }`}
                 >
+                  {/* Checkbox */}
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleItemSelection(item._id)}
+                    className="w-5 h-5 rounded border-2 border-dark-600 bg-dark-800 checked:bg-primary-500 checked:border-primary-500 cursor-pointer transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+
                   {/* Play Button / Album Cover */}
                   <div className="relative">
                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all overflow-hidden ${

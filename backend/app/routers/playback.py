@@ -12,6 +12,14 @@ from bson import ObjectId
 router = APIRouter()
 
 
+async def broadcast_playback_state(audio_player):
+    """Broadcast current playback state to all connected clients."""
+    from app.routers.websocket import broadcast_playback_update
+
+    status = audio_player.get_status()
+    await broadcast_playback_update(status)
+
+
 class QueueItem(BaseModel):
     """Item to add to the playback queue."""
     content_id: str
@@ -149,11 +157,16 @@ async def start_playback(request: Request, content_id: Optional[str] = None):
             "source": "api"
         })
 
+        # Broadcast playback state to connected clients
+        await broadcast_playback_state(audio_player)
+
         return {"message": f"Now playing: {content.get('title')}", "content_id": content_id}
     else:
         # Resume playback
         success = await audio_player.resume()
         if success:
+            # Broadcast state change
+            await broadcast_playback_state(audio_player)
             return {"message": "Playback resumed"}
         return {"message": "Nothing to resume"}
 
@@ -168,6 +181,8 @@ async def pause_playback(request: Request):
 
     success = await audio_player.pause()
     if success:
+        # Broadcast state change
+        await broadcast_playback_state(audio_player)
         return {"message": "Playback paused"}
     return {"message": "Nothing playing to pause"}
 
@@ -182,6 +197,8 @@ async def stop_playback(request: Request):
 
     success = await audio_player.stop()
     if success:
+        # Broadcast state change
+        await broadcast_playback_state(audio_player)
         return {"message": "Playback stopped"}
     return {"message": "Nothing playing to stop"}
 
@@ -196,6 +213,8 @@ async def skip_track(request: Request):
 
     success = await audio_player.skip()
     if success:
+        # Broadcast state change
+        await broadcast_playback_state(audio_player)
         return {"message": "Skipped to next track"}
     return {"message": "No track to skip"}
 
@@ -254,6 +273,18 @@ async def add_to_queue(request: Request, item: QueueItem):
                 "source": "queue_auto"
             })
 
+            # Broadcast scheduled playback event to trigger browser playback
+            from app.routers.websocket import broadcast_scheduled_playback
+            await broadcast_scheduled_playback({
+                "_id": item.content_id,
+                "title": content.get("title"),
+                "artist": content.get("artist"),
+                "type": content.get("type"),
+                "duration_seconds": content.get("duration_seconds", 0),
+                "genre": content.get("genre"),
+                "metadata": content.get("metadata", {})
+            })
+
             return {
                 "message": f"Now playing: {content.get('title')}",
                 "auto_played": True,
@@ -294,6 +325,40 @@ async def clear_queue(request: Request):
 
     audio_player.clear_queue()
     return {"message": "Queue cleared"}
+
+
+class QueueReorderRequest(BaseModel):
+    """Request to reorder queue items."""
+    from_index: int
+    to_index: int
+
+
+@router.post("/queue/reorder")
+async def reorder_queue(request: Request, reorder: QueueReorderRequest):
+    """Reorder items in the queue."""
+    audio_player = getattr(request.app.state, 'audio_player', None)
+
+    if not audio_player:
+        raise HTTPException(status_code=503, detail="Audio player not available")
+
+    # Get current queue
+    queue = audio_player.get_queue()
+
+    # Validate indices
+    if not (0 <= reorder.from_index < len(queue) and 0 <= reorder.to_index < len(queue)):
+        raise HTTPException(status_code=400, detail="Invalid queue indices")
+
+    # Reorder the queue
+    item = queue.pop(reorder.from_index)
+    queue.insert(reorder.to_index, item)
+
+    # Update the queue in audio player
+    audio_player._queue = queue
+
+    return {
+        "message": "Queue reordered",
+        "queue_length": len(queue)
+    }
 
 
 @router.post("/volume")

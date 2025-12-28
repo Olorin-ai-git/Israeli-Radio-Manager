@@ -1,9 +1,8 @@
-"""Audio Player Service using VLC for local playback."""
+"""Audio Player Service - State management for browser-based playback."""
 
 import logging
-import asyncio
 from typing import Optional, List, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
@@ -36,9 +35,10 @@ class QueueItem:
 
 class AudioPlayerService:
     """
-    Service for controlling audio playback through VLC.
+    Service for tracking audio playback state.
 
-    Plays audio through the local sound card for radio broadcast.
+    Actual playback happens in the browser via streaming endpoints.
+    This service manages state, queue, and callbacks only.
     """
 
     def __init__(self, cache_dir: str = "./cache"):
@@ -51,33 +51,9 @@ class AudioPlayerService:
         self._volume = 80  # 0-100
         self._position = 0  # Current position in seconds
 
-        # VLC instance (initialized lazily)
-        self._vlc_instance = None
-        self._player = None
-
         # Callbacks
         self._on_track_end: Optional[Callable] = None
         self._on_error: Optional[Callable] = None
-
-        # Background task for monitoring playback
-        self._monitor_task: Optional[asyncio.Task] = None
-        self._monitoring = False
-
-    def _ensure_vlc(self):
-        """Ensure VLC is initialized."""
-        if self._vlc_instance is None:
-            try:
-                import vlc
-                self._vlc_instance = vlc.Instance()
-                self._player = self._vlc_instance.media_player_new()
-                self._player.audio_set_volume(self._volume)
-                logger.info("VLC player initialized")
-            except ImportError:
-                logger.error("python-vlc not installed")
-                raise RuntimeError("VLC not available")
-            except Exception as e:
-                logger.error(f"Failed to initialize VLC: {e}")
-                raise
 
     @property
     def state(self) -> PlaybackState:
@@ -97,11 +73,6 @@ class AudioPlayerService:
     @property
     def position(self) -> int:
         """Get current playback position in seconds."""
-        if self._player and self._state == PlaybackState.PLAYING:
-            try:
-                return self._player.get_time() // 1000
-            except Exception:
-                pass
         return self._position
 
     @property
@@ -119,60 +90,41 @@ class AudioPlayerService:
 
     async def play(self, track: TrackInfo) -> bool:
         """
-        Start playing a specific track.
+        Mark a track as playing.
+
+        Actual playback happens in browser via /api/playback/stream/{content_id}
 
         Args:
             track: Track information with file path
 
         Returns:
-            True if playback started successfully
+            True if state was updated successfully
         """
         try:
-            self._ensure_vlc()
-
-            import vlc
-
-            # Create media from file path
-            media = self._vlc_instance.media_new(track.file_path)
-            self._player.set_media(media)
-
-            # Start playback
-            result = self._player.play()
-            if result == -1:
-                logger.error(f"Failed to play: {track.title}")
-                return False
-
             self._current_track = track
             self._state = PlaybackState.PLAYING
             self._position = 0
-
-            # Start monitoring for track end
-            if not self._monitoring:
-                self._start_monitoring()
 
             logger.info(f"Now playing: {track.title} by {track.artist}")
             return True
 
         except Exception as e:
-            logger.error(f"Playback error: {e}")
+            logger.error(f"Playback state update error: {e}")
             if self._on_error:
                 self._on_error(e)
             return False
 
     async def pause(self) -> bool:
         """Pause current playback."""
-        if self._player and self._state == PlaybackState.PLAYING:
-            self._player.pause()
+        if self._state == PlaybackState.PLAYING:
             self._state = PlaybackState.PAUSED
-            self._position = self.position
             logger.info("Playback paused")
             return True
         return False
 
     async def resume(self) -> bool:
         """Resume paused playback."""
-        if self._player and self._state == PlaybackState.PAUSED:
-            self._player.play()
+        if self._state == PlaybackState.PAUSED:
             self._state = PlaybackState.PLAYING
             logger.info("Playback resumed")
             return True
@@ -180,14 +132,11 @@ class AudioPlayerService:
 
     async def stop(self) -> bool:
         """Stop playback completely."""
-        if self._player:
-            self._player.stop()
-            self._state = PlaybackState.STOPPED
-            self._current_track = None
-            self._position = 0
-            logger.info("Playback stopped")
-            return True
-        return False
+        self._state = PlaybackState.STOPPED
+        self._current_track = None
+        self._position = 0
+        logger.info("Playback stopped")
+        return True
 
     async def skip(self) -> bool:
         """Skip to next track in queue."""
@@ -217,11 +166,20 @@ class AudioPlayerService:
             return False
 
         self._volume = level
-        if self._player:
-            self._player.audio_set_volume(level)
-            logger.info(f"Volume set to {level}")
+        logger.info(f"Volume set to {level}")
 
         return True
+
+    def update_position(self, position_seconds: int):
+        """
+        Update current playback position.
+
+        Called by frontend to sync position state.
+
+        Args:
+            position_seconds: Current position in seconds
+        """
+        self._position = position_seconds
 
     def add_to_queue(self, track: TrackInfo, priority: int = 0):
         """
@@ -279,64 +237,6 @@ class AudioPlayerService:
             "queue_length": len(self._queue)
         }
 
-    def _start_monitoring(self):
-        """Start background monitoring for track end."""
-        if self._monitor_task is None or self._monitor_task.done():
-            self._monitoring = True
-            self._monitor_task = asyncio.create_task(self._monitor_playback())
-            logger.debug("Started playback monitoring")
-
-    async def _monitor_playback(self):
-        """Monitor playback and auto-play next track when current ends."""
-        while self._monitoring:
-            try:
-                if self._player and self._state == PlaybackState.PLAYING:
-                    # Check if track has ended
-                    import vlc
-                    state = self._player.get_state()
-
-                    if state == vlc.State.Ended:
-                        logger.info(f"Track ended: {self._current_track.title if self._current_track else 'Unknown'}")
-
-                        # Try to play next from queue
-                        if self._queue:
-                            next_item = self._queue.pop(0)
-                            logger.info(f"Auto-playing next from queue: {next_item.track.title}")
-                            await self.play(next_item.track)
-                        else:
-                            # No more tracks in queue
-                            self._state = PlaybackState.STOPPED
-                            self._current_track = None
-
-                            # Trigger callback if set
-                            if self._on_track_end:
-                                try:
-                                    if asyncio.iscoroutinefunction(self._on_track_end):
-                                        await self._on_track_end()
-                                    else:
-                                        self._on_track_end()
-                                except Exception as e:
-                                    logger.error(f"Error in track_end callback: {e}")
-
-                await asyncio.sleep(1)  # Check every second
-
-            except Exception as e:
-                logger.error(f"Error in playback monitoring: {e}")
-                await asyncio.sleep(1)
-
-    def _stop_monitoring(self):
-        """Stop background monitoring."""
-        self._monitoring = False
-        if self._monitor_task:
-            self._monitor_task.cancel()
-        logger.debug("Stopped playback monitoring")
-
     def cleanup(self):
         """Clean up resources."""
-        self._stop_monitoring()
-        if self._player:
-            self._player.stop()
-            self._player.release()
-        if self._vlc_instance:
-            self._vlc_instance.release()
         logger.info("Audio player cleaned up")

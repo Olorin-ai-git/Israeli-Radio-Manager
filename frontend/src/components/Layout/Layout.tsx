@@ -64,22 +64,6 @@ export default function Layout({ children }: LayoutProps) {
               metadata: content.metadata,
             }
 
-            // Show notification with context
-            const { currentTrack } = usePlayerStore.getState()
-            if (currentTrack) {
-              toast.info(
-                isRTL
-                  ? `מתוזמן להפעלה הבאה: ${content.title}`
-                  : `Scheduled next: ${content.title}`
-              )
-            } else {
-              toast.info(
-                isRTL
-                  ? `מנגן לפי לוח זמנים: ${content.title}`
-                  : `Scheduled playback: ${content.title}`
-              )
-            }
-
             // Play immediately if nothing playing, otherwise queue as next
             playOrQueue(track)
           } else if (message.type === 'queue_tracks') {
@@ -231,6 +215,13 @@ export default function Layout({ children }: LayoutProps) {
               onTrackEnd={playNext}
               onNext={playNext}
             />
+          </div>
+
+          {/* Copyright Footer */}
+          <div className="flex-shrink-0 px-4 py-2 border-t border-white/5 bg-dark-900/50">
+            <p className="text-xs text-center text-dark-500">
+              Powered by <span className="text-dark-300 font-medium">Olorin.ai LLC</span> © 2026 All rights reserved
+            </p>
           </div>
         </main>
       </div>

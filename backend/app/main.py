@@ -16,6 +16,7 @@ from app.services.google_calendar import GoogleCalendarService
 from app.services.calendar_watcher import CalendarWatcherService
 from app.services.gmail import GmailService
 from app.services.email_watcher import EmailWatcherService
+from app.services.metadata_refresher import MetadataRefresherService
 
 # Configure logging
 logging.basicConfig(
@@ -133,10 +134,21 @@ async def lifespan(app: FastAPI):
         await app.state.email_watcher.start()
         logger.info("Email watcher started - monitoring for audio attachments")
 
+    # Initialize and start metadata refresher (background task for periodic metadata updates)
+    app.state.metadata_refresher = MetadataRefresherService(
+        db=app.state.db,
+        drive_service=app.state.drive_service,
+        check_interval=3600  # Check every hour (3600 seconds)
+    )
+    await app.state.metadata_refresher.start()
+    logger.info("Metadata refresher started - updating metadata every hour")
+
     yield
 
     # Shutdown
     logger.info("Shutting down Israeli Radio Manager...")
+    if hasattr(app.state, 'metadata_refresher'):
+        await app.state.metadata_refresher.stop()
     if app.state.email_watcher:
         await app.state.email_watcher.stop()
     if app.state.calendar_watcher:
