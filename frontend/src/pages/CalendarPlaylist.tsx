@@ -79,6 +79,8 @@ export default function CalendarPlaylist() {
   const [showScheduleModal, setShowScheduleModal] = useState(false)
   const [selectedContentId, setSelectedContentId] = useState<string>('')
   const [preselectedDate, setPreselectedDate] = useState<string>('')
+  const [scheduleRecurrence, setScheduleRecurrence] = useState<'none' | 'daily' | 'weekly'>('none')
+  const [scheduleDaysOfWeek, setScheduleDaysOfWeek] = useState<number[]>([0, 1, 2, 3, 4, 5, 6])
 
   const formatDateForApi = (date: Date) => {
     // Use local date, not UTC
@@ -195,20 +197,46 @@ export default function CalendarPlaylist() {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
 
-    const date = formData.get('date') as string
-    const time = formData.get('time') as string
     const contentId = selectedContentId
+    if (!contentId) return
 
-    if (!date || !time || !contentId) return
+    if (scheduleRecurrence === 'none') {
+      // One-time event: use datetime-local
+      const startDatetime = formData.get('start_datetime') as string
+      if (!startDatetime) return
 
-    const startTime = new Date(`${date}T${time}:00`)
+      const startTime = new Date(startDatetime)
 
-    createMutation.mutate({
-      content_id: contentId,
-      start_time: startTime.toISOString(),
-      reminder_minutes: 30,
-      reminder_method: 'popup',
-    })
+      createMutation.mutate({
+        content_id: contentId,
+        start_time: startTime.toISOString(),
+        reminder_minutes: 30,
+        reminder_method: 'popup',
+      })
+    } else {
+      // Recurring event: use time with recurrence
+      const time = formData.get('time') as string
+      if (!time) return
+
+      // Use today's date as the starting point
+      const today = new Date()
+      const [hours, minutes] = time.split(':')
+      today.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+
+      const eventData: any = {
+        content_id: contentId,
+        start_time: today.toISOString(),
+        reminder_minutes: 30,
+        reminder_method: 'popup',
+        recurrence: scheduleRecurrence,
+      }
+
+      if (scheduleRecurrence === 'weekly') {
+        eventData.days_of_week = scheduleDaysOfWeek
+      }
+
+      createMutation.mutate(eventData)
+    }
   }
 
   const handleDayDoubleClick = (date: Date) => {
@@ -440,13 +468,18 @@ export default function CalendarPlaylist() {
       {/* Schedule Modal */}
       {showScheduleModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="glass-card p-6 w-full max-w-md mx-4">
+          <div className="glass-card p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-semibold text-dark-100">
                 {isRTL ? 'תזמון תוכן' : 'Schedule Content'}
               </h3>
               <button
-                onClick={() => setShowScheduleModal(false)}
+                onClick={() => {
+                  setShowScheduleModal(false)
+                  setScheduleRecurrence('none')
+                  setScheduleDaysOfWeek([0, 1, 2, 3, 4, 5, 6])
+                  setScheduleError(null)
+                }}
                 className="p-2 hover:bg-white/10 rounded-lg"
               >
                 <X size={20} />
@@ -479,36 +512,99 @@ export default function CalendarPlaylist() {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-dark-300 text-sm mb-2">
-                  {isRTL ? 'תאריך' : 'Date'}
-                </label>
-                <input
-                  type="date"
-                  name="date"
-                  className="w-full glass-input"
-                  required
-                  defaultValue={preselectedDate}
-                  min={formatDateForApi(new Date())}
-                />
-              </div>
+              {/* Schedule Settings */}
+              <div className="space-y-3 p-3 bg-dark-800/30 rounded-lg">
+                <p className="text-xs text-dark-400">
+                  {isRTL ? 'הגדרות תזמון' : 'Schedule Settings'}
+                </p>
 
-              <div>
-                <label className="block text-dark-300 text-sm mb-2">
-                  {isRTL ? 'שעה' : 'Time'}
-                </label>
-                <input
-                  type="time"
-                  name="time"
-                  className="w-full glass-input"
-                  required
-                />
+                {/* Recurrence Type */}
+                <div>
+                  <label className="block text-dark-300 text-xs mb-1">
+                    {isRTL ? 'חזרה' : 'Repeat'}
+                  </label>
+                  <select
+                    value={scheduleRecurrence}
+                    onChange={(e) => setScheduleRecurrence(e.target.value as 'none' | 'daily' | 'weekly')}
+                    className="w-full glass-input text-sm"
+                  >
+                    <option value="none">{isRTL ? 'פעם אחת' : 'Once'}</option>
+                    <option value="daily">{isRTL ? 'יומי' : 'Daily'}</option>
+                    <option value="weekly">{isRTL ? 'שבועי' : 'Weekly'}</option>
+                  </select>
+                </div>
+
+                {/* One-time: Datetime picker */}
+                {scheduleRecurrence === 'none' && (
+                  <div>
+                    <label className="block text-dark-300 text-xs mb-1">
+                      {isRTL ? 'תאריך ושעה' : 'Date & Time'}
+                    </label>
+                    <input
+                      type="datetime-local"
+                      name="start_datetime"
+                      className="w-full glass-input text-sm"
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* Recurring: Time picker */}
+                {scheduleRecurrence !== 'none' && (
+                  <div>
+                    <label className="block text-dark-300 text-xs mb-1">
+                      {isRTL ? 'שעה' : 'Time'} *
+                    </label>
+                    <input
+                      type="time"
+                      name="time"
+                      className="w-full glass-input text-sm"
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* Weekly: Day selector */}
+                {scheduleRecurrence === 'weekly' && (
+                  <div>
+                    <label className="block text-dark-300 text-xs mb-2">
+                      {isRTL ? 'ימים' : 'Days'}
+                    </label>
+                    <div className="flex flex-wrap gap-1">
+                      {(isRTL
+                        ? ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
+                        : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                      ).map((day, idx) => (
+                        <label key={idx} className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={scheduleDaysOfWeek.includes(idx)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setScheduleDaysOfWeek([...scheduleDaysOfWeek, idx].sort())
+                              } else {
+                                setScheduleDaysOfWeek(scheduleDaysOfWeek.filter(d => d !== idx))
+                              }
+                            }}
+                            className="rounded bg-dark-700 border-dark-500"
+                          />
+                          <span className="text-xs text-dark-300">{day}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2 pt-4">
                 <button
                   type="button"
-                  onClick={() => setShowScheduleModal(false)}
+                  onClick={() => {
+                    setShowScheduleModal(false)
+                    setScheduleRecurrence('none')
+                    setScheduleDaysOfWeek([0, 1, 2, 3, 4, 5, 6])
+                    setScheduleError(null)
+                  }}
                   className="flex-1 glass-button py-2"
                 >
                   {isRTL ? 'ביטול' : 'Cancel'}
