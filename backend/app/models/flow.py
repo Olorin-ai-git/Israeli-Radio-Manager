@@ -53,16 +53,37 @@ class FlowTriggerType(str, Enum):
     EVENT = "event"  # Triggered by an event (e.g., show ends)
 
 
+class RecurrenceType(str, Enum):
+    """Types of recurrence patterns."""
+    NONE = "none"           # One-time event
+    DAILY = "daily"         # Every day
+    WEEKLY = "weekly"       # Specific days of week
+    MONTHLY = "monthly"     # Same day each month
+    YEARLY = "yearly"       # Same day each year
+
+
 class FlowSchedule(BaseModel):
     """Schedule configuration for a flow."""
-    # Days of week (0=Sunday, 6=Saturday)
-    days_of_week: List[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6])
-
     # Start time (HH:MM format)
     start_time: str
 
     # Optional end time
     end_time: Optional[str] = None
+
+    # Recurrence pattern
+    recurrence: RecurrenceType = RecurrenceType.WEEKLY
+
+    # Days of week (0=Sunday, 6=Saturday) - used for weekly recurrence
+    days_of_week: List[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6])
+
+    # Day of month (1-31) - used for monthly/yearly recurrence
+    day_of_month: Optional[int] = None
+
+    # Month (1-12) - used for yearly recurrence
+    month: Optional[int] = None
+
+    # Start date for one-time events (YYYY-MM-DD format)
+    start_date: Optional[str] = None
 
     # Google Calendar event ID (for syncing)
     calendar_event_id: Optional[str] = None

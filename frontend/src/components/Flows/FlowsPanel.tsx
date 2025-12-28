@@ -146,6 +146,7 @@ const SUGGESTED_FLOWS = [
     schedule: {
       start_time: '08:00',
       end_time: '10:00',
+      recurrence: 'weekly' as RecurrenceType,
       days_of_week: [0, 1, 2, 3, 4],  // Sun-Thu
     },
     actions: [
@@ -164,6 +165,7 @@ const SUGGESTED_FLOWS = [
     schedule: {
       start_time: '14:00',
       end_time: '16:00',
+      recurrence: 'weekly' as RecurrenceType,
       days_of_week: [5],  // Friday
     },
     actions: [
@@ -191,6 +193,7 @@ const SUGGESTED_FLOWS = [
     schedule: {
       start_time: '18:00',
       end_time: '20:00',
+      recurrence: 'daily' as RecurrenceType,
       days_of_week: [0, 1, 2, 3, 4, 5, 6],
     },
     actions: [
@@ -210,6 +213,18 @@ interface FlowAction {
   description?: string
 }
 
+type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+
+interface FlowSchedule {
+  start_time: string
+  end_time?: string
+  recurrence: RecurrenceType
+  days_of_week: number[]
+  day_of_month?: number
+  month?: number
+  start_date?: string
+}
+
 interface Flow {
   _id: string
   name: string
@@ -217,11 +232,7 @@ interface Flow {
   description?: string
   actions: FlowAction[]
   trigger_type: 'scheduled' | 'manual' | 'event'
-  schedule?: {
-    days_of_week: number[]
-    start_time: string
-    end_time?: string
-  }
+  schedule?: FlowSchedule
   status: 'active' | 'paused' | 'disabled' | 'running'
   priority: number
   loop: boolean
@@ -272,6 +283,8 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
   const [expandedFlow, setExpandedFlow] = useState<string | null>(null)
   const [showSuggested, setShowSuggested] = useState(false)
   const [flowDescription, setFlowDescription] = useState('')
+  const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>('weekly')
+  const [editRecurrenceType, setEditRecurrenceType] = useState<RecurrenceType>('weekly')
 
   // Real-time preview of parsed actions
   const previewActions = useMemo(() => {
@@ -326,8 +339,11 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
     const triggerType = formData.get('trigger_type') as string
     const startTime = formData.get('start_time') as string
     const endTime = formData.get('end_time') as string
+    const startDate = formData.get('start_date') as string
+    const dayOfMonth = formData.get('day_of_month') as string
+    const month = formData.get('month') as string
 
-    // Collect selected days
+    // Collect selected days (for weekly recurrence)
     const daysOfWeek: number[] = []
     for (let i = 0; i < 7; i++) {
       if (formData.get(`day_${i}`)) {
@@ -345,9 +361,13 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
 
     // Build schedule object if scheduled
     const schedule = triggerType === 'scheduled' ? {
-      days_of_week: daysOfWeek.length > 0 ? daysOfWeek : [0, 1, 2, 3, 4, 5, 6],
       start_time: startTime || '09:00',
       end_time: endTime || undefined,
+      recurrence: recurrenceType,
+      days_of_week: recurrenceType === 'weekly' ? (daysOfWeek.length > 0 ? daysOfWeek : [0, 1, 2, 3, 4, 5, 6]) : [],
+      day_of_month: (recurrenceType === 'monthly' || recurrenceType === 'yearly') && dayOfMonth ? parseInt(dayOfMonth) : undefined,
+      month: recurrenceType === 'yearly' && month ? parseInt(month) : undefined,
+      start_date: recurrenceType === 'none' && startDate ? startDate : undefined,
     } : undefined
 
     createMutation.mutate({
@@ -364,6 +384,7 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
   const handleCloseCreateModal = () => {
     setShowCreateModal(false)
     setFlowDescription('')
+    setRecurrenceType('weekly')
   }
 
   const handleUseSuggested = (suggested: typeof SUGGESTED_FLOWS[0]) => {
@@ -499,6 +520,14 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                   <Calendar size={12} />
                   <span>{flow.schedule.start_time}</span>
                   {flow.schedule.end_time && <span>- {flow.schedule.end_time}</span>}
+                  {flow.schedule.recurrence && flow.schedule.recurrence !== 'none' && (
+                    <span className="ml-1 px-1.5 py-0.5 bg-primary-500/20 text-primary-400 rounded text-[10px]">
+                      {flow.schedule.recurrence === 'daily' ? (isRTL ? 'יומי' : 'Daily') :
+                       flow.schedule.recurrence === 'weekly' ? (isRTL ? 'שבועי' : 'Weekly') :
+                       flow.schedule.recurrence === 'monthly' ? (isRTL ? 'חודשי' : 'Monthly') :
+                       flow.schedule.recurrence === 'yearly' ? (isRTL ? 'שנתי' : 'Yearly') : ''}
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -560,7 +589,10 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                   {flow.status === 'active' ? <Pause size={12} /> : <Play size={12} />}
                 </button>
                 <button
-                  onClick={() => setEditingFlow(flow)}
+                  onClick={() => {
+                    setEditingFlow(flow)
+                    setEditRecurrenceType(flow.schedule?.recurrence || 'weekly')
+                  }}
                   className="glass-button py-1.5 px-2 text-xs text-blue-400 hover:bg-blue-500/20"
                   title={isRTL ? 'ערוך' : 'Edit'}
                 >
@@ -714,27 +746,106 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                   </div>
                 </div>
 
+                {/* Recurrence Type */}
                 <div>
-                  <label className="block text-dark-300 text-xs mb-2">
-                    {isRTL ? 'ימים' : 'Days'}
+                  <label className="block text-dark-300 text-xs mb-1">
+                    {isRTL ? 'חזרה' : 'Repeat'}
                   </label>
-                  <div className="flex flex-wrap gap-1">
-                    {(isRTL
-                      ? ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש']
-                      : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-                    ).map((day, idx) => (
-                      <label key={idx} className="flex items-center gap-1">
-                        <input
-                          type="checkbox"
-                          name={`day_${idx}`}
-                          defaultChecked
-                          className="rounded bg-dark-700 border-dark-500"
-                        />
-                        <span className="text-xs text-dark-300">{day}</span>
-                      </label>
-                    ))}
-                  </div>
+                  <select
+                    name="recurrence"
+                    value={recurrenceType}
+                    onChange={(e) => setRecurrenceType(e.target.value as RecurrenceType)}
+                    className="w-full glass-input text-sm"
+                  >
+                    <option value="none">{isRTL ? 'פעם אחת' : 'Once'}</option>
+                    <option value="daily">{isRTL ? 'יומי' : 'Daily'}</option>
+                    <option value="weekly">{isRTL ? 'שבועי' : 'Weekly'}</option>
+                    <option value="monthly">{isRTL ? 'חודשי' : 'Monthly'}</option>
+                    <option value="yearly">{isRTL ? 'שנתי' : 'Yearly'}</option>
+                  </select>
                 </div>
+
+                {/* One-time: Date picker */}
+                {recurrenceType === 'none' && (
+                  <div>
+                    <label className="block text-dark-300 text-xs mb-1">
+                      {isRTL ? 'תאריך' : 'Date'}
+                    </label>
+                    <input
+                      type="date"
+                      name="start_date"
+                      className="w-full glass-input text-sm"
+                    />
+                  </div>
+                )}
+
+                {/* Weekly: Day selector */}
+                {recurrenceType === 'weekly' && (
+                  <div>
+                    <label className="block text-dark-300 text-xs mb-2">
+                      {isRTL ? 'ימים' : 'Days'}
+                    </label>
+                    <div className="flex flex-wrap gap-1">
+                      {(isRTL
+                        ? ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש']
+                        : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                      ).map((day, idx) => (
+                        <label key={idx} className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            name={`day_${idx}`}
+                            defaultChecked
+                            className="rounded bg-dark-700 border-dark-500"
+                          />
+                          <span className="text-xs text-dark-300">{day}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Monthly: Day of month */}
+                {recurrenceType === 'monthly' && (
+                  <div>
+                    <label className="block text-dark-300 text-xs mb-1">
+                      {isRTL ? 'יום בחודש' : 'Day of Month'}
+                    </label>
+                    <select name="day_of_month" className="w-full glass-input text-sm">
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Yearly: Month and day */}
+                {recurrenceType === 'yearly' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-dark-300 text-xs mb-1">
+                        {isRTL ? 'חודש' : 'Month'}
+                      </label>
+                      <select name="month" className="w-full glass-input text-sm">
+                        {(isRTL
+                          ? ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר']
+                          : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                        ).map((m, idx) => (
+                          <option key={idx} value={idx + 1}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-dark-300 text-xs mb-1">
+                        {isRTL ? 'יום' : 'Day'}
+                      </label>
+                      <select name="day_of_month" className="w-full glass-input text-sm">
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2 pt-4">
@@ -856,8 +967,11 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                 const triggerType = formData.get('trigger_type') as string
                 const startTime = formData.get('start_time') as string
                 const endTime = formData.get('end_time') as string
+                const startDate = formData.get('start_date') as string
+                const dayOfMonth = formData.get('day_of_month') as string
+                const month = formData.get('month') as string
 
-                // Collect selected days
+                // Collect selected days (for weekly recurrence)
                 const daysOfWeek: number[] = []
                 for (let i = 0; i < 7; i++) {
                   if (formData.get(`day_${i}`)) {
@@ -866,9 +980,13 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                 }
 
                 const schedule = triggerType === 'scheduled' ? {
-                  days_of_week: daysOfWeek.length > 0 ? daysOfWeek : [0, 1, 2, 3, 4, 5, 6],
                   start_time: startTime || '09:00',
                   end_time: endTime || undefined,
+                  recurrence: editRecurrenceType,
+                  days_of_week: editRecurrenceType === 'weekly' ? (daysOfWeek.length > 0 ? daysOfWeek : [0, 1, 2, 3, 4, 5, 6]) : [],
+                  day_of_month: (editRecurrenceType === 'monthly' || editRecurrenceType === 'yearly') && dayOfMonth ? parseInt(dayOfMonth) : undefined,
+                  month: editRecurrenceType === 'yearly' && month ? parseInt(month) : undefined,
+                  start_date: editRecurrenceType === 'none' && startDate ? startDate : undefined,
                 } : undefined
 
                 updateMutation.mutate({
@@ -954,27 +1072,119 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                   </div>
                 </div>
 
+                {/* Recurrence Type */}
                 <div>
-                  <label className="block text-dark-300 text-xs mb-2">
-                    {isRTL ? 'ימים' : 'Days'}
+                  <label className="block text-dark-300 text-xs mb-1">
+                    {isRTL ? 'חזרה' : 'Repeat'}
                   </label>
-                  <div className="flex flex-wrap gap-1">
-                    {(isRTL
-                      ? ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש']
-                      : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-                    ).map((day, idx) => (
-                      <label key={idx} className="flex items-center gap-1">
-                        <input
-                          type="checkbox"
-                          name={`day_${idx}`}
-                          defaultChecked={editingFlow.schedule?.days_of_week?.includes(idx) ?? true}
-                          className="rounded bg-dark-700 border-dark-500"
-                        />
-                        <span className="text-xs text-dark-300">{day}</span>
-                      </label>
-                    ))}
-                  </div>
+                  <select
+                    name="recurrence"
+                    value={editRecurrenceType}
+                    onChange={(e) => setEditRecurrenceType(e.target.value as RecurrenceType)}
+                    className="w-full glass-input text-sm"
+                  >
+                    <option value="none">{isRTL ? 'פעם אחת' : 'Once'}</option>
+                    <option value="daily">{isRTL ? 'יומי' : 'Daily'}</option>
+                    <option value="weekly">{isRTL ? 'שבועי' : 'Weekly'}</option>
+                    <option value="monthly">{isRTL ? 'חודשי' : 'Monthly'}</option>
+                    <option value="yearly">{isRTL ? 'שנתי' : 'Yearly'}</option>
+                  </select>
                 </div>
+
+                {/* One-time: Date picker */}
+                {editRecurrenceType === 'none' && (
+                  <div>
+                    <label className="block text-dark-300 text-xs mb-1">
+                      {isRTL ? 'תאריך' : 'Date'}
+                    </label>
+                    <input
+                      type="date"
+                      name="start_date"
+                      className="w-full glass-input text-sm"
+                      defaultValue={editingFlow.schedule?.start_date || ''}
+                    />
+                  </div>
+                )}
+
+                {/* Weekly: Day selector */}
+                {editRecurrenceType === 'weekly' && (
+                  <div>
+                    <label className="block text-dark-300 text-xs mb-2">
+                      {isRTL ? 'ימים' : 'Days'}
+                    </label>
+                    <div className="flex flex-wrap gap-1">
+                      {(isRTL
+                        ? ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש']
+                        : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                      ).map((day, idx) => (
+                        <label key={idx} className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            name={`day_${idx}`}
+                            defaultChecked={editingFlow.schedule?.days_of_week?.includes(idx) ?? true}
+                            className="rounded bg-dark-700 border-dark-500"
+                          />
+                          <span className="text-xs text-dark-300">{day}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Monthly: Day of month */}
+                {editRecurrenceType === 'monthly' && (
+                  <div>
+                    <label className="block text-dark-300 text-xs mb-1">
+                      {isRTL ? 'יום בחודש' : 'Day of Month'}
+                    </label>
+                    <select
+                      name="day_of_month"
+                      className="w-full glass-input text-sm"
+                      defaultValue={editingFlow.schedule?.day_of_month || 1}
+                    >
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Yearly: Month and day */}
+                {editRecurrenceType === 'yearly' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-dark-300 text-xs mb-1">
+                        {isRTL ? 'חודש' : 'Month'}
+                      </label>
+                      <select
+                        name="month"
+                        className="w-full glass-input text-sm"
+                        defaultValue={editingFlow.schedule?.month || 1}
+                      >
+                        {(isRTL
+                          ? ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר']
+                          : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                        ).map((m, idx) => (
+                          <option key={idx} value={idx + 1}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-dark-300 text-xs mb-1">
+                        {isRTL ? 'יום' : 'Day'}
+                      </label>
+                      <select
+                        name="day_of_month"
+                        className="w-full glass-input text-sm"
+                        defaultValue={editingFlow.schedule?.day_of_month || 1}
+                      >
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
