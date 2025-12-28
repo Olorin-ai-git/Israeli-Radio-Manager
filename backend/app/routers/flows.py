@@ -1007,8 +1007,7 @@ async def run_flow(request: Request, flow_id: str):
         if should_loop and end_time_str:
             logger.info(f"Flow {flow_id} will loop until {end_time_str}")
 
-            # Parse end time
-            from datetime import datetime, time as dt_time
+            # Parse end time (datetime already imported at module level)
             end_hour, end_minute = map(int, end_time_str.split(':'))
             end_time = datetime.utcnow().replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
 
