@@ -1,6 +1,7 @@
 """Main AI Orchestrator Agent for radio automation."""
 
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
@@ -8,6 +9,27 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from anthropic import Anthropic
 
 from app.config import settings
+
+
+def detect_language(text: str) -> str:
+    """
+    Detect if text is primarily Hebrew or English.
+    Returns 'he' for Hebrew, 'en' for English.
+    """
+    # Count Hebrew characters (Unicode range for Hebrew)
+    hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
+    hebrew_chars = len(hebrew_pattern.findall(text))
+
+    # Count English letters
+    english_pattern = re.compile(r'[a-zA-Z]')
+    english_chars = len(english_pattern.findall(text))
+
+    # If more Hebrew characters, it's Hebrew
+    if hebrew_chars > english_chars:
+        return 'he'
+    return 'en'
+
+
 from app.models.agent import (
     AgentConfig, AgentMode, ActionType, PendingAction, ActionStatus
 )
@@ -238,8 +260,12 @@ class OrchestratorAgent:
         play_track = None
 
         if task_result:
-            # Use the task result as the response
-            final_response = task_result.get("message", assistant_message)
+            # Detect user's language and use appropriate response
+            user_lang = detect_language(user_message)
+            if user_lang == 'en' and task_result.get("message_en"):
+                final_response = task_result.get("message_en")
+            else:
+                final_response = task_result.get("message", assistant_message)
 
             # If task was executed, add action confirmation
             if task_result.get("success"):
