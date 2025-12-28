@@ -430,3 +430,135 @@ async def clear_chat_history(request: Request):
     db = request.app.state.db
     await db.chat_logs.delete_many({})
     return {"message": "Chat history cleared"}
+
+
+# ==================== Email Watcher Endpoints ====================
+
+@router.get("/email-watcher/status")
+async def get_email_watcher_status(request: Request):
+    """Get email watcher status and statistics."""
+    email_watcher = getattr(request.app.state, 'email_watcher', None)
+
+    if not email_watcher:
+        return {
+            "available": False,
+            "running": False,
+            "message": "Email watcher not initialized. Check Gmail credentials."
+        }
+
+    status = email_watcher.get_status()
+    status["available"] = True
+    return status
+
+
+@router.post("/email-watcher/start")
+async def start_email_watcher(request: Request):
+    """Start the email watcher background task."""
+    email_watcher = getattr(request.app.state, 'email_watcher', None)
+
+    if not email_watcher:
+        raise HTTPException(
+            status_code=503,
+            detail="Email watcher not initialized. Check Gmail credentials."
+        )
+
+    await email_watcher.start()
+    return {"message": "Email watcher started", "status": email_watcher.get_status()}
+
+
+@router.post("/email-watcher/stop")
+async def stop_email_watcher(request: Request):
+    """Stop the email watcher background task."""
+    email_watcher = getattr(request.app.state, 'email_watcher', None)
+
+    if not email_watcher:
+        raise HTTPException(
+            status_code=503,
+            detail="Email watcher not initialized."
+        )
+
+    await email_watcher.stop()
+    return {"message": "Email watcher stopped", "status": email_watcher.get_status()}
+
+
+@router.post("/email-watcher/check")
+async def manual_email_check(request: Request):
+    """Manually trigger a check for new email attachments."""
+    email_watcher = getattr(request.app.state, 'email_watcher', None)
+
+    if not email_watcher:
+        raise HTTPException(
+            status_code=503,
+            detail="Email watcher not initialized. Check Gmail credentials."
+        )
+
+    result = await email_watcher.manual_check()
+    return {
+        "message": "Email check completed",
+        "status": result
+    }
+
+
+class EmailActionResponse(BaseModel):
+    approved: bool
+    modified_action: Optional[dict] = None
+
+
+@router.post("/email-watcher/pending/{action_id}/respond")
+async def respond_to_email_action(
+    request: Request,
+    action_id: str,
+    response: EmailActionResponse
+):
+    """
+    Respond to a pending email categorization action.
+
+    This is used when an email attachment requires user review
+    before being imported into the content library.
+    """
+    email_watcher = getattr(request.app.state, 'email_watcher', None)
+
+    if not email_watcher:
+        raise HTTPException(
+            status_code=503,
+            detail="Email watcher not initialized."
+        )
+
+    await email_watcher.process_pending_action(
+        action_id,
+        response.approved,
+        response.modified_action
+    )
+
+    return {
+        "message": "Action processed",
+        "approved": response.approved
+    }
+
+
+@router.put("/email-watcher/config")
+async def update_email_watcher_config(
+    request: Request,
+    check_interval: Optional[int] = None,
+    auto_approve_threshold: Optional[float] = None
+):
+    """Update email watcher configuration."""
+    email_watcher = getattr(request.app.state, 'email_watcher', None)
+
+    if not email_watcher:
+        raise HTTPException(
+            status_code=503,
+            detail="Email watcher not initialized."
+        )
+
+    if check_interval is not None:
+        email_watcher.check_interval = max(30, check_interval)  # Minimum 30 seconds
+
+    if auto_approve_threshold is not None:
+        email_watcher.auto_approve_threshold = max(0.0, min(1.0, auto_approve_threshold))
+
+    return {
+        "message": "Configuration updated",
+        "check_interval": email_watcher.check_interval,
+        "auto_approve_threshold": email_watcher.auto_approve_threshold
+    }

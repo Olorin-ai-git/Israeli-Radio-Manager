@@ -14,6 +14,8 @@ from app.services.google_drive import GoogleDriveService
 from app.services.content_sync import ContentSyncService
 from app.services.google_calendar import GoogleCalendarService
 from app.services.calendar_watcher import CalendarWatcherService
+from app.services.gmail import GmailService
+from app.services.email_watcher import EmailWatcherService
 
 # Configure logging
 logging.basicConfig(
@@ -92,10 +94,51 @@ async def lifespan(app: FastAPI):
         await app.state.calendar_watcher.start()
         logger.info("Calendar watcher started - monitoring scheduled events")
 
+    # Initialize Gmail service
+    app.state.gmail_service = None
+    try:
+        app.state.gmail_service = GmailService(
+            credentials_path=settings.google_credentials_file,
+            token_path="gmail_token.json",
+            download_dir=settings.cache_dir
+        )
+        logger.info("Gmail service initialized")
+    except Exception as e:
+        logger.warning(f"Gmail service initialization failed: {e}. Email watcher will be unavailable.")
+
+    # Initialize and start email watcher (background task for auto-importing audio from email)
+    app.state.email_watcher = None
+    if app.state.gmail_service:
+        # Import orchestrator for AI classification (optional)
+        orchestrator = None
+        try:
+            from app.agent.orchestrator import OrchestratorAgent
+            orchestrator = OrchestratorAgent(
+                db=app.state.db,
+                audio_player=app.state.audio_player,
+                content_sync=app.state.content_sync,
+                calendar_service=app.state.calendar_service
+            )
+        except Exception as e:
+            logger.warning(f"Could not initialize orchestrator for email watcher: {e}")
+
+        app.state.email_watcher = EmailWatcherService(
+            db=app.state.db,
+            gmail_service=app.state.gmail_service,
+            drive_service=app.state.drive_service,
+            orchestrator_agent=orchestrator,
+            check_interval=60,  # Check every 60 seconds
+            auto_approve_threshold=0.8  # Auto-approve if confidence > 80%
+        )
+        await app.state.email_watcher.start()
+        logger.info("Email watcher started - monitoring for audio attachments")
+
     yield
 
     # Shutdown
     logger.info("Shutting down Israeli Radio Manager...")
+    if app.state.email_watcher:
+        await app.state.email_watcher.stop()
     if app.state.calendar_watcher:
         await app.state.calendar_watcher.stop()
     if hasattr(app.state, 'audio_player'):
