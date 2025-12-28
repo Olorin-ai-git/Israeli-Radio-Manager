@@ -26,7 +26,7 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const [chatExpanded, setChatExpanded] = useState(false)
   const [flowsCollapsed, setFlowsCollapsed] = useState(true)
-  const { currentTrack, queue, playNext, playOrQueue } = usePlayerStore()
+  const { currentTrack, queue, playNext, playNow } = usePlayerStore()
   const wsRef = useRef<WebSocket | null>(null)
 
   // Auto-play from queue when nothing is playing
@@ -71,9 +71,9 @@ export default function Layout({ children }: LayoutProps) {
           const message = JSON.parse(event.data)
 
           if (message.type === 'scheduled_playback') {
-            // Scheduled content should play after current song finishes
+            // Chat-requested content should play immediately
             const content = message.data
-            console.log('Scheduled playback triggered:', content)
+            console.log('Chat playback triggered:', content)
 
             const track = {
               _id: content._id,
@@ -85,8 +85,8 @@ export default function Layout({ children }: LayoutProps) {
               metadata: content.metadata,
             }
 
-            // Play immediately if nothing playing, otherwise queue as next
-            playOrQueue(track)
+            // Play immediately, interrupting current track if needed
+            playNow(track)
           } else if (message.type === 'queue_tracks') {
             // Multiple tracks to add to queue
             const tracks = message.data
@@ -136,7 +136,7 @@ export default function Layout({ children }: LayoutProps) {
         wsRef.current.close()
       }
     }
-  }, [isRTL, playOrQueue])
+  }, [isRTL, playNow])
 
   const navItems = [
     { path: '/', icon: LayoutDashboard, label: t('nav.dashboard') },

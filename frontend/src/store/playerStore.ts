@@ -29,6 +29,7 @@ interface PlayerState {
   // Actions
   setCurrentTrack: (track: Track | null) => void
   play: (track: Track) => void
+  playNow: (track: Track) => void      // Interrupt current and play immediately
   playOrQueue: (track: Track) => void  // Play if nothing playing, else queue next
   addToQueue: (track: Track) => void
   queueNext: (track: Track) => void    // Insert at front of queue
@@ -50,6 +51,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   play: (track) => {
     set({ currentTrack: track, isPlaying: true })
+  },
+
+  // Interrupt current playback and play immediately (for chat requests)
+  playNow: (track) => {
+    const { currentTrack } = get()
+
+    // If something is playing, optionally save it to front of queue
+    if (currentTrack) {
+      // Put current track at front of queue so it can resume after
+      set((state) => ({
+        currentTrack: track,
+        isPlaying: true,
+        queue: [currentTrack, ...state.queue]
+      }))
+    } else {
+      set({ currentTrack: track, isPlaying: true })
+    }
   },
 
   // Play immediately if nothing playing, otherwise queue as next track
