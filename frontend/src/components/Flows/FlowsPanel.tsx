@@ -390,8 +390,9 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     const { active, over } = event
     if (over && active.id !== over.id) {
       setEditParsedActions((items) => {
-        const oldIndex = items.findIndex((item, idx) => `action-${idx}` === active.id)
-        const newIndex = items.findIndex((item, idx) => `action-${idx}` === over.id)
+        // Extract indices from the IDs (format: "action-0", "action-1", etc.)
+        const oldIndex = parseInt(String(active.id).split('-')[1])
+        const newIndex = parseInt(String(over.id).split('-')[1])
         return arrayMove(items, oldIndex, newIndex)
       })
     }
