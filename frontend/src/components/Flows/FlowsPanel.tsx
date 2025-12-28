@@ -18,8 +18,25 @@ import {
   Calendar,
   Sparkles,
   Eye,
-  CheckCircle
+  CheckCircle,
+  GripVertical
 } from 'lucide-react'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { api } from '../../services/api'
 
 // Genre mappings for parsing
@@ -253,6 +270,8 @@ const ActionIcon = ({ type }: { type: string }) => {
       return <Megaphone size={14} className="text-orange-400" />
     case 'wait':
       return <Clock size={14} className="text-gray-400" />
+    case 'set_volume':
+      return <Workflow size={14} className="text-purple-400" />
     default:
       return <Workflow size={14} className="text-primary-400" />
   }
@@ -273,6 +292,69 @@ const StatusBadge = ({ status }: { status: string }) => {
   )
 }
 
+// Sortable action item for drag and drop
+function SortableActionItem({
+  action,
+  index,
+  isRTL,
+  onRemove,
+}: {
+  action: FlowAction & { id: string }
+  index: number
+  isRTL: boolean
+  onRemove: (index: number) => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: action.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 text-xs text-dark-200 p-2 bg-dark-700/50 rounded hover:bg-dark-700 transition-colors group"
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing text-dark-500 hover:text-dark-300 transition-colors"
+        title={isRTL ? 'גרור לשינוי סדר' : 'Drag to reorder'}
+      >
+        <GripVertical size={14} />
+      </button>
+      <ActionIcon type={action.action_type} />
+      <span className="flex-1">{action.description || action.action_type}</span>
+      {action.duration_minutes && (
+        <span className="text-dark-400">({action.duration_minutes} min)</span>
+      )}
+      {action.genre && (
+        <span className="text-dark-400 text-xs">({action.genre})</span>
+      )}
+      {action.commercial_count && (
+        <span className="text-dark-400 text-xs">({action.commercial_count} ads)</span>
+      )}
+      <button
+        onClick={() => onRemove(index)}
+        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-all p-1"
+        title={isRTL ? 'מחק פעולה' : 'Remove action'}
+      >
+        <X size={14} />
+      </button>
+    </div>
+  )
+}
+
 export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
@@ -287,6 +369,38 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
   const [editRecurrenceType, setEditRecurrenceType] = useState<RecurrenceType>('weekly')
   const [editFlowDescription, setEditFlowDescription] = useState('')
   const [editParsedActions, setEditParsedActions] = useState<any[]>([])
+  const [showAddActionModal, setShowAddActionModal] = useState(false)
+  const [selectedActionType, setSelectedActionType] = useState('play_genre')
+  const [selectedCommercials, setSelectedCommercials] = useState<Set<string>>(new Set())
+
+  // Fetch commercials for selection
+  const { data: commercials } = useQuery({
+    queryKey: ['commercials'],
+    queryFn: api.getCommercials,
+    enabled: showAddActionModal && selectedActionType === 'play_commercials'
+  })
+
+  // Auto-select all commercials when they load
+  useEffect(() => {
+    if (commercials && selectedActionType === 'play_commercials') {
+      setSelectedCommercials(new Set(commercials.map((c: any) => c._id)))
+    }
+  }, [commercials, selectedActionType])
+
+  // Calculate select all checkbox state
+  const selectAllState = useMemo(() => {
+    if (!commercials || commercials.length === 0) return 'none'
+    const selectedCount = selectedCommercials.size
+    if (selectedCount === 0) return 'none'
+    if (selectedCount === commercials.length) return 'all'
+    return 'partial'
+  }, [commercials, selectedCommercials])
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor)
+  )
 
   // Real-time preview of parsed actions
   const previewActions = useMemo(() => {
@@ -357,6 +471,58 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
     setEditingFlow(null)
     setEditFlowDescription('')
     setEditParsedActions([])
+    setShowAddActionModal(false)
+    setSelectedActionType('play_genre')
+    setSelectedCommercials(new Set())
+  }
+
+  // Handle drag end for reordering actions
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (over && active.id !== over.id) {
+      setEditParsedActions((items) => {
+        const oldIndex = items.findIndex((item, idx) => `action-${idx}` === active.id)
+        const newIndex = items.findIndex((item, idx) => `action-${idx}` === over.id)
+        return arrayMove(items, oldIndex, newIndex)
+      })
+    }
+  }
+
+  // Handle remove action
+  const handleRemoveAction = (index: number) => {
+    setEditParsedActions((items) => items.filter((_, idx) => idx !== index))
+  }
+
+  // Handle add action
+  const handleAddAction = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const formData = new FormData(e.currentTarget)
+
+    const actionType = formData.get('action_type') as string
+    const genre = formData.get('genre') as string
+    const batchNumber = formData.get('batch_number') as string
+    const durationMinutes = formData.get('duration_minutes') as string
+    const description = formData.get('description') as string
+
+    const newAction: FlowAction = {
+      action_type: actionType,
+      description: description || undefined,
+      duration_minutes: durationMinutes ? parseInt(durationMinutes) : undefined,
+      genre: genre || undefined,
+    }
+
+    // For commercials, add batch number and selected commercial IDs
+    if (actionType === 'play_commercials') {
+      newAction.commercial_count = batchNumber ? parseInt(batchNumber) : 1
+      newAction.content_id = selectedCommercials.size === commercials?.length
+        ? undefined // All commercials selected - use undefined to mean "all"
+        : Array.from(selectedCommercials).join(',') // Specific commercials
+    }
+
+    setEditParsedActions((items) => [...items, newAction])
+    setShowAddActionModal(false)
+    setSelectedActionType('play_genre')
+    setSelectedCommercials(new Set())
   }
 
   const handleCreateFlow = (e: React.FormEvent<HTMLFormElement>) => {
@@ -529,15 +695,23 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
 
               {/* Actions Preview */}
               <div className="flex items-center gap-1 mb-2">
-                {flow.actions.slice(0, 4).map((action, idx) => (
-                  <div
-                    key={idx}
-                    className="w-6 h-6 rounded bg-dark-700/50 flex items-center justify-center"
-                    title={action.description || action.action_type}
-                  >
-                    <ActionIcon type={action.action_type} />
-                  </div>
-                ))}
+                {flow.actions.slice(0, 4).map((action, idx) => {
+                  // Build detailed tooltip
+                  let tooltip = action.description || action.action_type
+                  if (action.genre) tooltip += ` (${action.genre})`
+                  if (action.duration_minutes) tooltip += ` - ${action.duration_minutes} min`
+                  if (action.commercial_count) tooltip += ` (${action.commercial_count} ads)`
+
+                  return (
+                    <div
+                      key={idx}
+                      className="w-6 h-6 rounded bg-dark-700/50 flex items-center justify-center hover:bg-dark-700 transition-colors cursor-help"
+                      title={tooltip}
+                    >
+                      <ActionIcon type={action.action_type} />
+                    </div>
+                  )
+                })}
                 {flow.actions.length > 4 && (
                   <span className="text-xs text-dark-400">+{flow.actions.length - 4}</span>
                 )}
@@ -1223,27 +1397,45 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
 
               {/* Live Preview of Parsed Actions */}
               <div className="p-3 bg-dark-800/50 rounded-lg border border-primary-500/30">
-                <div className="flex items-center gap-2 mb-2">
-                  <Eye size={14} className="text-primary-400" />
-                  <span className="text-xs font-medium text-primary-400">
-                    {isRTL ? 'תצוגה מקדימה - פעולות שזוהו:' : 'Preview - Detected Actions:'}
-                  </span>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Eye size={14} className="text-primary-400" />
+                    <span className="text-xs font-medium text-primary-400">
+                      {isRTL ? 'תצוגה מקדימה - פעולות שזוהו:' : 'Preview - Detected Actions:'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddActionModal(true)}
+                    className="flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300 transition-colors"
+                  >
+                    <Plus size={14} />
+                    <span>{isRTL ? 'הוסף פעולה' : 'Add Action'}</span>
+                  </button>
                 </div>
                 {editParsedActions.length > 0 ? (
-                  <div className="space-y-1 max-h-32 overflow-auto">
-                    {editParsedActions.map((action, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center gap-2 text-xs text-dark-200 p-2 bg-dark-700/50 rounded"
-                      >
-                        <ActionIcon type={action.action_type} />
-                        <span>{action.description || action.action_type}</span>
-                        {action.duration_minutes && (
-                          <span className="text-dark-400">({action.duration_minutes} min)</span>
-                        )}
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={editParsedActions.map((_, idx) => `action-${idx}`)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-1 max-h-48 overflow-auto">
+                        {editParsedActions.map((action, idx) => (
+                          <SortableActionItem
+                            key={`action-${idx}`}
+                            action={{ ...action, id: `action-${idx}` }}
+                            index={idx}
+                            isRTL={isRTL}
+                            onRemove={handleRemoveAction}
+                          />
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </SortableContext>
+                  </DndContext>
                 ) : (
                   <p className="text-xs text-dark-400 italic">
                     {isRTL ? 'הקלד תיאור לראות פעולות...' : 'Type a description to see actions...'}
@@ -1270,6 +1462,196 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                     <Edit size={16} />
                   )}
                   <span>{isRTL ? 'שמור' : 'Save'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Action Modal */}
+      {showAddActionModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="glass-card p-6 w-full max-w-md mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-dark-100">
+                {isRTL ? 'הוסף פעולה' : 'Add Action'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowAddActionModal(false)
+                  setSelectedActionType('play_genre')
+                  setSelectedCommercials(new Set())
+                }}
+                className="p-2 hover:bg-white/10 rounded-lg"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddAction} className="space-y-3">
+              <div>
+                <label className="block text-dark-300 text-sm mb-1">
+                  {isRTL ? 'סוג פעולה' : 'Action Type'}
+                </label>
+                <select
+                  name="action_type"
+                  className="w-full glass-input"
+                  required
+                  value={selectedActionType}
+                  onChange={(e) => setSelectedActionType(e.target.value)}
+                >
+                  <option value="play_genre">{isRTL ? 'נגן ז\'אנר' : 'Play Genre'}</option>
+                  <option value="play_commercials">{isRTL ? 'נגן פרסומות' : 'Play Commercials'}</option>
+                  <option value="wait">{isRTL ? 'המתן' : 'Wait'}</option>
+                  <option value="set_volume">{isRTL ? 'קבע עוצמת קול' : 'Set Volume'}</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-dark-300 text-sm mb-1">
+                  {isRTL ? 'תיאור' : 'Description'}
+                </label>
+                <input
+                  type="text"
+                  name="description"
+                  className="w-full glass-input"
+                  placeholder={isRTL ? 'תיאור הפעולה' : 'Action description'}
+                />
+              </div>
+
+              {selectedActionType !== 'play_commercials' && (
+                <div>
+                  <label className="block text-dark-300 text-sm mb-1">
+                    {isRTL ? 'משך זמן (דקות)' : 'Duration (minutes)'}
+                  </label>
+                  <input
+                    type="number"
+                    name="duration_minutes"
+                    className="w-full glass-input"
+                    placeholder="30"
+                    min="1"
+                  />
+                </div>
+              )}
+
+              {selectedActionType === 'play_genre' && (
+                <div>
+                  <label className="block text-dark-300 text-sm mb-1">
+                    {isRTL ? 'ז\'אנר' : 'Genre'}
+                  </label>
+                  <select name="genre" className="w-full glass-input">
+                    <option value="">{isRTL ? 'בחר ז\'אנר' : 'Select genre'}</option>
+                    <option value="hasidi">Hasidi</option>
+                    <option value="mizrahi">Mizrahi</option>
+                    <option value="happy">Happy</option>
+                    <option value="israeli">Israeli</option>
+                    <option value="pop">Pop</option>
+                    <option value="rock">Rock</option>
+                    <option value="mediterranean">Mediterranean</option>
+                    <option value="classic">Classic</option>
+                    <option value="hebrew">Hebrew</option>
+                    <option value="mixed">Mixed</option>
+                    <option value="all">All</option>
+                  </select>
+                </div>
+              )}
+
+              {selectedActionType === 'play_commercials' && (
+                <>
+                  <div>
+                    <label className="block text-dark-300 text-sm mb-1">
+                      {isRTL ? 'מספר אצווה' : 'Batch Number'}
+                    </label>
+                    <input
+                      type="number"
+                      name="batch_number"
+                      className="w-full glass-input"
+                      placeholder="1"
+                      min="1"
+                      defaultValue="1"
+                    />
+                  </div>
+
+                  <div className="p-3 bg-dark-800/30 rounded-lg max-h-64 overflow-auto">
+                    <div className="flex items-center gap-2 mb-2 pb-2 border-b border-white/10">
+                      <input
+                        type="checkbox"
+                        checked={selectAllState === 'all'}
+                        ref={(el) => {
+                          if (el) el.indeterminate = selectAllState === 'partial'
+                        }}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedCommercials(new Set(commercials?.map((c: any) => c._id) || []))
+                          } else {
+                            setSelectedCommercials(new Set())
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-2 border-dark-600 bg-dark-800 checked:bg-primary-500 checked:border-primary-500"
+                      />
+                      <label className="text-sm font-medium text-dark-200">
+                        {isRTL ? 'בחר הכל' : 'Select All'} ({selectedCommercials.size}/{commercials?.length || 0})
+                      </label>
+                    </div>
+
+                    {commercials && commercials.length > 0 ? (
+                      <div className="space-y-1">
+                        {commercials.map((commercial: any) => (
+                          <label
+                            key={commercial._id}
+                            className="flex items-center gap-2 p-2 hover:bg-dark-700/30 rounded cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedCommercials.has(commercial._id)}
+                              onChange={(e) => {
+                                const newSet = new Set(selectedCommercials)
+                                if (e.target.checked) {
+                                  newSet.add(commercial._id)
+                                } else {
+                                  newSet.delete(commercial._id)
+                                }
+                                setSelectedCommercials(newSet)
+                              }}
+                              className="w-4 h-4 rounded border-2 border-dark-600 bg-dark-800 checked:bg-primary-500 checked:border-primary-500"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-dark-200 truncate">{commercial.title}</p>
+                              {commercial.artist && (
+                                <p className="text-xs text-dark-500 truncate">{commercial.artist}</p>
+                              )}
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-dark-500 italic">
+                        {isRTL ? 'אין פרסומות זמינות' : 'No commercials available'}
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddActionModal(false)
+                    setSelectedActionType('play_genre')
+                    setSelectedCommercials(new Set())
+                  }}
+                  className="flex-1 glass-button py-2"
+                >
+                  {isRTL ? 'ביטול' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 glass-button-primary py-2 flex items-center justify-center gap-2"
+                >
+                  <Plus size={16} />
+                  <span>{isRTL ? 'הוסף' : 'Add'}</span>
                 </button>
               </div>
             </form>

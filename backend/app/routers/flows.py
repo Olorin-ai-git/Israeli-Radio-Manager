@@ -490,15 +490,51 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
                             audio_player.add_to_queue(track)
 
         elif action_type == FlowActionType.PLAY_COMMERCIALS.value:
-            count = action.get("commercial_count", 1)
-            commercials = await db.content.find({
-                "type": "commercial",
-                "active": True
-            }).to_list(count)
+            # Get batch number (how many times to play the commercial set)
+            batch_count = action.get("commercial_count", 1)
 
-            if commercials:
+            # Get specific commercial IDs if provided
+            content_id = action.get("content_id")
+
+            logger.info(f"Playing commercials - batch_count: {batch_count}, content_id: {content_id}")
+
+            # Fetch commercials based on selection
+            if content_id and content_id.strip():
+                # Specific commercials selected (comma-separated IDs)
+                commercial_ids = [id.strip() for id in content_id.split(',') if id.strip()]
+                logger.info(f"Fetching specific commercials: {commercial_ids}")
+                commercials = []
+                for commercial_id in commercial_ids:
+                    try:
+                        commercial = await db.content.find_one({
+                            "_id": ObjectId(commercial_id),
+                            "type": "commercial",
+                            "active": True
+                        })
+                        if commercial:
+                            commercials.append(commercial)
+                            logger.info(f"  Found commercial: {commercial.get('title')}")
+                    except Exception as e:
+                        logger.warning(f"  Failed to fetch commercial {commercial_id}: {e}")
+            else:
+                # All commercials - get all active commercials
+                logger.info("Fetching all active commercials")
+                commercials = await db.content.find({
+                    "type": "commercial",
+                    "active": True
+                }).to_list(100)
+                logger.info(f"  Found {len(commercials)} commercials")
+
+            # Repeat commercials for batch count
+            all_commercials = []
+            for _ in range(batch_count):
+                all_commercials.extend(commercials)
+
+            logger.info(f"Total commercials to play (after batch repeat): {len(all_commercials)}")
+
+            if all_commercials:
                 # Broadcast first commercial for immediate playback
-                first_commercial = commercials[0]
+                first_commercial = all_commercials[0]
                 content_data = {
                     "_id": str(first_commercial["_id"]),
                     "title": first_commercial.get("title", "Commercial"),
@@ -511,9 +547,9 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
                 await broadcast_scheduled_playback(content_data)
 
                 # Queue remaining commercials
-                if len(commercials) > 1:
+                if len(all_commercials) > 1:
                     queue_tracks = []
-                    for commercial in commercials[1:]:
+                    for commercial in all_commercials[1:]:
                         queue_tracks.append({
                             "_id": str(commercial["_id"]),
                             "title": commercial.get("title", "Commercial"),
@@ -527,7 +563,7 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
 
                 # Also add to VLC queue if available
                 if audio_player:
-                    for commercial in commercials:
+                    for commercial in all_commercials:
                         from app.services.audio_player import TrackInfo
                         track = TrackInfo(
                             content_id=str(commercial["_id"]),

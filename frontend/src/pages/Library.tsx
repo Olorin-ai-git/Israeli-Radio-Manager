@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Music, Radio, Megaphone, Search, Play, Plus,
-  Clock, BarChart2, Calendar, Disc3, RefreshCw, ListPlus, X as XIcon
+  Clock, BarChart2, Calendar, Disc3, RefreshCw, ListPlus, X as XIcon, FolderSync
 } from 'lucide-react'
 import { api } from '../services/api'
 import { usePlayerStore } from '../store/playerStore'
@@ -73,6 +73,43 @@ export default function Library() {
         isRTL
           ? 'שגיאה בעדכון מטה-דאטה'
           : 'Failed to refresh metadata'
+      )
+    }
+  })
+
+  // Google Drive sync mutation
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      console.log('Starting Google Drive sync...')
+      const result = await api.startSync(true) // downloadFiles = true
+      console.log('Sync result:', result)
+      return result
+    },
+    onSuccess: (data) => {
+      console.log('Sync completed successfully:', data)
+      // Invalidate queries to refetch with new content
+      queryClient.invalidateQueries({ queryKey: ['songs'] })
+      queryClient.invalidateQueries({ queryKey: ['shows'] })
+      queryClient.invalidateQueries({ queryKey: ['commercials'] })
+      queryClient.invalidateQueries({ queryKey: ['genres'] })
+
+      const stats = data.stats || {}
+      const filesFound = stats.files_found || 0
+      const filesAdded = stats.files_added || 0
+      const filesUpdated = stats.files_updated || 0
+
+      toast.success(
+        isRTL
+          ? `סונכרנו ${filesFound} קבצים (${filesAdded} חדשים, ${filesUpdated} עודכנו)`
+          : `Synced ${filesFound} files (${filesAdded} new, ${filesUpdated} updated)`
+      )
+    },
+    onError: (error: any) => {
+      console.error('Sync error:', error)
+      toast.error(
+        isRTL
+          ? 'שגיאה בסנכרון עם Google Drive'
+          : 'Failed to sync with Google Drive'
       )
     }
   })
@@ -204,6 +241,20 @@ export default function Library() {
           {isRTL ? 'ספריית מדיה' : 'Media Library'}
         </h1>
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => {
+              console.log('Sync button clicked!')
+              syncMutation.mutate()
+            }}
+            disabled={syncMutation.isPending}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title={isRTL ? 'סנכרן עם Google Drive' : 'Sync with Google Drive'}
+          >
+            <FolderSync size={16} className={syncMutation.isPending ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">
+              {isRTL ? 'סנכרן עם Drive' : 'Sync with Drive'}
+            </span>
+          </button>
           <button
             onClick={() => refreshMetadataMutation.mutate()}
             disabled={refreshMetadataMutation.isPending}
