@@ -1,6 +1,7 @@
 """Auto Flows router for managing automated workflows."""
 
-from datetime import datetime
+import logging
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -13,12 +14,125 @@ from app.models.flow import (
     FlowStatus,
     FlowAction,
     FlowActionType,
-    FlowExecutionLog
+    FlowExecutionLog,
+    FlowTriggerType
 )
 from app.routers.websocket import broadcast_scheduled_playback, broadcast_queue_tracks
+from app.services.google_calendar import GoogleCalendarService
 import random
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Day name mapping for recurrence rules
+DAY_NAMES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
+
+
+async def sync_flow_to_calendar(
+    flow_id: str,
+    flow_name: str,
+    flow_description: str,
+    schedule: dict,
+    existing_event_id: str = None
+) -> Optional[str]:
+    """
+    Create or update a Google Calendar event for a scheduled flow.
+    Returns the calendar event ID.
+    """
+    try:
+        calendar_service = GoogleCalendarService()
+        await calendar_service.authenticate()
+
+        # Parse schedule
+        start_time_str = schedule.get("start_time", "09:00")
+        end_time_str = schedule.get("end_time")
+        days_of_week = schedule.get("days_of_week", [0, 1, 2, 3, 4, 5, 6])
+
+        # Calculate next occurrence
+        now = datetime.now()
+        hour, minute = map(int, start_time_str.split(":"))
+        start_dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+        # If time has passed today, start tomorrow
+        if start_dt < now:
+            start_dt += timedelta(days=1)
+
+        # Find next valid day
+        while start_dt.weekday() not in [(d + 6) % 7 for d in days_of_week]:  # Convert Sunday=0 to Python's Monday=0
+            start_dt += timedelta(days=1)
+
+        # Calculate end time
+        if end_time_str:
+            end_hour, end_minute = map(int, end_time_str.split(":"))
+            end_dt = start_dt.replace(hour=end_hour, minute=end_minute)
+            if end_dt <= start_dt:
+                end_dt += timedelta(days=1)
+        else:
+            end_dt = start_dt + timedelta(hours=1)
+
+        # Build recurrence rule as dict (GoogleCalendarService.create_event expects this format)
+        recurrence = {
+            "frequency": "WEEKLY",
+            "by_day": [DAY_NAMES[d] for d in days_of_week]
+        }
+
+        # Event summary with flow emoji
+        summary = f"🔄 {flow_name}"
+
+        # Event description
+        description = f"Auto Flow: {flow_name}\n"
+        if flow_description:
+            description += f"\n{flow_description}\n"
+        description += f"\nFlow ID: {flow_id}\nType: flow"
+
+        if existing_event_id:
+            # Update existing event
+            try:
+                event = await calendar_service.update_event(
+                    event_id=existing_event_id,
+                    summary=summary,
+                    start_time=start_dt,
+                    end_time=end_dt,
+                    description=description,
+                    recurrence=recurrence
+                )
+                logger.info(f"Updated calendar event for flow {flow_name}: {existing_event_id}")
+                return existing_event_id
+            except Exception as e:
+                logger.warning(f"Failed to update event, creating new: {e}")
+                # Fall through to create new event
+
+        # Create new event
+        event = await calendar_service.create_event(
+            summary=summary,
+            start_time=start_dt,
+            end_time=end_dt,
+            description=description,
+            content_type="flow",
+            content_id=flow_id,
+            recurrence=recurrence
+        )
+
+        event_id = event.get("id")
+        logger.info(f"Created calendar event for flow {flow_name}: {event_id}")
+        return event_id
+
+    except Exception as e:
+        logger.error(f"Failed to sync flow to calendar: {e}")
+        return None
+
+
+async def delete_flow_calendar_event(event_id: str) -> bool:
+    """Delete a calendar event for a flow."""
+    try:
+        calendar_service = GoogleCalendarService()
+        await calendar_service.authenticate()
+        await calendar_service.delete_event(event_id)
+        logger.info(f"Deleted calendar event: {event_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to delete calendar event: {e}")
+        return False
 
 
 def serialize_flow(flow: dict) -> dict:
@@ -88,6 +202,8 @@ async def create_flow(request: Request, flow_data: FlowCreate):
     db = request.app.state.db
 
     # Build flow document
+    schedule_data = flow_data.schedule.model_dump() if flow_data.schedule else None
+
     flow_doc = {
         "name": flow_data.name,
         "name_he": flow_data.name_he,
@@ -95,7 +211,7 @@ async def create_flow(request: Request, flow_data: FlowCreate):
         "description_he": flow_data.description_he,
         "actions": [action.model_dump() for action in flow_data.actions],
         "trigger_type": flow_data.trigger_type.value,
-        "schedule": flow_data.schedule.model_dump() if flow_data.schedule else None,
+        "schedule": schedule_data,
         "status": FlowStatus.ACTIVE.value,
         "priority": flow_data.priority,
         "loop": flow_data.loop,
@@ -106,7 +222,25 @@ async def create_flow(request: Request, flow_data: FlowCreate):
     }
 
     result = await db.flows.insert_one(flow_doc)
-    flow_doc["_id"] = str(result.inserted_id)
+    flow_id = str(result.inserted_id)
+    flow_doc["_id"] = flow_id
+
+    # If scheduled, create Google Calendar event
+    if flow_data.trigger_type == FlowTriggerType.SCHEDULED and schedule_data:
+        calendar_event_id = await sync_flow_to_calendar(
+            flow_id=flow_id,
+            flow_name=flow_data.name,
+            flow_description=flow_data.description or "",
+            schedule=schedule_data
+        )
+        if calendar_event_id:
+            # Update flow with calendar event ID
+            schedule_data["calendar_event_id"] = calendar_event_id
+            await db.flows.update_one(
+                {"_id": ObjectId(flow_id)},
+                {"$set": {"schedule.calendar_event_id": calendar_event_id}}
+            )
+            flow_doc["schedule"] = schedule_data
 
     return flow_doc
 
@@ -154,6 +288,35 @@ async def update_flow(request: Request, flow_id: str, update_data: FlowUpdate):
     )
 
     updated = await db.flows.find_one({"_id": ObjectId(flow_id)})
+
+    # Handle calendar sync for schedule changes
+    new_trigger = update_data.trigger_type.value if update_data.trigger_type else existing.get("trigger_type")
+    new_schedule = update_doc.get("schedule") or existing.get("schedule")
+    existing_event_id = existing.get("schedule", {}).get("calendar_event_id") if existing.get("schedule") else None
+
+    if new_trigger == "scheduled" and new_schedule:
+        # Create or update calendar event
+        calendar_event_id = await sync_flow_to_calendar(
+            flow_id=flow_id,
+            flow_name=update_doc.get("name", existing.get("name")),
+            flow_description=update_doc.get("description", existing.get("description")) or "",
+            schedule=new_schedule,
+            existing_event_id=existing_event_id
+        )
+        if calendar_event_id:
+            await db.flows.update_one(
+                {"_id": ObjectId(flow_id)},
+                {"$set": {"schedule.calendar_event_id": calendar_event_id}}
+            )
+            updated = await db.flows.find_one({"_id": ObjectId(flow_id)})
+    elif new_trigger != "scheduled" and existing_event_id:
+        # Trigger type changed from scheduled, delete calendar event
+        await delete_flow_calendar_event(existing_event_id)
+        await db.flows.update_one(
+            {"_id": ObjectId(flow_id)},
+            {"$unset": {"schedule.calendar_event_id": ""}}
+        )
+
     return serialize_flow(updated)
 
 
@@ -163,7 +326,19 @@ async def delete_flow(request: Request, flow_id: str):
     db = request.app.state.db
 
     try:
+        # Get flow first to check for calendar event
+        flow = await db.flows.find_one({"_id": ObjectId(flow_id)})
+        if not flow:
+            raise HTTPException(status_code=404, detail="Flow not found")
+
+        # Delete calendar event if exists
+        schedule = flow.get("schedule")
+        if schedule and schedule.get("calendar_event_id"):
+            await delete_flow_calendar_event(schedule["calendar_event_id"])
+
         result = await db.flows.delete_one({"_id": ObjectId(flow_id)})
+    except HTTPException:
+        raise
     except:
         raise HTTPException(status_code=400, detail="Invalid flow ID")
 
@@ -201,6 +376,171 @@ async def toggle_flow_status(request: Request, flow_id: str):
     )
 
     return {"message": f"Flow status changed to {new_status}", "status": new_status}
+
+
+async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
+    """
+    Execute flow actions. Returns the number of actions completed.
+    This function can be called from both the run_flow endpoint and the calendar watcher.
+    """
+    actions = flow.get("actions", [])
+    actions_completed = 0
+
+    for action in actions:
+        action_type = action.get("action_type")
+
+        if action_type == FlowActionType.PLAY_GENRE.value:
+            # Queue songs from the genre
+            genre = action.get("genre")
+            if genre:
+                # Get recently queued/played songs by checking last_played timestamp
+                one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+
+                # Get songs from this genre, excluding recently played
+                query = {
+                    "type": "song",
+                    "active": True,
+                    "$or": [
+                        {"last_played": {"$lt": one_hour_ago}},
+                        {"last_played": None},
+                        {"last_played": {"$exists": False}}
+                    ]
+                }
+                if genre != "mixed":
+                    query["genre"] = genre
+
+                songs = await db.content.find(query).to_list(100)
+
+                # If not enough songs, fall back to all songs (excluding recently played)
+                if len(songs) < 10:
+                    query_fallback = {
+                        "type": "song",
+                        "active": True,
+                        "$or": [
+                            {"last_played": {"$lt": one_hour_ago}},
+                            {"last_played": None},
+                            {"last_played": {"$exists": False}}
+                        ]
+                    }
+                    songs = await db.content.find(query_fallback).to_list(100)
+
+                # If still not enough, just get any songs
+                if len(songs) < 5:
+                    songs = await db.content.find({
+                        "type": "song",
+                        "active": True
+                    }).to_list(100)
+
+                if songs:
+                    # Shuffle and select unique songs
+                    random.shuffle(songs)
+                    selected_songs = songs[:min(10, len(songs))]
+
+                    # Update last_played for selected songs to avoid re-selection
+                    for song in selected_songs:
+                        await db.content.update_one(
+                            {"_id": song["_id"]},
+                            {"$set": {"last_played": datetime.utcnow()}}
+                        )
+
+                    # Broadcast first song for immediate playback
+                    first_song = selected_songs[0]
+                    content_data = {
+                        "_id": str(first_song["_id"]),
+                        "title": first_song.get("title", "Unknown"),
+                        "artist": first_song.get("artist"),
+                        "type": first_song.get("type", "song"),
+                        "duration_seconds": first_song.get("duration_seconds", 0),
+                        "genre": first_song.get("genre"),
+                        "metadata": first_song.get("metadata", {})
+                    }
+                    await broadcast_scheduled_playback(content_data)
+
+                    # Queue remaining songs
+                    if len(selected_songs) > 1:
+                        queue_tracks = []
+                        for song in selected_songs[1:]:
+                            queue_tracks.append({
+                                "_id": str(song["_id"]),
+                                "title": song.get("title", "Unknown"),
+                                "artist": song.get("artist"),
+                                "type": song.get("type", "song"),
+                                "duration_seconds": song.get("duration_seconds", 0),
+                                "genre": song.get("genre"),
+                                "metadata": song.get("metadata", {})
+                            })
+                        await broadcast_queue_tracks(queue_tracks)
+
+                    # Also add to VLC queue if available
+                    if audio_player:
+                        for song in selected_songs:
+                            from app.services.audio_player import TrackInfo
+                            track = TrackInfo(
+                                content_id=str(song["_id"]),
+                                title=song.get("title", "Unknown"),
+                                artist=song.get("artist"),
+                                duration_seconds=song.get("duration_seconds", 0),
+                                file_path=song.get("local_cache_path", "")
+                            )
+                            audio_player.add_to_queue(track)
+
+        elif action_type == FlowActionType.PLAY_COMMERCIALS.value:
+            count = action.get("commercial_count", 1)
+            commercials = await db.content.find({
+                "type": "commercial",
+                "active": True
+            }).to_list(count)
+
+            if commercials:
+                # Broadcast first commercial for immediate playback
+                first_commercial = commercials[0]
+                content_data = {
+                    "_id": str(first_commercial["_id"]),
+                    "title": first_commercial.get("title", "Commercial"),
+                    "artist": first_commercial.get("artist"),
+                    "type": "commercial",
+                    "duration_seconds": first_commercial.get("duration_seconds", 0),
+                    "genre": first_commercial.get("genre"),
+                    "metadata": first_commercial.get("metadata", {})
+                }
+                await broadcast_scheduled_playback(content_data)
+
+                # Queue remaining commercials
+                if len(commercials) > 1:
+                    queue_tracks = []
+                    for commercial in commercials[1:]:
+                        queue_tracks.append({
+                            "_id": str(commercial["_id"]),
+                            "title": commercial.get("title", "Commercial"),
+                            "artist": commercial.get("artist"),
+                            "type": "commercial",
+                            "duration_seconds": commercial.get("duration_seconds", 0),
+                            "genre": commercial.get("genre"),
+                            "metadata": commercial.get("metadata", {})
+                        })
+                    await broadcast_queue_tracks(queue_tracks)
+
+                # Also add to VLC queue if available
+                if audio_player:
+                    for commercial in commercials:
+                        from app.services.audio_player import TrackInfo
+                        track = TrackInfo(
+                            content_id=str(commercial["_id"]),
+                            title=commercial.get("title", "Commercial"),
+                            artist=None,
+                            duration_seconds=commercial.get("duration_seconds", 0),
+                            file_path=commercial.get("local_cache_path", "")
+                        )
+                        audio_player.add_to_queue(track, priority=10)  # High priority
+
+        elif action_type == FlowActionType.SET_VOLUME.value:
+            volume = action.get("volume_level", 80)
+            if audio_player:
+                audio_player.set_volume(volume)
+
+        actions_completed += 1
+
+    return actions_completed
 
 
 @router.post("/{flow_id}/run", response_model=dict)
@@ -241,171 +581,9 @@ async def run_flow(request: Request, flow_id: str):
         }
     )
 
-    # Execute flow actions (simplified - in production this would be async/background)
+    # Execute flow actions
     try:
-        actions = flow.get("actions", [])
-        actions_completed = 0
-
-        for action in actions:
-            action_type = action.get("action_type")
-
-            if action_type == FlowActionType.PLAY_GENRE.value:
-                # Queue songs from the genre
-                genre = action.get("genre")
-                if genre:
-                    # Get recently queued/played songs by checking last_played timestamp
-                    from datetime import timedelta
-                    one_hour_ago = datetime.utcnow() - timedelta(hours=1)
-
-                    # Get songs from this genre, excluding recently played
-                    query = {
-                        "type": "song",
-                        "active": True,
-                        "$or": [
-                            {"last_played": {"$lt": one_hour_ago}},
-                            {"last_played": None},
-                            {"last_played": {"$exists": False}}
-                        ]
-                    }
-                    if genre != "mixed":
-                        query["genre"] = genre
-
-                    songs = await db.content.find(query).to_list(100)
-
-                    # If not enough songs, fall back to all songs (excluding recently played)
-                    if len(songs) < 10:
-                        query_fallback = {
-                            "type": "song",
-                            "active": True,
-                            "$or": [
-                                {"last_played": {"$lt": one_hour_ago}},
-                                {"last_played": None},
-                                {"last_played": {"$exists": False}}
-                            ]
-                        }
-                        songs = await db.content.find(query_fallback).to_list(100)
-
-                    # If still not enough, just get any songs
-                    if len(songs) < 5:
-                        songs = await db.content.find({
-                            "type": "song",
-                            "active": True
-                        }).to_list(100)
-
-                    if songs:
-                        # Shuffle and select unique songs
-                        random.shuffle(songs)
-                        selected_songs = songs[:min(10, len(songs))]
-
-                        # Update last_played for selected songs to avoid re-selection
-                        for song in selected_songs:
-                            await db.content.update_one(
-                                {"_id": song["_id"]},
-                                {"$set": {"last_played": datetime.utcnow()}}
-                            )
-
-                        # Broadcast first song for immediate playback
-                        first_song = selected_songs[0]
-                        content_data = {
-                            "_id": str(first_song["_id"]),
-                            "title": first_song.get("title", "Unknown"),
-                            "artist": first_song.get("artist"),
-                            "type": first_song.get("type", "song"),
-                            "duration_seconds": first_song.get("duration_seconds", 0),
-                            "genre": first_song.get("genre"),
-                            "metadata": first_song.get("metadata", {})
-                        }
-                        await broadcast_scheduled_playback(content_data)
-
-                        # Queue remaining songs
-                        if len(selected_songs) > 1:
-                            queue_tracks = []
-                            for song in selected_songs[1:]:
-                                queue_tracks.append({
-                                    "_id": str(song["_id"]),
-                                    "title": song.get("title", "Unknown"),
-                                    "artist": song.get("artist"),
-                                    "type": song.get("type", "song"),
-                                    "duration_seconds": song.get("duration_seconds", 0),
-                                    "genre": song.get("genre"),
-                                    "metadata": song.get("metadata", {})
-                                })
-                            await broadcast_queue_tracks(queue_tracks)
-
-                        # Also add to VLC queue if available
-                        if audio_player:
-                            for song in selected_songs:
-                                from app.services.audio_player import TrackInfo
-                                track = TrackInfo(
-                                    content_id=str(song["_id"]),
-                                    title=song.get("title", "Unknown"),
-                                    artist=song.get("artist"),
-                                    duration_seconds=song.get("duration_seconds", 0),
-                                    file_path=song.get("local_cache_path", "")
-                                )
-                                audio_player.add_to_queue(track)
-
-            elif action_type == FlowActionType.PLAY_COMMERCIALS.value:
-                count = action.get("commercial_count", 1)
-                commercials = await db.content.find({
-                    "type": "commercial",
-                    "active": True
-                }).to_list(count)
-
-                if commercials:
-                    # Broadcast first commercial for immediate playback
-                    first_commercial = commercials[0]
-                    content_data = {
-                        "_id": str(first_commercial["_id"]),
-                        "title": first_commercial.get("title", "Commercial"),
-                        "artist": first_commercial.get("artist"),
-                        "type": "commercial",
-                        "duration_seconds": first_commercial.get("duration_seconds", 0),
-                        "genre": first_commercial.get("genre"),
-                        "metadata": first_commercial.get("metadata", {})
-                    }
-                    await broadcast_scheduled_playback(content_data)
-
-                    # Queue remaining commercials
-                    if len(commercials) > 1:
-                        queue_tracks = []
-                        for commercial in commercials[1:]:
-                            queue_tracks.append({
-                                "_id": str(commercial["_id"]),
-                                "title": commercial.get("title", "Commercial"),
-                                "artist": commercial.get("artist"),
-                                "type": "commercial",
-                                "duration_seconds": commercial.get("duration_seconds", 0),
-                                "genre": commercial.get("genre"),
-                                "metadata": commercial.get("metadata", {})
-                            })
-                        await broadcast_queue_tracks(queue_tracks)
-
-                    # Also add to VLC queue if available
-                    if audio_player:
-                        for commercial in commercials:
-                            from app.services.audio_player import TrackInfo
-                            track = TrackInfo(
-                                content_id=str(commercial["_id"]),
-                                title=commercial.get("title", "Commercial"),
-                                artist=None,
-                                duration_seconds=commercial.get("duration_seconds", 0),
-                                file_path=commercial.get("local_cache_path", "")
-                            )
-                            audio_player.add_to_queue(track, priority=10)  # High priority
-
-            elif action_type == FlowActionType.SET_VOLUME.value:
-                volume = action.get("volume_level", 80)
-                if audio_player:
-                    audio_player.set_volume(volume)
-
-            actions_completed += 1
-
-            # Update progress
-            await db.flow_executions.update_one(
-                {"_id": log_result.inserted_id},
-                {"$set": {"actions_completed": actions_completed}}
-            )
+        actions_completed = await run_flow_actions(db, flow, audio_player)
 
         # Mark as completed
         await db.flow_executions.update_one(

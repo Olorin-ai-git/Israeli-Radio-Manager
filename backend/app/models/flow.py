@@ -64,6 +64,9 @@ class FlowSchedule(BaseModel):
     # Optional end time
     end_time: Optional[str] = None
 
+    # Google Calendar event ID (for syncing)
+    calendar_event_id: Optional[str] = None
+
 
 class FlowStatus(str, Enum):
     """Current status of a flow."""

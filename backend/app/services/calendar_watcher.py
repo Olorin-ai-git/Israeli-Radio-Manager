@@ -160,10 +160,15 @@ class CalendarWatcherService:
         content_id = ext_props.get("radio_content_id")
         content_type = ext_props.get("radio_content_type", "song")
 
-        logger.info(f"Triggering scheduled event: {summary} (content_id: {content_id})")
+        logger.info(f"Triggering scheduled event: {summary} (content_id: {content_id}, type: {content_type})")
 
         if not content_id:
             logger.warning(f"Event {event_id} has no content_id, skipping")
+            return
+
+        # Handle flow type - run the flow
+        if content_type == "flow":
+            await self._trigger_flow(content_id, event_id)
             return
 
         try:
@@ -223,6 +228,48 @@ class CalendarWatcherService:
 
         except Exception as e:
             logger.error(f"Failed to trigger event {event_id}: {e}", exc_info=True)
+
+    async def _trigger_flow(self, flow_id: str, calendar_event_id: str):
+        """Trigger a scheduled flow."""
+        try:
+            # Get flow from database
+            flow = await self.db.flows.find_one({"_id": ObjectId(flow_id)})
+            if not flow:
+                logger.error(f"Flow {flow_id} not found in database")
+                return
+
+            flow_name = flow.get("name", "Unknown Flow")
+            logger.info(f"Triggering scheduled flow: {flow_name}")
+
+            # Import flow execution logic
+            from app.routers.flows import run_flow_actions
+
+            # Execute flow actions
+            await run_flow_actions(self.db, flow, self.audio_player)
+
+            # Update flow last_run and run_count
+            await self.db.flows.update_one(
+                {"_id": ObjectId(flow_id)},
+                {
+                    "$set": {"last_run": datetime.utcnow()},
+                    "$inc": {"run_count": 1}
+                }
+            )
+
+            # Log the execution
+            await self.db.flow_executions.insert_one({
+                "flow_id": flow_id,
+                "flow_name": flow_name,
+                "started_at": datetime.utcnow(),
+                "triggered_by": "calendar",
+                "calendar_event_id": calendar_event_id,
+                "status": "completed"
+            })
+
+            logger.info(f"Flow {flow_name} executed successfully via calendar trigger")
+
+        except Exception as e:
+            logger.error(f"Failed to trigger flow {flow_id}: {e}", exc_info=True)
 
     async def _file_exists(self, path: str) -> bool:
         """Check if a file exists."""
