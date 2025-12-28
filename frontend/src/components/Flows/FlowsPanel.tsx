@@ -39,117 +39,8 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { api } from '../../services/api'
 
-// Genre mappings for parsing
-const GENRE_MAP: Record<string, string> = {
-  // Hebrew
-  'חסידי': 'hasidi',
-  'חסידית': 'hasidi',
-  'מזרחי': 'mizrahi',
-  'מזרחית': 'mizrahi',
-  'פופ': 'pop',
-  'רוק': 'rock',
-  'ים תיכוני': 'mediterranean',
-  'קלאסי': 'classic',
-  'עברי': 'hebrew',
-  'שמח': 'happy',
-  'שמחה': 'happy',
-  'ישראלי': 'israeli',
-  'ישראלית': 'israeli',
-  // English
-  'hasidi': 'hasidi',
-  'mizrahi': 'mizrahi',
-  'pop': 'pop',
-  'rock': 'rock',
-  'happy': 'happy',
-  'israeli': 'israeli',
-  'mediterranean': 'mediterranean',
-  'classic': 'classic',
-  'mixed': 'mixed',
-}
-
-// Parse description into actions
-function parseFlowDescription(description: string): FlowAction[] {
-  const actions: FlowAction[] = []
-
-  // Split by "then", "אז", "ואז"
-  const parts = description.split(/,?\s*(?:then|אז|ואז)\s*/i)
-
-  for (const part of parts) {
-    const lowerPart = part.toLowerCase().trim()
-    const hebrewPart = part.trim()
-
-    // Check for genre playback (Hebrew patterns)
-    // נגן מזרחי שמח / נגן מוזיקה חסידית / play happy music
-    const hebrewGenreMatch = hebrewPart.match(/(?:נגן|השמע)\s+(?:מוזיקה\s+)?(\S+)(?:\s+(\S+))?(?:\s+(?:במשך|ל-?)\s*(\d+)\s*(?:דקות?)?)?/i)
-    const englishGenreMatch = lowerPart.match(/(?:play)\s+(\w+)(?:\s+(\w+))?\s*(?:music)?(?:\s+(?:for)\s*(\d+)\s*(?:min(?:utes?)?)?)?/i)
-
-    if (hebrewGenreMatch || englishGenreMatch) {
-      const match = hebrewGenreMatch || englishGenreMatch
-      const word1 = match![1]?.trim()
-      const word2 = match![2]?.trim()
-      const duration = match![3]
-
-      // Try to find genre from word1 or word2
-      let genre = GENRE_MAP[word1] || GENRE_MAP[word2 || ''] || 'mixed'
-
-      // Combine adjective + noun if both recognized
-      const genre1 = GENRE_MAP[word1]
-      const genre2 = GENRE_MAP[word2 || '']
-      if (genre1 && genre2) {
-        genre = `${genre1}_${genre2}`
-      } else if (genre1) {
-        genre = genre1
-      } else if (genre2) {
-        genre = genre2
-      }
-
-      actions.push({
-        action_type: 'play_genre',
-        genre,
-        duration_minutes: duration ? parseInt(duration) : 30,
-        description: `Play ${genre} music`,
-      })
-      continue
-    }
-
-    // Check for commercials (Hebrew: שתי/2 פרסומות, English: 2 commercials)
-    const hebrewCommMatch = hebrewPart.match(/(?:נגן\s+)?(?:(\d+)|שתי|שניים|שלוש|ארבע)\s*(?:פרסומות?|פרסומים?)/)
-    const englishCommMatch = lowerPart.match(/(?:play\s+)?(\d+)\s*commercials?/)
-
-    if (hebrewCommMatch || englishCommMatch) {
-      const match = hebrewCommMatch || englishCommMatch
-      let count = 1
-      if (match![1]) {
-        count = parseInt(match![1])
-      } else if (hebrewPart.includes('שתי') || hebrewPart.includes('שניים')) {
-        count = 2
-      } else if (hebrewPart.includes('שלוש')) {
-        count = 3
-      } else if (hebrewPart.includes('ארבע')) {
-        count = 4
-      }
-
-      actions.push({
-        action_type: 'play_commercials',
-        commercial_count: count,
-        description: `Play ${count} commercial(s)`,
-      })
-      continue
-    }
-
-    // Check for wait/pause
-    const waitMatch = lowerPart.match(/(?:wait|חכה|המתן)\s+(\d+)\s*(?:min(?:utes?)?|דקות?)/)
-    if (waitMatch) {
-      actions.push({
-        action_type: 'wait',
-        duration_minutes: parseInt(waitMatch[1]),
-        description: `Wait ${waitMatch[1]} minutes`,
-      })
-    }
-  }
-
-  return actions
-}
+// Genre and flow description parsing is now done via Claude API
+// Flow description parsing is now done via API (parseNaturalFlow endpoint)
 
 // Suggested built-in flows
 const SUGGESTED_FLOWS = [
@@ -370,6 +261,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
   const [editRecurrenceType, setEditRecurrenceType] = useState<RecurrenceType>('weekly')
   const [editFlowDescription, setEditFlowDescription] = useState('')
   const [editParsedActions, setEditParsedActions] = useState<any[]>([])
+  const [previewActions, setPreviewActions] = useState<FlowAction[]>([])
   const [showAddActionModal, setShowAddActionModal] = useState(false)
   const [selectedActionType, setSelectedActionType] = useState('play_genre')
   const [selectedCommercials, setSelectedCommercials] = useState<Set<string>>(new Set())
@@ -403,10 +295,26 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     useSensor(KeyboardSensor)
   )
 
-  // Real-time preview of parsed actions
-  const previewActions = useMemo(() => {
-    if (!flowDescription.trim()) return []
-    return parseFlowDescription(flowDescription)
+  // Real-time preview of parsed actions using LLM API
+  useEffect(() => {
+    if (!flowDescription.trim()) {
+      setPreviewActions([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const result = await api.parseNaturalFlow(flowDescription)
+        if (result.actions) {
+          setPreviewActions(result.actions)
+        }
+      } catch (error) {
+        console.error('Failed to parse flow description:', error)
+        setPreviewActions([])
+      }
+    }, 500) // Debounce 500ms
+
+    return () => clearTimeout(timer)
   }, [flowDescription])
 
   // Parse edit flow description using LLM API

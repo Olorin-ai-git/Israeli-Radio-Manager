@@ -757,7 +757,11 @@ async def parse_natural_language_flow(request: Request, text: str):
 
 Available action types:
 - play_genre: Play music from a genre (hasidi, mizrahi, happy, israeli, pop, rock, mediterranean, classic, hebrew, all, mixed)
-- play_commercials: Play commercials (specify count, or use 999 for ALL commercials)
+- play_commercials: Play commercials. Support:
+  * Specific count: commercial_count (number)
+  * Batch number: batch_number (1, 2, 3, etc.) - refers to predefined commercial batches
+  * Use 999 for ALL commercials
+  * If "Batch-1", "Batch-2" etc mentioned, set batch_number field
 - wait: Wait for a duration
 - set_volume: Set volume level
 
@@ -766,9 +770,15 @@ Description: {text}
 Return format (JSON array only):
 [
   {{"action_type": "play_genre", "genre": "happy", "description": "Play happy music", "duration_minutes": 30}},
-  {{"action_type": "play_commercials", "commercial_count": 999, "description": "Play all commercials"}},
+  {{"action_type": "play_commercials", "batch_number": 1, "description": "Play Batch-1 commercials"}},
+  {{"action_type": "play_commercials", "batch_number": 2, "description": "Play Batch-2 commercials"}},
   {{"action_type": "play_genre", "genre": "mixed", "description": "Continue playing songs"}}
 ]
+
+IMPORTANT:
+- If "Batch-1", "Batch 1", or similar is mentioned, use "batch_number": 1
+- If "Batch-2", "Batch 2", or similar is mentioned, use "batch_number": 2
+- Each batch mention should be a separate action
 
 Parse the description and return the JSON array:"""
 
