@@ -21,9 +21,17 @@ def get_queue() -> List[dict]:
     return _playback_queue
 
 
-def add_to_queue(content: dict):
-    """Add a content item to the queue."""
-    _playback_queue.append(content)
+def add_to_queue(content: dict, position: int = None):
+    """Add a content item to the queue.
+
+    Args:
+        content: Content item to add
+        position: Optional position to insert at (None = append to end)
+    """
+    if position is not None and 0 <= position <= len(_playback_queue):
+        _playback_queue.insert(position, content)
+    else:
+        _playback_queue.append(content)
 
 
 def remove_from_queue(index: int) -> bool:

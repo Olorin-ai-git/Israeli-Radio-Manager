@@ -17,6 +17,7 @@ from app.services.calendar_watcher import CalendarWatcherService
 from app.services.gmail import GmailService
 from app.services.email_watcher import EmailWatcherService
 from app.services.metadata_refresher import MetadataRefresherService
+from app.services.flow_monitor import FlowMonitorService
 
 # Configure logging
 logging.basicConfig(
@@ -143,10 +144,35 @@ async def lifespan(app: FastAPI):
     await app.state.metadata_refresher.start()
     logger.info("Metadata refresher started - updating metadata every hour")
 
+    # Initialize orchestrator agent for flow monitoring
+    flow_orchestrator = None
+    try:
+        from app.agent.orchestrator import OrchestratorAgent
+        flow_orchestrator = OrchestratorAgent(
+            db=app.state.db,
+            audio_player=app.state.audio_player,
+            content_sync=app.state.content_sync,
+            calendar_service=app.state.calendar_service
+        )
+    except Exception as e:
+        logger.warning(f"Could not initialize orchestrator for flow monitor: {e}")
+
+    # Initialize and start flow monitor (background task for real-time flow scheduling)
+    app.state.flow_monitor = FlowMonitorService(
+        db=app.state.db,
+        audio_player=app.state.audio_player,
+        orchestrator_agent=flow_orchestrator,
+        check_interval=30  # Check every 30 seconds
+    )
+    await app.state.flow_monitor.start()
+    logger.info("Flow monitor started - intelligent real-time flow scheduling")
+
     yield
 
     # Shutdown
     logger.info("Shutting down Israeli Radio Manager...")
+    if hasattr(app.state, 'flow_monitor'):
+        await app.state.flow_monitor.stop()
     if hasattr(app.state, 'metadata_refresher'):
         await app.state.metadata_refresher.stop()
     if app.state.email_watcher:
