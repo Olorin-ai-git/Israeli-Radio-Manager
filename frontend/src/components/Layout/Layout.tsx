@@ -159,9 +159,9 @@ export default function Layout({ children }: LayoutProps) {
             <div className="flex items-center gap-3">
               <div className="relative">
                 <img
-                  src="/Logo.png"
+                  src="/Logo.jpg"
                   alt="Israeli Radio Manager"
-                  className="w-12 h-12 object-contain"
+                  className="w-12 h-12"
                 />
                 <div className="absolute inset-0 bg-primary-500/20 rounded-full blur-xl -z-10" />
               </div>
@@ -219,8 +219,8 @@ export default function Layout({ children }: LayoutProps) {
 
           {/* Copyright Footer */}
           <div className="flex-shrink-0 px-4 py-2 border-t border-white/5 bg-dark-900/50">
-            <p className="text-xs text-center text-dark-500">
-              Powered by <span className="text-dark-300 font-medium">Olorin.ai LLC</span> © 2026 All rights reserved
+            <p className="text-base text-center text-dark-500">
+              Powered by <span className="text-purple-500 font-medium">Olorin.ai LLC</span> © 2026 All rights reserved
             </p>
           </div>
         </main>

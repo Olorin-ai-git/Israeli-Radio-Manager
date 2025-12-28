@@ -161,7 +161,7 @@ class GoogleCalendarService:
         end_time: Optional[datetime] = None,
         description: Optional[str] = None,
         location: Optional[str] = None,
-        timezone: str = "Asia/Jerusalem",
+        timezone: Optional[str] = None,
         all_day: bool = False,
         content_type: Optional[str] = None,
         content_id: Optional[str] = None,
@@ -204,6 +204,24 @@ class GoogleCalendarService:
             Created event data from Google Calendar API
         """
         self._ensure_authenticated()
+
+        # Auto-detect timezone if not provided
+        if not timezone:
+            import time
+            import os
+            # Try to get system timezone
+            if hasattr(time, 'tzname') and time.tzname[0]:
+                # Get timezone from environment or system
+                timezone = os.environ.get('TZ')
+                if not timezone:
+                    # Fallback to UTC offset format
+                    offset_hours = -time.timezone / 3600
+                    if offset_hours >= 0:
+                        timezone = f"Etc/GMT-{int(offset_hours)}"
+                    else:
+                        timezone = f"Etc/GMT+{int(-offset_hours)}"
+            else:
+                timezone = "UTC"
 
         # Default end time to start + 1 hour
         if not end_time:
@@ -373,7 +391,18 @@ class GoogleCalendarService:
                 event["location"] = kwargs["location"]
             if "start_time" in kwargs:
                 start = kwargs["start_time"]
-                timezone = kwargs.get("timezone", "Asia/Jerusalem")
+                timezone = kwargs.get("timezone")
+                if not timezone:
+                    # Auto-detect system timezone
+                    import time
+                    import os
+                    timezone = os.environ.get('TZ')
+                    if not timezone:
+                        offset_hours = -time.timezone / 3600
+                        if offset_hours >= 0:
+                            timezone = f"Etc/GMT-{int(offset_hours)}"
+                        else:
+                            timezone = f"Etc/GMT+{int(-offset_hours)}"
                 if kwargs.get("all_day"):
                     event["start"] = {"date": start.strftime("%Y-%m-%d")}
                 else:
@@ -383,7 +412,18 @@ class GoogleCalendarService:
                     }
             if "end_time" in kwargs:
                 end = kwargs["end_time"]
-                timezone = kwargs.get("timezone", "Asia/Jerusalem")
+                timezone = kwargs.get("timezone")
+                if not timezone:
+                    # Auto-detect system timezone
+                    import time
+                    import os
+                    timezone = os.environ.get('TZ')
+                    if not timezone:
+                        offset_hours = -time.timezone / 3600
+                        if offset_hours >= 0:
+                            timezone = f"Etc/GMT-{int(offset_hours)}"
+                        else:
+                            timezone = f"Etc/GMT+{int(-offset_hours)}"
                 if kwargs.get("all_day"):
                     event["end"] = {"date": end.strftime("%Y-%m-%d")}
                 else:

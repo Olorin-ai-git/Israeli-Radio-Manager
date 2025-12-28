@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -285,12 +285,35 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
   const [flowDescription, setFlowDescription] = useState('')
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>('weekly')
   const [editRecurrenceType, setEditRecurrenceType] = useState<RecurrenceType>('weekly')
+  const [editFlowDescription, setEditFlowDescription] = useState('')
+  const [editParsedActions, setEditParsedActions] = useState<any[]>([])
 
   // Real-time preview of parsed actions
   const previewActions = useMemo(() => {
     if (!flowDescription.trim()) return []
     return parseFlowDescription(flowDescription)
   }, [flowDescription])
+
+  // Parse edit flow description using LLM API
+  useEffect(() => {
+    if (!editFlowDescription.trim()) {
+      setEditParsedActions([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const result = await api.parseNaturalFlow(editFlowDescription)
+        if (result.actions) {
+          setEditParsedActions(result.actions)
+        }
+      } catch (error) {
+        console.error('Failed to parse flow description:', error)
+      }
+    }, 500) // Debounce 500ms
+
+    return () => clearTimeout(timer)
+  }, [editFlowDescription])
 
   // Fetch flows
   const { data: flows, isLoading } = useQuery<Flow[]>({
@@ -326,9 +349,15 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
     mutationFn: ({ flowId, data }: { flowId: string; data: any }) => api.updateFlow(flowId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['flows'] })
-      setEditingFlow(null)
+      closeEditModal()
     },
   })
+
+  const closeEditModal = () => {
+    setEditingFlow(null)
+    setEditFlowDescription('')
+    setEditParsedActions([])
+  }
 
   const handleCreateFlow = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -592,6 +621,8 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                   onClick={() => {
                     setEditingFlow(flow)
                     setEditRecurrenceType(flow.schedule?.recurrence || 'weekly')
+                    setEditFlowDescription(flow.description || '')
+                    setEditParsedActions(flow.actions || [])
                   }}
                   className="glass-button py-1.5 px-2 text-xs text-blue-400 hover:bg-blue-500/20"
                   title={isRTL ? 'ערוך' : 'Edit'}
@@ -656,7 +687,7 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                 </label>
                 <textarea
                   name="description"
-                  rows={3}
+                  rows={6}
                   value={flowDescription}
                   onChange={(e) => setFlowDescription(e.target.value)}
                   className="w-full glass-input resize-none"
@@ -947,13 +978,13 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
       {/* Edit Flow Modal */}
       {editingFlow && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="glass-card p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-auto">
+          <div className="glass-card p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-semibold text-dark-100">
                 {isRTL ? 'עריכת זרימה' : 'Edit Flow'}
               </h3>
               <button
-                onClick={() => setEditingFlow(null)}
+                onClick={closeEditModal}
                 className="p-2 hover:bg-white/10 rounded-lg"
               >
                 <X size={20} />
@@ -993,9 +1024,10 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                   flowId: editingFlow._id,
                   data: {
                     name: formData.get('name') as string,
-                    description: formData.get('description') as string,
+                    description: editFlowDescription,
                     trigger_type: triggerType,
                     schedule,
+                    actions: editParsedActions.length > 0 ? editParsedActions : editingFlow.actions,
                   },
                 })
               }}
@@ -1020,9 +1052,11 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                 </label>
                 <textarea
                   name="description"
-                  rows={2}
-                  defaultValue={editingFlow.description || ''}
-                  className="w-full glass-input resize-none"
+                  rows={8}
+                  value={editFlowDescription}
+                  onChange={(e) => setEditFlowDescription(e.target.value)}
+                  className="w-full glass-input"
+                  placeholder={isRTL ? 'תאר את הזרימה...' : 'Describe the flow...'}
                 />
               </div>
 
@@ -1187,27 +1221,40 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                 )}
               </div>
 
-              <div>
-                <label className="block text-dark-300 text-sm mb-2">
-                  {isRTL ? 'פעולות (לקריאה בלבד)' : 'Actions (read-only)'}
-                </label>
-                <div className="space-y-1 max-h-24 overflow-auto">
-                  {editingFlow.actions.map((action, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center gap-2 text-xs text-dark-300 p-1.5 bg-dark-800/50 rounded"
-                    >
-                      <ActionIcon type={action.action_type} />
-                      <span>{action.description || action.action_type}</span>
-                    </div>
-                  ))}
+              {/* Live Preview of Parsed Actions */}
+              <div className="p-3 bg-dark-800/50 rounded-lg border border-primary-500/30">
+                <div className="flex items-center gap-2 mb-2">
+                  <Eye size={14} className="text-primary-400" />
+                  <span className="text-xs font-medium text-primary-400">
+                    {isRTL ? 'תצוגה מקדימה - פעולות שזוהו:' : 'Preview - Detected Actions:'}
+                  </span>
                 </div>
+                {editParsedActions.length > 0 ? (
+                  <div className="space-y-1 max-h-32 overflow-auto">
+                    {editParsedActions.map((action, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center gap-2 text-xs text-dark-200 p-2 bg-dark-700/50 rounded"
+                      >
+                        <ActionIcon type={action.action_type} />
+                        <span>{action.description || action.action_type}</span>
+                        {action.duration_minutes && (
+                          <span className="text-dark-400">({action.duration_minutes} min)</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-dark-400 italic">
+                    {isRTL ? 'הקלד תיאור לראות פעולות...' : 'Type a description to see actions...'}
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-2 pt-4">
                 <button
                   type="button"
-                  onClick={() => setEditingFlow(null)}
+                  onClick={closeEditModal}
                   className="flex-1 glass-button py-2"
                 >
                   {isRTL ? 'ביטול' : 'Cancel'}

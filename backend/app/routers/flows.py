@@ -295,6 +295,11 @@ async def update_flow(request: Request, flow_id: str, update_data: FlowUpdate):
     existing_event_id = existing.get("schedule", {}).get("calendar_event_id") if existing.get("schedule") else None
 
     if new_trigger == "scheduled" and new_schedule:
+        # If schedule changed, delete old event and create new one to ensure correct timezone
+        if existing_event_id and update_data.schedule is not None:
+            await delete_flow_calendar_event(existing_event_id)
+            existing_event_id = None
+
         # Create or update calendar event
         calendar_event_id = await sync_flow_to_calendar(
             flow_id=flow_id,
@@ -655,102 +660,159 @@ async def get_flow_executions(request: Request, flow_id: str, limit: int = 20):
 @router.post("/parse-natural", response_model=dict)
 async def parse_natural_language_flow(request: Request, text: str):
     """
-    Parse a natural language description into a flow.
+    Parse a natural language description into a flow using Claude AI.
 
     Example: "play hasidi music between 8-10 am, then play 2 commercials, then play mizrahi music"
     """
-    import re
+    import anthropic
+    import json
+    from app.config import settings
 
+    # Use Claude API to parse the flow description
     actions = []
-    parts = re.split(r',\s*then\s*|,\s*אז\s*|,\s*ואז\s*', text, flags=re.IGNORECASE)
 
-    # Genre mappings (Hebrew to English)
-    genre_map = {
-        "חסידי": "hasidi",
-        "חסידית": "hasidi",
-        "מזרחי": "mizrahi",
-        "מזרחית": "mizrahi",
-        "פופ": "pop",
-        "רוק": "rock",
-        "ים תיכוני": "mediterranean",
-        "קלאסי": "classic",
-        "עברי": "hebrew",
-    }
+    if not settings.anthropic_api_key:
+        logger.warning("ANTHROPIC_API_KEY not set, falling back to regex parsing")
+        # Fall through to regex parsing below
+    else:
+        try:
+            client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
-    for part in parts:
-        part = part.strip().lower()
+            prompt = f"""Parse this radio flow description into structured actions. Return ONLY a JSON array of actions, no explanations.
 
-        # Parse genre playback
-        genre_match = re.search(
-            r'(?:play|נגן|השמע)\s+(\w+)\s+(?:music|מוזיקה)?(?:\s+(?:between|from|בין|מ-?)\s*(\d{1,2})(?::(\d{2}))?\s*(?:-|to|עד)\s*(\d{1,2})(?::(\d{2}))?\s*(?:am|pm|בבוקר|בערב)?)?(?:\s+for\s+(\d+)\s*(?:minutes?|min|דקות?))?',
-            part
-        )
-        if genre_match:
-            genre = genre_match.group(1)
-            # Translate Hebrew genre
-            genre = genre_map.get(genre, genre)
+Available action types:
+- play_genre: Play music from a genre (hasidi, mizrahi, happy, israeli, pop, rock, mediterranean, classic, hebrew, all, mixed)
+- play_commercials: Play commercials (specify count, or use 999 for ALL commercials)
+- wait: Wait for a duration
+- set_volume: Set volume level
 
-            start_hour = genre_match.group(2)
-            end_hour = genre_match.group(4)
-            duration = genre_match.group(6)
+Description: {text}
 
-            action = {
-                "action_type": FlowActionType.PLAY_GENRE.value,
-                "genre": genre,
-                "description": f"Play {genre} music"
-            }
+Return format (JSON array only):
+[
+  {{"action_type": "play_genre", "genre": "happy", "description": "Play happy music", "duration_minutes": 30}},
+  {{"action_type": "play_commercials", "commercial_count": 999, "description": "Play all commercials"}},
+  {{"action_type": "play_genre", "genre": "mixed", "description": "Continue playing songs"}}
+]
 
-            if duration:
-                action["duration_minutes"] = int(duration)
-            elif start_hour and end_hour:
-                action["duration_minutes"] = (int(end_hour) - int(start_hour)) * 60
+Parse the description and return the JSON array:"""
 
-            actions.append(action)
-            continue
+            response = client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}]
+            )
 
-        # Parse commercial playback
-        commercial_match = re.search(
-            r'(?:play|נגן|השמע)\s+(\d+)\s+(?:commercials?|פרסומות?|פרסומים?)',
-            part
-        )
-        if commercial_match:
-            count = int(commercial_match.group(1))
-            actions.append({
-                "action_type": FlowActionType.PLAY_COMMERCIALS.value,
-                "commercial_count": count,
-                "description": f"Play {count} commercial(s)"
-            })
-            continue
+            # Extract JSON from response
+            response_text = response.content[0].text.strip()
 
-        # Parse wait
-        wait_match = re.search(
-            r'(?:wait|חכה|המתן)\s+(\d+)\s*(?:minutes?|min|דקות?)',
-            part
-        )
-        if wait_match:
-            minutes = int(wait_match.group(1))
-            actions.append({
-                "action_type": FlowActionType.WAIT.value,
-                "duration_minutes": minutes,
-                "description": f"Wait {minutes} minutes"
-            })
-            continue
+            # Remove markdown code blocks if present
+            if response_text.startswith("```"):
+                lines = response_text.split("\n")
+                response_text = "\n".join(lines[1:-1])
+            if response_text.startswith("json"):
+                response_text = response_text[4:].strip()
 
-        # Parse volume
-        volume_match = re.search(
-            r'(?:set\s+)?volume\s+(?:to\s+)?(\d+)|עוצמה\s+(\d+)',
-            part
-        )
-        if volume_match:
-            volume = int(volume_match.group(1) or volume_match.group(2))
-            actions.append({
-                "action_type": FlowActionType.SET_VOLUME.value,
-                "volume_level": volume,
-                "description": f"Set volume to {volume}"
-            })
+            actions = json.loads(response_text)
+            logger.info(f"Claude parsed {len(actions)} actions from: {text}")
 
-    # Extract schedule from text
+        except Exception as e:
+            logger.error(f"Failed to parse with Claude: {e}")
+            # Fall through to regex parsing below
+
+    # Fallback to regex parsing if Claude failed or not configured
+    if not actions:
+        import re
+        parts = re.split(r',\s*then\s*|,\s*אז\s*|,\s*ואז\s*', text, flags=re.IGNORECASE)
+
+        # Genre mappings (Hebrew to English)
+        genre_map = {
+            "חסידי": "hasidi",
+            "חסידית": "hasidi",
+            "מזרחי": "mizrahi",
+            "מזרחית": "mizrahi",
+            "פופ": "pop",
+            "רוק": "rock",
+            "ים תיכוני": "mediterranean",
+            "קלאסי": "classic",
+            "עברי": "hebrew",
+        }
+
+        for part in parts:
+            part = part.strip().lower()
+
+            # Parse genre playback
+            genre_match = re.search(
+                r'(?:play|נגן|השמע)\s+(\w+)\s+(?:music|מוזיקה)?(?:\s+(?:between|from|בין|מ-?)\s*(\d{1,2})(?::(\d{2}))?\s*(?:-|to|עד)\s*(\d{1,2})(?::(\d{2}))?\s*(?:am|pm|בבוקר|בערב)?)?(?:\s+for\s+(\d+)\s*(?:minutes?|min|דקות?))?',
+                part
+            )
+            if genre_match:
+                genre = genre_match.group(1)
+                # Translate Hebrew genre
+                genre = genre_map.get(genre, genre)
+
+                start_hour = genre_match.group(2)
+                end_hour = genre_match.group(4)
+                duration = genre_match.group(6)
+
+                action = {
+                    "action_type": FlowActionType.PLAY_GENRE.value,
+                    "genre": genre,
+                    "description": f"Play {genre} music"
+                }
+
+                if duration:
+                    action["duration_minutes"] = int(duration)
+                elif start_hour and end_hour:
+                    action["duration_minutes"] = (int(end_hour) - int(start_hour)) * 60
+
+                actions.append(action)
+                continue
+
+            # Parse commercial playback
+            commercial_match = re.search(
+                r'(?:play|נגן|השמע)\s+(\d+)\s+(?:commercials?|פרסומות?|פרסומים?)',
+                part
+            )
+            if commercial_match:
+                count = int(commercial_match.group(1))
+                actions.append({
+                    "action_type": FlowActionType.PLAY_COMMERCIALS.value,
+                    "commercial_count": count,
+                    "description": f"Play {count} commercial(s)"
+                })
+                continue
+
+            # Parse wait
+            wait_match = re.search(
+                r'(?:wait|חכה|המתן)\s+(\d+)\s*(?:minutes?|min|דקות?)',
+                part
+            )
+            if wait_match:
+                minutes = int(wait_match.group(1))
+                actions.append({
+                    "action_type": FlowActionType.WAIT.value,
+                    "duration_minutes": minutes,
+                    "description": f"Wait {minutes} minutes"
+                })
+                continue
+
+            # Parse volume
+            volume_match = re.search(
+                r'(?:set\s+)?volume\s+(?:to\s+)?(\d+)|עוצמה\s+(\d+)',
+                part
+            )
+            if volume_match:
+                volume = int(volume_match.group(1) or volume_match.group(2))
+                actions.append({
+                    "action_type": FlowActionType.SET_VOLUME.value,
+                    "volume_level": volume,
+                    "description": f"Set volume to {volume}"
+                })
+
+    # Extract schedule from text (works for both Claude and regex parsing)
     schedule = None
+    import re
     time_match = re.search(
         r'(?:between|from|at|בין|מ-?|ב-?)\s*(\d{1,2})(?::(\d{2}))?\s*(?:am|בבוקר)?(?:\s*(?:-|to|עד)\s*(\d{1,2})(?::(\d{2}))?\s*(?:am|pm|בבוקר|בערב)?)?',
         text, re.IGNORECASE
