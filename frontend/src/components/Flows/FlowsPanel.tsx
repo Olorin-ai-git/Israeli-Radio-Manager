@@ -87,7 +87,7 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
   const isRTL = i18n.language === 'he'
 
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [selectedFlow, setSelectedFlow] = useState<Flow | null>(null)
+  const [editingFlow, setEditingFlow] = useState<Flow | null>(null)
   const [expandedFlow, setExpandedFlow] = useState<string | null>(null)
 
   // Fetch flows
@@ -117,6 +117,14 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['flows'] })
       setShowCreateModal(false)
+    },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ flowId, data }: { flowId: string; data: any }) => api.updateFlow(flowId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['flows'] })
+      setEditingFlow(null)
     },
   })
 
@@ -181,36 +189,34 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
 
   if (collapsed) {
     return (
-      <div className="relative h-full">
+      <div className="w-12 h-full glass-sidebar flex flex-col items-center py-4 gap-4 relative overflow-visible">
         <button
           onClick={onToggle}
-          className="absolute top-4 -right-3 z-20 glass-button-primary p-2 rounded-full shadow-glow"
+          className="absolute -right-4 top-4 z-30 glass-button-primary p-2 rounded-full shadow-glow"
           title={isRTL ? 'הצג זרימות' : 'Show Flows'}
         >
-          {isRTL ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+          <ChevronRight size={16} />
         </button>
-        <div className="w-12 h-full glass-sidebar flex flex-col items-center py-4 gap-4">
-          <Workflow size={20} className="text-primary-400" />
-          {flows?.slice(0, 5).map((flow) => (
-            <button
-              key={flow._id}
-              onClick={() => {
-                onToggle()
-                setExpandedFlow(flow._id)
-              }}
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
-                flow.status === 'active'
-                  ? 'bg-green-500/20 text-green-400'
-                  : flow.status === 'running'
-                  ? 'bg-blue-500/20 text-blue-400'
-                  : 'bg-dark-700/50 text-dark-400'
-              }`}
-              title={flow.name}
-            >
-              <Workflow size={14} />
-            </button>
-          ))}
-        </div>
+        <Workflow size={20} className="text-primary-400" />
+        {flows?.slice(0, 5).map((flow) => (
+          <button
+            key={flow._id}
+            onClick={() => {
+              onToggle()
+              setExpandedFlow(flow._id)
+            }}
+            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+              flow.status === 'active'
+                ? 'bg-green-500/20 text-green-400'
+                : flow.status === 'running'
+                ? 'bg-blue-500/20 text-blue-400'
+                : 'bg-dark-700/50 text-dark-400'
+            }`}
+            title={flow.name}
+          >
+            <Workflow size={14} />
+          </button>
+        ))}
       </div>
     )
   }
@@ -299,8 +305,16 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
               {/* Expanded Details */}
               {expandedFlow === flow._id && (
                 <div className="mt-3 pt-3 border-t border-white/5 space-y-2">
+                  {/* Description */}
+                  {flow.description && (
+                    <div className="text-xs text-dark-300 p-2 bg-dark-800/30 rounded" dir="auto">
+                      {flow.description}
+                    </div>
+                  )}
+
                   {/* Actions List */}
                   <div className="space-y-1">
+                    <p className="text-xs text-dark-500 mb-1">{isRTL ? 'פעולות:' : 'Actions:'}</p>
                     {flow.actions.map((action, idx) => (
                       <div
                         key={idx}
@@ -344,6 +358,13 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                   title={flow.status === 'active' ? (isRTL ? 'השהה' : 'Pause') : (isRTL ? 'הפעל' : 'Enable')}
                 >
                   {flow.status === 'active' ? <Pause size={12} /> : <Play size={12} />}
+                </button>
+                <button
+                  onClick={() => setEditingFlow(flow)}
+                  className="glass-button py-1.5 px-2 text-xs text-blue-400 hover:bg-blue-500/20"
+                  title={isRTL ? 'ערוך' : 'Edit'}
+                >
+                  <Edit size={12} />
                 </button>
                 <button
                   onClick={() => deleteMutation.mutate(flow._id)}
@@ -438,6 +459,104 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                     <Plus size={16} />
                   )}
                   <span>{isRTL ? 'צור' : 'Create'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Flow Modal */}
+      {editingFlow && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="glass-card p-6 w-full max-w-md mx-4">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-semibold text-dark-100">
+                {isRTL ? 'עריכת זרימה' : 'Edit Flow'}
+              </h3>
+              <button
+                onClick={() => setEditingFlow(null)}
+                className="p-2 hover:bg-white/10 rounded-lg"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                const formData = new FormData(e.currentTarget)
+                updateMutation.mutate({
+                  flowId: editingFlow._id,
+                  data: {
+                    name: formData.get('name') as string,
+                    description: formData.get('description') as string,
+                  },
+                })
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-dark-300 text-sm mb-2">
+                  {isRTL ? 'שם' : 'Name'}
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  defaultValue={editingFlow.name}
+                  className="w-full glass-input"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-dark-300 text-sm mb-2">
+                  {isRTL ? 'תיאור' : 'Description'}
+                </label>
+                <textarea
+                  name="description"
+                  rows={3}
+                  defaultValue={editingFlow.description || ''}
+                  className="w-full glass-input resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-dark-300 text-sm mb-2">
+                  {isRTL ? 'פעולות (לקריאה בלבד)' : 'Actions (read-only)'}
+                </label>
+                <div className="space-y-1 max-h-32 overflow-auto">
+                  {editingFlow.actions.map((action, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center gap-2 text-xs text-dark-300 p-1.5 bg-dark-800/50 rounded"
+                    >
+                      <ActionIcon type={action.action_type} />
+                      <span>{action.description || action.action_type}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setEditingFlow(null)}
+                  className="flex-1 glass-button py-2"
+                >
+                  {isRTL ? 'ביטול' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={updateMutation.isPending}
+                  className="flex-1 glass-button-primary py-2 flex items-center justify-center gap-2"
+                >
+                  {updateMutation.isPending ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Edit size={16} />
+                  )}
+                  <span>{isRTL ? 'שמור' : 'Save'}</span>
                 </button>
               </div>
             </form>

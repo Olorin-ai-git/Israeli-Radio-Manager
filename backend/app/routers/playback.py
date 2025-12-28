@@ -427,3 +427,128 @@ async def log_playback_start(request: Request, content_id: str):
     )
 
     return {"message": "Playback logged", "content_id": content_id}
+
+
+@router.get("/stats")
+async def get_playback_stats(request: Request):
+    """Get playback statistics for the dashboard."""
+    db = request.app.state.db
+
+    # Get today's start time
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Count plays by type (today)
+    pipeline = [
+        {"$match": {"started_at": {"$gte": today}}},
+        {"$group": {"_id": "$type", "count": {"$sum": 1}}}
+    ]
+
+    stats_cursor = db.playback_logs.aggregate(pipeline)
+    today_stats = {"song": 0, "show": 0, "commercial": 0}
+    async for stat in stats_cursor:
+        if stat["_id"] in today_stats:
+            today_stats[stat["_id"]] = stat["count"]
+
+    # Get total counts (all time)
+    total_pipeline = [
+        {"$group": {"_id": "$type", "count": {"$sum": 1}}}
+    ]
+    total_cursor = db.playback_logs.aggregate(total_pipeline)
+    total_stats = {"song": 0, "show": 0, "commercial": 0}
+    async for stat in total_cursor:
+        if stat["_id"] in total_stats:
+            total_stats[stat["_id"]] = stat["count"]
+
+    return {
+        "today": {
+            "songs_played": today_stats["song"],
+            "shows_aired": today_stats["show"],
+            "commercials_played": today_stats["commercial"]
+        },
+        "total": {
+            "songs_played": total_stats["song"],
+            "shows_aired": total_stats["show"],
+            "commercials_played": total_stats["commercial"]
+        }
+    }
+
+
+@router.get("/cover/{content_id}")
+async def get_album_cover(request: Request, content_id: str):
+    """
+    Get album cover art for a content item.
+    Extracts embedded artwork from ID3 tags.
+    """
+    from io import BytesIO
+    from mutagen import File as MutagenFile
+    from mutagen.mp3 import MP3
+    from mutagen.id3 import ID3
+
+    db = request.app.state.db
+    content_sync = request.app.state.content_sync
+
+    # Find content in database
+    content = await db.content.find_one({"_id": ObjectId(content_id)})
+    if not content:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    # Get local file path
+    local_path = None
+    if content.get("local_cache_path"):
+        local_path = Path(content["local_cache_path"])
+        if not local_path.exists():
+            local_path = None
+
+    if not local_path:
+        # Download if not cached
+        local_path = await content_sync.download_for_playback(content_id)
+
+    if not local_path or not local_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not available")
+
+    # Extract album art
+    try:
+        # Try ID3 tags for MP3 files
+        if str(local_path).lower().endswith('.mp3'):
+            try:
+                audio = ID3(str(local_path))
+                # Look for APIC (Attached Picture) frames
+                for tag in audio.keys():
+                    if tag.startswith('APIC'):
+                        apic = audio[tag]
+                        return StreamingResponse(
+                            BytesIO(apic.data),
+                            media_type=apic.mime or "image/jpeg",
+                            headers={"Cache-Control": "public, max-age=86400"}
+                        )
+            except Exception:
+                pass
+
+        # Try mutagen for other formats
+        audio = MutagenFile(str(local_path))
+        if audio is not None:
+            # Check for pictures in various formats
+            if hasattr(audio, 'pictures') and audio.pictures:
+                pic = audio.pictures[0]
+                return StreamingResponse(
+                    BytesIO(pic.data),
+                    media_type=pic.mime or "image/jpeg",
+                    headers={"Cache-Control": "public, max-age=86400"}
+                )
+
+            # For MP4/M4A files
+            if hasattr(audio, 'tags') and audio.tags:
+                if 'covr' in audio.tags:
+                    covers = audio.tags['covr']
+                    if covers:
+                        return StreamingResponse(
+                            BytesIO(bytes(covers[0])),
+                            media_type="image/jpeg",
+                            headers={"Cache-Control": "public, max-age=86400"}
+                        )
+
+    except Exception as e:
+        pass
+
+    # No cover found
+    raise HTTPException(status_code=404, detail="No album cover found")

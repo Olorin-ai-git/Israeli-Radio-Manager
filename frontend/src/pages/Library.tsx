@@ -1,35 +1,69 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { Music, Radio, Megaphone, Search, Play, Plus, MoreVertical, Cloud, HardDrive, AlertTriangle } from 'lucide-react'
+import {
+  Music, Radio, Megaphone, Search, Play, Plus,
+  Clock, BarChart2, Calendar, Disc3
+} from 'lucide-react'
 import { api } from '../services/api'
 import { usePlayerStore } from '../store/playerStore'
 import { toast } from '../store/toastStore'
 
+// Component to display album cover with fallback
+function AlbumCover({ contentId, isPlaying, type }: { contentId: string; isPlaying: boolean; type: string }) {
+  const [hasError, setHasError] = useState(false)
+  const coverUrl = api.getCoverUrl(contentId)
+
+  const TypeIcon = type === 'song' ? Music
+    : type === 'commercial' ? Megaphone
+    : type === 'show' ? Radio
+    : Disc3
+
+  if (hasError) {
+    return isPlaying ? (
+      <div className="flex items-end gap-0.5 h-5">
+        <div className="w-1 bg-white audio-bar h-3 rounded-full"></div>
+        <div className="w-1 bg-white audio-bar h-5 rounded-full"></div>
+        <div className="w-1 bg-white audio-bar h-4 rounded-full"></div>
+      </div>
+    ) : (
+      <TypeIcon size={20} className="text-dark-300 group-hover:text-primary-400 transition-colors" />
+    )
+  }
+
+  return (
+    <img
+      src={coverUrl}
+      alt="Cover"
+      className="w-full h-full object-cover"
+      onError={() => setHasError(true)}
+    />
+  )
+}
+
 type ContentTab = 'songs' | 'shows' | 'commercials'
 
 export default function Library() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const isRTL = i18n.language === 'he'
   const [activeTab, setActiveTab] = useState<ContentTab>('songs')
   const [searchQuery, setSearchQuery] = useState('')
-  const { play, addToQueue } = usePlayerStore()
+  const [selectedGenre, setSelectedGenre] = useState('')
+  const { play, addToQueue, currentTrack } = usePlayerStore()
 
-  const { data: songs } = useQuery({
+  const { data: songs, isLoading: loadingSongs } = useQuery({
     queryKey: ['songs'],
     queryFn: () => api.getSongs(),
-    enabled: activeTab === 'songs',
   })
 
-  const { data: shows } = useQuery({
+  const { data: shows, isLoading: loadingShows } = useQuery({
     queryKey: ['shows'],
     queryFn: api.getShows,
-    enabled: activeTab === 'shows',
   })
 
-  const { data: commercials } = useQuery({
+  const { data: commercials, isLoading: loadingCommercials } = useQuery({
     queryKey: ['commercials'],
     queryFn: api.getCommercials,
-    enabled: activeTab === 'commercials',
   })
 
   const { data: genres } = useQuery({
@@ -48,23 +82,63 @@ export default function Library() {
     }
   }
 
+  const isLoading = activeTab === 'songs' ? loadingSongs
+    : activeTab === 'shows' ? loadingShows
+    : loadingCommercials
+
   const content = getContent()
-  const filteredContent = searchQuery
-    ? content.filter((item: any) =>
-        item.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.artist?.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : content
+
+  // Filter by search and genre
+  const filteredContent = content.filter((item: any) => {
+    const matchesSearch = !searchQuery ||
+      item.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.artist?.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesGenre = !selectedGenre || item.genre === selectedGenre
+    return matchesSearch && matchesGenre
+  })
+
+  const handlePlay = (item: any) => {
+    play(item)
+    toast.success(isRTL ? `מנגן: ${item.title}` : `Playing: ${item.title}`)
+  }
+
+  const handleAddToQueue = (item: any) => {
+    addToQueue(item)
+    toast.info(isRTL ? `נוסף לתור: ${item.title}` : `Added to queue: ${item.title}`)
+  }
 
   const tabs = [
-    { id: 'songs' as const, label: t('library.songs'), icon: Music, count: songs?.length || 0 },
-    { id: 'shows' as const, label: t('library.shows'), icon: Radio, count: shows?.length || 0 },
-    { id: 'commercials' as const, label: t('library.commercials'), icon: Megaphone, count: commercials?.length || 0 },
+    { id: 'songs' as const, label: isRTL ? 'שירים' : 'Songs', icon: Music, count: songs?.length || 0 },
+    { id: 'shows' as const, label: isRTL ? 'תוכניות' : 'Shows', icon: Radio, count: shows?.length || 0 },
+    { id: 'commercials' as const, label: isRTL ? 'פרסומות' : 'Commercials', icon: Megaphone, count: commercials?.length || 0 },
   ]
 
+  const formatDuration = (seconds: number): string => {
+    if (!seconds) return '--:--'
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'song': return Music
+      case 'show': return Radio
+      case 'commercial': return Megaphone
+      default: return Disc3
+    }
+  }
+
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold text-dark-100 mb-6">{t('library.title')}</h1>
+    <div className="p-6 h-full flex flex-col">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-dark-100">
+          {isRTL ? 'ספריית מדיה' : 'Media Library'}
+        </h1>
+        <div className="text-sm text-dark-400">
+          {filteredContent.length} {isRTL ? 'פריטים' : 'items'}
+        </div>
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6">
@@ -74,14 +148,14 @@ export default function Library() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all ${
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all ${
                 activeTab === tab.id
-                  ? 'glass-button-primary shadow-glow'
-                  : 'glass-button'
+                  ? 'bg-primary-500 text-white shadow-glow'
+                  : 'glass-button hover:bg-white/10'
               }`}
             >
               <Icon size={18} />
-              {tab.label}
+              <span>{tab.label}</span>
               <span className={`px-2 py-0.5 text-xs rounded-full ${
                 activeTab === tab.id ? 'bg-white/20' : 'bg-dark-600/50'
               }`}>
@@ -100,15 +174,19 @@ export default function Library() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('library.search')}
+            placeholder={isRTL ? 'חפש לפי שם או אמן...' : 'Search by title or artist...'}
             className="w-full pl-10 pr-4 py-2.5 glass-input"
             dir="auto"
           />
         </div>
 
         {activeTab === 'songs' && genres && genres.length > 0 && (
-          <select className="px-4 py-2 glass-input min-w-[150px]">
-            <option value="">All Genres</option>
+          <select
+            value={selectedGenre}
+            onChange={(e) => setSelectedGenre(e.target.value)}
+            className="px-4 py-2 glass-input min-w-[150px]"
+          >
+            <option value="">{isRTL ? 'כל הז\'אנרים' : 'All Genres'}</option>
             {genres.map((genre: string) => (
               <option key={genre} value={genre}>{genre}</option>
             ))}
@@ -116,97 +194,118 @@ export default function Library() {
         )}
       </div>
 
-      {/* Content Grid */}
-      <div className="glass-card overflow-hidden">
-        {filteredContent.length > 0 ? (
-          <table className="glass-table">
-            <thead>
-              <tr>
-                <th className="w-12"></th>
-                <th>{t('content.title')}</th>
-                {activeTab === 'songs' && (
-                  <>
-                    <th>{t('content.artist')}</th>
-                    <th>{t('content.genre')}</th>
-                  </>
-                )}
-                <th>{t('content.duration')}</th>
-                <th>{t('content.playCount')}</th>
-                <th className="w-12"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredContent.map((item: any) => (
-                <tr key={item._id} className="group">
-                  <td>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => play(item)}
-                        className="w-8 h-8 glass-button-primary rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                        title={t('player.play')}
-                      >
-                        <Play size={14} className="ml-0.5" />
-                      </button>
-                      <button
-                        onClick={() => addToQueue(item)}
-                        className="w-8 h-8 glass-button rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                        title={t('player.addToQueue')}
-                      >
-                        <Plus size={14} />
-                      </button>
+      {/* Content List */}
+      <div className="flex-1 overflow-auto">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : filteredContent.length > 0 ? (
+          <div className="space-y-2">
+            {filteredContent.map((item: any) => {
+              const isCurrentlyPlaying = currentTrack?._id === item._id
+
+              return (
+                <div
+                  key={item._id}
+                  className={`group flex items-center gap-4 p-4 rounded-xl transition-all ${
+                    isCurrentlyPlaying
+                      ? 'bg-primary-500/20 border border-primary-500/30'
+                      : 'glass-card hover:bg-white/5'
+                  }`}
+                >
+                  {/* Play Button / Album Cover */}
+                  <div className="relative">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all overflow-hidden ${
+                      isCurrentlyPlaying
+                        ? 'ring-2 ring-primary-500'
+                        : 'bg-dark-700/50 group-hover:bg-primary-500/20'
+                    }`}>
+                      <AlbumCover
+                        contentId={item._id}
+                        isPlaying={isCurrentlyPlaying}
+                        type={item.type}
+                      />
                     </div>
-                  </td>
-                  <td>
-                    <div>
-                      <p className="font-medium text-dark-100">{item.title || 'Untitled'}</p>
-                      {item.title_he && (
-                        <p className="text-sm text-dark-400" dir="rtl">{item.title_he}</p>
-                      )}
-                    </div>
-                  </td>
-                  {activeTab === 'songs' && (
-                    <>
-                      <td className="text-sm text-dark-300">
-                        {item.artist || '-'}
-                      </td>
-                      <td>
-                        {item.genre && (
-                          <span className="badge badge-info">
-                            {item.genre}
-                          </span>
-                        )}
-                      </td>
-                    </>
-                  )}
-                  <td className="text-sm text-dark-300 font-mono">
-                    {formatDuration(item.duration_seconds)}
-                  </td>
-                  <td className="text-sm text-dark-300">
-                    {item.play_count || 0}
-                  </td>
-                  <td>
-                    <button className="p-1 text-dark-400 hover:text-dark-200 transition-colors">
-                      <MoreVertical size={16} />
+                    <button
+                      onClick={() => handlePlay(item)}
+                      className={`absolute inset-0 w-12 h-12 rounded-xl flex items-center justify-center
+                        bg-primary-500/90 opacity-0 group-hover:opacity-100 transition-opacity ${
+                        isCurrentlyPlaying ? 'hidden' : ''
+                      }`}
+                    >
+                      <Play size={20} className="text-white ml-0.5" />
                     </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+
+                  {/* Title & Artist */}
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-medium truncate ${isCurrentlyPlaying ? 'text-primary-400' : 'text-dark-100'}`} dir="auto">
+                      {item.title || 'Untitled'}
+                    </p>
+                    <p className="text-sm text-dark-400 truncate" dir="auto">
+                      {item.artist || (item.type === 'commercial' ? (isRTL ? 'פרסומת' : 'Commercial') : (isRTL ? 'אמן לא ידוע' : 'Unknown Artist'))}
+                    </p>
+                  </div>
+
+                  {/* Genre Badge */}
+                  {item.genre && (
+                    <span className="hidden md:inline-block px-3 py-1 text-xs rounded-full bg-dark-700/50 text-dark-300 border border-white/5">
+                      {item.genre}
+                    </span>
+                  )}
+
+                  {/* Duration */}
+                  <div className="hidden sm:flex items-center gap-1.5 text-sm text-dark-400 min-w-[60px]">
+                    <Clock size={14} />
+                    <span className="font-mono">{formatDuration(item.duration_seconds)}</span>
+                  </div>
+
+                  {/* Play Count */}
+                  <div className="hidden md:flex items-center gap-1.5 text-sm text-dark-400 min-w-[50px]">
+                    <BarChart2 size={14} />
+                    <span>{item.play_count || 0}</span>
+                  </div>
+
+                  {/* Last Played */}
+                  {item.last_played && (
+                    <div className="hidden lg:flex items-center gap-1.5 text-xs text-dark-500 min-w-[80px]">
+                      <Calendar size={12} />
+                      <span>{new Date(item.last_played).toLocaleDateString()}</span>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleAddToQueue(item)}
+                      className="p-2 rounded-lg text-dark-400 hover:text-dark-100 hover:bg-white/10 transition-all"
+                      title={isRTL ? 'הוסף לתור' : 'Add to queue'}
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         ) : (
-          <div className="p-12 text-center">
-            <Music size={48} className="mx-auto mb-4 text-dark-600" />
-            <p className="text-dark-400">{t('library.noContent')}</p>
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-20 h-20 rounded-full bg-dark-800/50 flex items-center justify-center mb-4">
+              <Music size={40} className="text-dark-600" />
+            </div>
+            <p className="text-dark-400 text-lg mb-2">
+              {isRTL ? 'לא נמצא תוכן' : 'No content found'}
+            </p>
+            <p className="text-dark-500 text-sm">
+              {searchQuery
+                ? (isRTL ? 'נסה חיפוש אחר' : 'Try a different search')
+                : (isRTL ? 'העלה קבצים כדי להתחיל' : 'Upload files to get started')
+              }
+            </p>
           </div>
         )}
       </div>
     </div>
   )
-}
-
-function formatDuration(seconds: number): string {
-  if (!seconds) return '-'
-  const mins = Math.floor(seconds / 60)
-  const secs = Math.floor(seconds % 60)
-  return `${mins}:${secs.toString().padStart(2, '0')}`
 }

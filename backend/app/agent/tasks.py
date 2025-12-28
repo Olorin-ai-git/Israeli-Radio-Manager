@@ -228,6 +228,7 @@ class TaskExecutor:
     async def _execute_play(self, task: ParsedTask) -> Dict[str, Any]:
         """Play specific content."""
         from app.services.audio_player import TrackInfo
+        from app.routers.websocket import broadcast_scheduled_playback
 
         title = task.parameters.get("title")
         artist = task.parameters.get("artist")
@@ -244,6 +245,7 @@ class TaskExecutor:
             query["artist"] = {"$regex": artist, "$options": "i"}
 
         content = await self.db.content.find_one(query)
+        logger.info(f"Play request - title: {title}, found content: {content.get('title') if content else 'None'}")
 
         if content:
             # Check if scheduled for later
@@ -256,63 +258,54 @@ class TaskExecutor:
                     "content": content
                 }
             else:
-                # Try to play now
+                # Prepare content data for browser playback
+                content_data = {
+                    "_id": str(content["_id"]),
+                    "title": content.get("title"),
+                    "artist": content.get("artist"),
+                    "type": content.get("type"),
+                    "duration_seconds": content.get("duration_seconds"),
+                    "genre": content.get("genre"),
+                    "metadata": content.get("metadata"),
+                }
+
+                # Always broadcast to browser for frontend playback
+                logger.info(f"Broadcasting playback to browser: {content.get('title')}")
+                await broadcast_scheduled_playback(content_data)
+
+                # Log playback
+                await self.db.playback_logs.insert_one({
+                    "content_id": content["_id"],
+                    "started_at": datetime.utcnow(),
+                    "ended_at": None,
+                    "requested_by": "user_chat"
+                })
+
+                # Also try backend VLC playback if available
+                vlc_success = False
                 if self._audio_player and self._content_sync:
-                    # Download if needed
-                    local_path = await self._content_sync.download_for_playback(str(content["_id"]))
+                    try:
+                        local_path = await self._content_sync.download_for_playback(str(content["_id"]))
+                        if local_path:
+                            track = TrackInfo(
+                                content_id=str(content["_id"]),
+                                title=content.get("title", "Unknown"),
+                                artist=content.get("artist"),
+                                duration_seconds=content.get("duration_seconds", 0),
+                                file_path=str(local_path)
+                            )
+                            vlc_success = await self._audio_player.play(track)
+                            if vlc_success:
+                                logger.info(f"VLC playback started for: {content.get('title')}")
+                    except Exception as e:
+                        logger.warning(f"VLC playback failed: {e}")
 
-                    if local_path:
-                        # Create track info and play
-                        track = TrackInfo(
-                            content_id=str(content["_id"]),
-                            title=content.get("title", "Unknown"),
-                            artist=content.get("artist"),
-                            duration_seconds=content.get("duration_seconds", 0),
-                            file_path=str(local_path)
-                        )
-                        success = await self._audio_player.play(track)
-
-                        if success:
-                            # Log playback
-                            await self.db.playback_logs.insert_one({
-                                "content_id": content["_id"],
-                                "started_at": datetime.utcnow(),
-                                "ended_at": None,
-                                "requested_by": "user_chat"
-                            })
-
-                            return {
-                                "success": True,
-                                "message": f"🎵 מנגן עכשיו: '{content['title']}'",
-                                "message_en": f"Now playing: '{content['title']}'",
-                                "content": content
-                            }
-                        else:
-                            return {
-                                "success": False,
-                                "message": f"❌ לא הצלחתי לנגן את '{content['title']}'",
-                                "message_en": f"Failed to play '{content['title']}'"
-                            }
-                    else:
-                        return {
-                            "success": False,
-                            "message": f"❌ לא הצלחתי להוריד את '{content['title']}'",
-                            "message_en": f"Failed to download '{content['title']}'"
-                        }
-                else:
-                    # Fallback - add to queue
-                    await self.db.playback_queue.insert_one({
-                        "content_id": content["_id"],
-                        "priority": 100,
-                        "requested_at": datetime.utcnow(),
-                        "requested_by": "user_chat"
-                    })
-                    return {
-                        "success": True,
-                        "message": f"✅ '{content['title']}' נוסף לתור הנגינה",
-                        "message_en": f"'{content['title']}' added to queue",
-                        "content": content
-                    }
+                return {
+                    "success": True,
+                    "message": f"🎵 מנגן עכשיו: '{content['title']}'",
+                    "message_en": f"Now playing: '{content['title']}'",
+                    "content": content
+                }
         else:
             # Search suggestions
             suggestions = await self._find_similar(title or "")
@@ -452,22 +445,139 @@ class TaskExecutor:
         }
 
     async def _execute_genre_change(self, task: ParsedTask) -> Dict[str, Any]:
-        """Change to a different genre."""
+        """Change to a different genre and play a random song from it."""
+        from app.routers.websocket import broadcast_scheduled_playback
+        import random
+
         genre = task.parameters.get("genre")
+
+        # Map Hebrew genre names to English equivalents
+        genre_map = {
+            "מזרחי": "mizrahi",
+            "מזרחית": "mizrahi",
+            "פופ": "pop",
+            "רוק": "rock",
+            "קלאסי": "classic",
+            "קלאסית": "classic",
+            "ישראלי": "israeli",
+            "ישראלית": "israeli",
+            "חסידי": "hasidic",
+            "חסידית": "hasidic",
+            "ים תיכוני": "mediterranean",
+            "ים-תיכוני": "mediterranean",
+            "עברי": "hebrew",
+            "עברית": "hebrew",
+        }
+
+        # Normalize genre - try Hebrew mapping first
+        normalized_genre = genre_map.get(genre, genre)
+        logger.info(f"Genre change: original='{genre}', normalized='{normalized_genre}'")
 
         # Update current schedule preference
         await self.db.agent_state.update_one(
             {"_id": "current"},
-            {"$set": {"preferred_genre": genre, "updated_at": datetime.utcnow()}},
+            {"$set": {"preferred_genre": normalized_genre, "updated_at": datetime.utcnow()}},
             upsert=True
         )
 
-        return {
-            "success": True,
-            "message": f"🎶 עוברים לז'אנר {genre}",
-            "message_en": f"Switching to {genre} genre",
-            "genre": genre
+        # Get recently played song IDs (last 4 hours) to avoid repeating
+        four_hours_ago = datetime.utcnow() - timedelta(hours=4)
+        recent_logs = await self.db.playback_logs.find({
+            "started_at": {"$gte": four_hours_ago}
+        }).to_list(100)
+        recent_ids = [log["content_id"] for log in recent_logs if "content_id" in log]
+        logger.info(f"Genre change: excluding {len(recent_ids)} recently played songs")
+
+        # Find songs from the new genre - search both original and normalized
+        query = {
+            "type": "song",
+            "active": True,
+            "$or": [
+                {"genre": {"$regex": genre, "$options": "i"}},
+                {"genre": {"$regex": normalized_genre, "$options": "i"}},
+                {"metadata.genre": {"$regex": genre, "$options": "i"}},
+                {"metadata.genre": {"$regex": normalized_genre, "$options": "i"}}
+            ]
         }
+
+        # Exclude recently played songs
+        if recent_ids:
+            query["_id"] = {"$nin": recent_ids}
+
+        songs = await self.db.content.find(query).to_list(50)
+
+        # If all songs in genre were recently played, fall back to all songs
+        if not songs and recent_ids:
+            logger.info("All songs in genre were recently played, using all songs")
+            del query["_id"]
+            songs = await self.db.content.find(query).to_list(50)
+
+        if songs:
+            # Shuffle all songs and pick unique ones (up to 10)
+            random.shuffle(songs)
+            selected_songs = songs[:min(10, len(songs))]
+
+            logger.info(f"Genre change: selected {len(selected_songs)} unique songs from {len(songs)} available")
+
+            # First song plays immediately
+            first_song = selected_songs[0]
+            content_data = {
+                "_id": str(first_song["_id"]),
+                "title": first_song.get("title"),
+                "artist": first_song.get("artist"),
+                "type": first_song.get("type"),
+                "duration_seconds": first_song.get("duration_seconds"),
+                "genre": first_song.get("genre"),
+                "metadata": first_song.get("metadata"),
+            }
+
+            # Broadcast first song for immediate playback
+            logger.info(f"Genre change: playing first song - {first_song.get('title')}")
+            await broadcast_scheduled_playback(content_data)
+
+            # Queue remaining songs
+            from app.routers.websocket import broadcast_queue_tracks
+            if len(selected_songs) > 1:
+                queue_tracks = []
+                for song in selected_songs[1:]:
+                    queue_tracks.append({
+                        "_id": str(song["_id"]),
+                        "title": song.get("title"),
+                        "artist": song.get("artist"),
+                        "type": song.get("type"),
+                        "duration_seconds": song.get("duration_seconds"),
+                        "genre": song.get("genre"),
+                        "metadata": song.get("metadata"),
+                    })
+                logger.info(f"Genre change: queueing {len(queue_tracks)} additional songs")
+                await broadcast_queue_tracks(queue_tracks)
+
+            # Log playback for first song
+            await self.db.playback_logs.insert_one({
+                "content_id": first_song["_id"],
+                "started_at": datetime.utcnow(),
+                "ended_at": None,
+                "requested_by": "genre_change"
+            })
+
+            song_list = ", ".join([s.get("title", "?") for s in selected_songs[:3]])
+            if len(selected_songs) > 3:
+                song_list += f" ועוד {len(selected_songs) - 3}..."
+
+            return {
+                "success": True,
+                "message": f"🎶 עוברים לז'אנר {genre}\n🎵 מנגן: {first_song.get('title')}\n📋 בתור: {len(selected_songs) - 1} שירים נוספים",
+                "message_en": f"Switching to {genre} genre\nNow playing: {first_song.get('title')}\nQueued: {len(selected_songs) - 1} more songs",
+                "genre": genre,
+                "content": first_song
+            }
+        else:
+            return {
+                "success": True,
+                "message": f"🎶 עוברים לז'אנר {genre}\n⚠️ לא נמצאו שירים בז'אנר זה",
+                "message_en": f"Switching to {genre} genre\nNo songs found in this genre",
+                "genre": genre
+            }
 
     async def _execute_commercial(self, task: ParsedTask) -> Dict[str, Any]:
         """Insert a commercial break."""

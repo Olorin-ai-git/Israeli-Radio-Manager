@@ -9,10 +9,16 @@ import {
   VolumeX,
   Music,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  ListMusic,
+  X,
+  Trash2,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react'
 import { api } from '../../services/api'
 import { toast } from '../../store/toastStore'
+import { usePlayerStore } from '../../store/playerStore'
 
 interface Track {
   _id: string
@@ -46,8 +52,17 @@ export default function AudioPlayer({
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState(80)
   const [isMuted, setIsMuted] = useState(false)
+  const [queueExpanded, setQueueExpanded] = useState(false)
 
+  const { queue, removeFromQueue, clearQueue } = usePlayerStore()
   const isRTL = i18n.language === 'he'
+
+  // Auto-expand queue when items are added
+  useEffect(() => {
+    if (queue.length > 0 && !queueExpanded) {
+      setQueueExpanded(true)
+    }
+  }, [queue.length])
 
   // Load new track when track changes
   useEffect(() => {
@@ -141,22 +156,93 @@ export default function AudioPlayer({
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
-  return (
-    <div className="glass-card p-4">
-      {/* Hidden audio element */}
-      <audio
-        ref={audioRef}
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onEnded={handleEnded}
-        onCanPlay={() => { setIsLoading(false); setHasError(false); }}
-        onWaiting={() => setIsLoading(true)}
-        onError={handleError}
-      />
+  const formatDuration = (seconds?: number) => {
+    if (!seconds) return '--:--'
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
 
-      <div className="flex items-center gap-4">
+  return (
+    <div className="glass-card">
+      {/* Queue Panel - Expandable */}
+      {queueExpanded && (
+        <div className="border-b border-white/5 p-4 max-h-64 overflow-y-auto">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-dark-100 flex items-center gap-2">
+              <ListMusic size={16} className="text-primary-400" />
+              {isRTL ? 'תור השמעה' : 'Play Queue'}
+              <span className="px-2 py-0.5 text-xs bg-dark-700 rounded-full text-dark-400">
+                {queue.length}
+              </span>
+            </h3>
+            {queue.length > 0 && (
+              <button
+                onClick={clearQueue}
+                className="text-xs text-dark-400 hover:text-red-400 transition-colors flex items-center gap-1"
+              >
+                <Trash2 size={12} />
+                {isRTL ? 'נקה הכל' : 'Clear all'}
+              </button>
+            )}
+          </div>
+
+          {queue.length > 0 ? (
+            <div className="space-y-1">
+              {queue.map((item, index) => (
+                <div
+                  key={`${item._id}-${index}`}
+                  className="flex items-center gap-3 p-2 rounded-lg bg-dark-700/30 hover:bg-dark-700/50 transition-colors group"
+                >
+                  <span className="text-xs text-dark-500 w-5 text-center">{index + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-dark-200 truncate" dir="auto">
+                      {item.title}
+                    </p>
+                    <p className="text-xs text-dark-500 truncate" dir="auto">
+                      {item.artist || (isRTL ? 'אמן לא ידוע' : 'Unknown Artist')}
+                    </p>
+                  </div>
+                  <span className="text-xs text-dark-500">
+                    {formatDuration(item.duration_seconds)}
+                  </span>
+                  <button
+                    onClick={() => removeFromQueue(index)}
+                    className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/20 transition-all"
+                    title={isRTL ? 'הסר מהתור' : 'Remove from queue'}
+                  >
+                    <X size={14} className="text-dark-400 hover:text-red-400" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-6 text-dark-500">
+              <ListMusic size={32} className="mx-auto mb-2 opacity-50" />
+              <p className="text-sm">{isRTL ? 'התור ריק' : 'Queue is empty'}</p>
+              <p className="text-xs text-dark-600 mt-1">
+                {isRTL ? 'לחץ על + ליד שיר כדי להוסיף' : 'Click + next to a song to add it'}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Hidden audio element */}
+      <div className="p-4">
+        <audio
+          ref={audioRef}
+          onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={handleLoadedMetadata}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          onEnded={handleEnded}
+          onCanPlay={() => { setIsLoading(false); setHasError(false); }}
+          onWaiting={() => setIsLoading(true)}
+          onError={handleError}
+        />
+
+        <div className="flex items-center gap-4">
         {/* Track Info */}
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
@@ -257,6 +343,23 @@ export default function AudioPlayer({
               [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer"
           />
         </div>
+
+        {/* Queue Toggle */}
+        <button
+          onClick={() => setQueueExpanded(!queueExpanded)}
+          className={`p-2 rounded-lg transition-colors relative ${
+            queueExpanded ? 'bg-primary-500/20 text-primary-400' : 'hover:bg-white/10 text-dark-300'
+          }`}
+          title={isRTL ? 'תור השמעה' : 'Play Queue'}
+        >
+          <ListMusic size={20} />
+          {queue.length > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
+              {queue.length}
+            </span>
+          )}
+        </button>
+      </div>
       </div>
     </div>
   )

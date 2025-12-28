@@ -496,12 +496,21 @@ class GoogleCalendarService:
             }
 
             if time_min:
-                params["timeMin"] = time_min.isoformat() + "Z"
+                # Handle timezone-aware datetimes properly
+                if time_min.tzinfo is not None:
+                    # Strip timezone info, assuming caller passed UTC
+                    params["timeMin"] = time_min.replace(tzinfo=None).isoformat() + "Z"
+                else:
+                    params["timeMin"] = time_min.isoformat() + "Z"
             else:
                 params["timeMin"] = datetime.utcnow().isoformat() + "Z"
 
             if time_max:
-                params["timeMax"] = time_max.isoformat() + "Z"
+                # Handle timezone-aware datetimes properly
+                if time_max.tzinfo is not None:
+                    params["timeMax"] = time_max.replace(tzinfo=None).isoformat() + "Z"
+                else:
+                    params["timeMax"] = time_max.isoformat() + "Z"
 
             if search_query:
                 params["q"] = search_query
@@ -540,6 +549,11 @@ class GoogleCalendarService:
             List of radio-managed events
         """
         events = await self.list_events(time_min, time_max)
+
+        logger.info(f"list_events returned {len(events)} total events")
+        for e in events:
+            ext_props = e.get("extendedProperties", {}).get("private", {})
+            logger.info(f"  Event: {e.get('summary')} - radio_managed: {ext_props.get('radio_managed')}")
 
         return [
             e for e in events

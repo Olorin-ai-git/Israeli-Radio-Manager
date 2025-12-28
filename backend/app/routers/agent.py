@@ -393,6 +393,20 @@ async def chat_with_agent(request: Request, chat: ChatMessage):
     )
 
 
+def convert_mongo_types(obj):
+    """Recursively convert MongoDB types (ObjectId, datetime) to JSON-serializable types."""
+    if isinstance(obj, dict):
+        return {k: convert_mongo_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_mongo_types(item) for item in obj]
+    elif isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, datetime):
+        return obj.isoformat()
+    else:
+        return obj
+
+
 @router.get("/chat/history")
 async def get_chat_history(request: Request, limit: int = 50):
     """Get recent chat history."""
@@ -402,7 +416,8 @@ async def get_chat_history(request: Request, limit: int = 50):
 
     history = []
     async for entry in cursor:
-        entry["_id"] = str(entry["_id"])
+        # Recursively convert all MongoDB types to JSON-serializable types
+        entry = convert_mongo_types(entry)
         history.append(entry)
 
     # Reverse to get chronological order

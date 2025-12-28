@@ -319,7 +319,9 @@ async def get_week_schedule(
     else:
         start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
-    end = start + timedelta(days=7)
+    # Add extra day buffer to account for timezone differences
+    # Events in evening local time are stored as next day UTC
+    end = start + timedelta(days=8)
 
     try:
         events = await calendar_service.list_radio_events(start, end)
@@ -341,6 +343,9 @@ async def get_week_schedule(
             if start_str:
                 if "T" in start_str:
                     event_date = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                    # Convert to local time for correct day assignment
+                    if event_date.tzinfo:
+                        event_date = event_date.astimezone().replace(tzinfo=None)
                 else:
                     event_date = datetime.strptime(start_str, "%Y-%m-%d")
 

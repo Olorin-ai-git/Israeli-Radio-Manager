@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, Send, Bot, User, Loader2, Sparkles, HelpCircle, AlertCircle } from 'lucide-react'
+import { X, Send, Bot, User, Loader2, Sparkles, HelpCircle, AlertCircle, Trash2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../services/api'
 import { usePlayerStore } from '../../store/playerStore'
@@ -89,6 +89,16 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
     },
   })
 
+  // Clear chat mutation
+  const clearMutation = useMutation({
+    mutationFn: () => api.clearChatHistory(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chatHistory'] })
+      setShowExamples(true)
+      setErrorMessage(null)
+    },
+  })
+
   // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -140,13 +150,25 @@ export default function ChatSidebar({ expanded, onToggle }: ChatSidebarProps) {
             <p className="text-xs text-dark-400">{t('agent.title')}</p>
           </div>
         </div>
-        <button
-          onClick={onToggle}
-          className="p-2 hover:bg-white/10 rounded-xl transition-colors text-dark-300 hover:text-dark-100"
-          title={t('chat.collapse')}
-        >
-          <X size={20} />
-        </button>
+        <div className="flex items-center gap-1">
+          {messages.length > 0 && (
+            <button
+              onClick={() => clearMutation.mutate()}
+              disabled={clearMutation.isPending}
+              className="p-2 hover:bg-white/10 rounded-xl transition-colors text-dark-400 hover:text-red-400"
+              title={isRTL ? 'נקה צ\'אט' : 'Clear chat'}
+            >
+              <Trash2 size={18} />
+            </button>
+          )}
+          <button
+            onClick={onToggle}
+            className="p-2 hover:bg-white/10 rounded-xl transition-colors text-dark-300 hover:text-dark-100"
+            title={t('chat.collapse')}
+          >
+            <X size={20} />
+          </button>
+        </div>
       </div>
 
       {/* Messages */}

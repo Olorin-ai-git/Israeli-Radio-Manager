@@ -299,14 +299,17 @@ class OrchestratorAgent:
 
             if start >= 0 and end > start:
                 json_str = ai_response[start:end]
+                logger.info(f"Found JSON in AI response: {json_str[:200]}...")
                 task_data = json.loads(json_str)
 
                 # Check if this is a task
                 if "task_type" in task_data:
                     task_type_str = task_data.get("task_type", "unknown")
+                    logger.info(f"Parsed task type: {task_type_str}, params: {task_data.get('parameters', {})}")
                     try:
                         task_type = TaskType(task_type_str)
                     except ValueError:
+                        logger.warning(f"Unknown task type: {task_type_str}")
                         task_type = TaskType.UNKNOWN
 
                     # Parse time if present
@@ -332,9 +335,13 @@ class OrchestratorAgent:
                         result["message"] = task_data["response_message"]
 
                     return result
+                else:
+                    logger.info("JSON found but no task_type field")
+            else:
+                logger.info("No JSON found in AI response")
 
         except (json.JSONDecodeError, KeyError, ValueError) as e:
-            logger.debug(f"No task found in response: {e}")
+            logger.info(f"Failed to parse task from response: {e}")
 
         return None
 

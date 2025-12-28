@@ -76,9 +76,14 @@ export default function CalendarPlaylist() {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null)
   const [showScheduleModal, setShowScheduleModal] = useState(false)
   const [selectedContentId, setSelectedContentId] = useState<string>('')
+  const [preselectedDate, setPreselectedDate] = useState<string>('')
 
   const formatDateForApi = (date: Date) => {
-    return date.toISOString().split('T')[0]
+    // Use local date, not UTC
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
   }
 
   // Fetch week schedule
@@ -204,6 +209,13 @@ export default function CalendarPlaylist() {
     })
   }
 
+  const handleDayDoubleClick = (date: Date) => {
+    const dateStr = formatDateForApi(date)
+    setPreselectedDate(dateStr)
+    setShowScheduleModal(true)
+    setScheduleError(null)
+  }
+
   return (
     <div className="p-6">
       {/* Header */}
@@ -228,6 +240,7 @@ export default function CalendarPlaylist() {
 
           <button
             onClick={() => {
+              setPreselectedDate('')
               setShowScheduleModal(true)
               setScheduleError(null)
             }}
@@ -294,9 +307,11 @@ export default function CalendarPlaylist() {
             return (
               <div
                 key={dateKey}
-                className={`glass-card p-4 min-h-[400px] ${
+                onDoubleClick={() => handleDayDoubleClick(date)}
+                className={`glass-card p-4 min-h-[400px] cursor-pointer hover:bg-white/5 transition-colors ${
                   isToday(date) ? 'ring-2 ring-primary-500' : ''
                 }`}
+                title={isRTL ? 'לחץ פעמיים להוספת אירוע' : 'Double-click to add event'}
               >
                 {/* Day Header */}
                 <div className="text-center mb-4 pb-2 border-b border-white/10">
@@ -467,7 +482,8 @@ export default function CalendarPlaylist() {
                   name="date"
                   className="w-full glass-input"
                   required
-                  min={new Date().toISOString().split('T')[0]}
+                  defaultValue={preselectedDate}
+                  min={formatDateForApi(new Date())}
                 />
               </div>
 

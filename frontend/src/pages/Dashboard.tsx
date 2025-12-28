@@ -1,12 +1,15 @@
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { Music, Radio, Megaphone, Clock, Calendar } from 'lucide-react'
+import { Music, Radio, Megaphone, Clock, Calendar, BarChart2, RefreshCw } from 'lucide-react'
 import { api } from '../services/api'
 import { usePlayerStore } from '../store/playerStore'
 
 export default function Dashboard() {
   const { t, i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
+  const [coverUrl, setCoverUrl] = useState<string | null>(null)
+  const [coverError, setCoverError] = useState(false)
 
   // Browser-based player state (primary)
   const { currentTrack, isPlaying: browserIsPlaying } = usePlayerStore()
@@ -25,10 +28,11 @@ export default function Dashboard() {
   })
 
   // Use Google Calendar events for upcoming schedule
-  const { data: calendarEvents } = useQuery({
+  const { data: calendarEvents, refetch: refetchCalendar, isRefetching: isRefetchingCalendar } = useQuery({
     queryKey: ['calendarEvents'],
     queryFn: () => api.getCalendarEvents(7),
     refetchInterval: 30000,
+    refetchOnMount: true,
   })
 
   // Get recent playback history
@@ -36,6 +40,13 @@ export default function Dashboard() {
     queryKey: ['playbackHistory'],
     queryFn: () => api.getPlaybackHistory(10),
     refetchInterval: 15000,
+  })
+
+  // Get playback stats
+  const { data: playbackStats } = useQuery({
+    queryKey: ['playbackStats'],
+    queryFn: api.getPlaybackStats,
+    refetchInterval: 30000,
   })
 
   // Filter to only show upcoming events (not past)
@@ -48,6 +59,17 @@ export default function Dashboard() {
   const isPlaying = browserIsPlaying || playbackStatus?.state === 'playing'
   const displayTrack = currentTrack || playbackStatus?.current_track
 
+  // Load album cover when track changes
+  useEffect(() => {
+    if (displayTrack?._id) {
+      setCoverUrl(api.getCoverUrl(displayTrack._id))
+      setCoverError(false)
+    } else {
+      setCoverUrl(null)
+      setCoverError(false)
+    }
+  }, [displayTrack?._id])
+
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold text-dark-100 mb-6">{t('dashboard.title')}</h1>
@@ -59,9 +81,16 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold text-dark-100 mb-4">{t('dashboard.nowPlaying')}</h2>
 
             <div className="flex items-center gap-4">
-              {/* Album art placeholder */}
-              <div className="w-24 h-24 bg-dark-700/50 rounded-xl flex items-center justify-center border border-white/10 glow-animate">
-                {isPlaying ? (
+              {/* Album art */}
+              <div className="w-24 h-24 rounded-xl flex items-center justify-center border border-white/10 glow-animate overflow-hidden bg-dark-700/50 flex-shrink-0">
+                {coverUrl && !coverError ? (
+                  <img
+                    src={coverUrl}
+                    alt="Album cover"
+                    className="w-full h-full object-cover"
+                    onError={() => setCoverError(true)}
+                  />
+                ) : isPlaying ? (
                   <div className="flex items-end gap-1 h-8">
                     <div className="w-1.5 bg-primary-400 audio-bar h-4 rounded-full"></div>
                     <div className="w-1.5 bg-primary-400 audio-bar h-6 rounded-full"></div>
@@ -73,40 +102,92 @@ export default function Dashboard() {
                 )}
               </div>
 
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 {displayTrack ? (
                   <>
-                    <h3 className="text-xl font-bold text-dark-100" dir="auto">{displayTrack.title}</h3>
-                    {displayTrack.artist && (
-                      <p className="text-dark-300 text-lg">{displayTrack.artist}</p>
-                    )}
-                    <div className="flex flex-wrap items-center gap-2 mt-2">
-                      {displayTrack.type && (
-                        <span className={`text-xs px-2 py-0.5 rounded-full border ${
-                          displayTrack.type === 'song' ? 'bg-sky-500/20 text-sky-400 border-sky-500/30' :
-                          displayTrack.type === 'commercial' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' :
-                          displayTrack.type === 'show' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
-                          'bg-dark-500/20 text-dark-400 border-dark-500/30'
-                        }`}>
-                          {displayTrack.type}
-                        </span>
-                      )}
+                    {/* Title */}
+                    <h3 className="text-xl font-bold text-dark-100 truncate" dir="auto">
+                      {displayTrack.title}
+                    </h3>
+
+                    {/* Artist */}
+                    <p className="text-dark-300 text-lg truncate" dir="auto">
+                      {displayTrack.artist || (isRTL ? 'אמן לא ידוע' : 'Unknown Artist')}
+                    </p>
+
+                    {/* Tags Row */}
+                    <div className="flex flex-wrap items-center gap-2 mt-3">
+                      {/* Type Badge */}
+                      <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${
+                        displayTrack.type === 'song' ? 'bg-sky-500/20 text-sky-400 border-sky-500/30' :
+                        displayTrack.type === 'commercial' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' :
+                        displayTrack.type === 'show' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
+                        'bg-dark-500/20 text-dark-400 border-dark-500/30'
+                      }`}>
+                        {displayTrack.type === 'song' ? (isRTL ? 'שיר' : 'Song') :
+                         displayTrack.type === 'commercial' ? (isRTL ? 'פרסומת' : 'Commercial') :
+                         displayTrack.type === 'show' ? (isRTL ? 'תוכנית' : 'Show') : displayTrack.type}
+                      </span>
+
+                      {/* Genre */}
                       {displayTrack.genre && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-400 border border-primary-500/30">
+                        <span className="text-xs px-2.5 py-1 rounded-full bg-primary-500/20 text-primary-400 border border-primary-500/30">
                           {displayTrack.genre}
                         </span>
                       )}
-                      {displayTrack.duration_seconds && (
+
+                      {/* Language */}
+                      {displayTrack.metadata?.language && (
+                        <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          {displayTrack.metadata.language === 'hebrew' ? (isRTL ? 'עברית' : 'Hebrew') : displayTrack.metadata.language}
+                        </span>
+                      )}
+
+                      {/* Album */}
+                      {displayTrack.metadata?.album && (
                         <span className="text-xs text-dark-400">
-                          {Math.floor(displayTrack.duration_seconds / 60)}:{String(displayTrack.duration_seconds % 60).padStart(2, '0')}
+                          💿 {displayTrack.metadata.album}
+                        </span>
+                      )}
+
+                      {/* Year */}
+                      {displayTrack.metadata?.year && (
+                        <span className="text-xs text-dark-400">
+                          📅 {displayTrack.metadata.year}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Stats Row */}
+                    <div className="flex items-center gap-4 mt-3 text-xs text-dark-500">
+                      {/* Duration */}
+                      {displayTrack.duration_seconds ? (
+                        <span className="flex items-center gap-1">
+                          <Clock size={12} />
+                          {Math.floor(displayTrack.duration_seconds / 60)}:{String(Math.floor(displayTrack.duration_seconds % 60)).padStart(2, '0')}
+                        </span>
+                      ) : null}
+
+                      {/* Play Count */}
+                      {displayTrack.play_count !== undefined && (
+                        <span className="flex items-center gap-1">
+                          <BarChart2 size={12} />
+                          {displayTrack.play_count} {isRTL ? 'השמעות' : 'plays'}
+                        </span>
+                      )}
+
+                      {/* File Name */}
+                      {displayTrack.google_drive_path && (
+                        <span className="hidden md:inline text-dark-600 truncate max-w-[200px]" title={displayTrack.google_drive_path}>
+                          📁 {displayTrack.google_drive_path}
                         </span>
                       )}
                     </div>
                   </>
                 ) : (
-                  <div className="text-center py-2">
-                    <p className="text-dark-400">{t('dashboard.noTrack')}</p>
-                    <p className="text-xs text-dark-500 mt-1">
+                  <div className="text-center py-4">
+                    <p className="text-dark-400 text-lg">{t('dashboard.noTrack')}</p>
+                    <p className="text-sm text-dark-500 mt-1">
                       {isRTL ? 'בחר שיר מהספרייה כדי לנגן' : 'Select a song from the library to play'}
                     </p>
                   </div>
@@ -127,7 +208,7 @@ export default function Dashboard() {
                 <Music size={20} className="text-sky-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-dark-100">0</p>
+                <p className="text-2xl font-bold text-dark-100">{playbackStats?.today?.songs_played || 0}</p>
                 <p className="text-sm text-dark-400">{t('dashboard.songsPlayed')}</p>
               </div>
             </div>
@@ -137,7 +218,7 @@ export default function Dashboard() {
                 <Radio size={20} className="text-purple-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-dark-100">0</p>
+                <p className="text-2xl font-bold text-dark-100">{playbackStats?.today?.shows_aired || 0}</p>
                 <p className="text-sm text-dark-400">{t('dashboard.showsAired')}</p>
               </div>
             </div>
@@ -147,7 +228,7 @@ export default function Dashboard() {
                 <Megaphone size={20} className="text-emerald-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-dark-100">0</p>
+                <p className="text-2xl font-bold text-dark-100">{playbackStats?.today?.commercials_played || 0}</p>
                 <p className="text-sm text-dark-400">{t('dashboard.commercials')}</p>
               </div>
             </div>
@@ -183,10 +264,20 @@ export default function Dashboard() {
 
         {/* Upcoming Schedule */}
         <div className="lg:col-span-2 glass-card p-6">
-          <h2 className="text-lg font-semibold text-dark-100 mb-4 flex items-center gap-2">
-            <Calendar size={20} className="text-primary-400" />
-            {t('dashboard.upcoming')}
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
+              <Calendar size={20} className="text-primary-400" />
+              {t('dashboard.upcoming')}
+            </h2>
+            <button
+              onClick={() => refetchCalendar()}
+              disabled={isRefetchingCalendar}
+              className="p-2 rounded-lg hover:bg-white/10 transition-colors text-dark-400 hover:text-dark-200 disabled:opacity-50"
+              title={isRTL ? 'רענן' : 'Refresh'}
+            >
+              <RefreshCw size={16} className={isRefetchingCalendar ? 'animate-spin' : ''} />
+            </button>
+          </div>
 
           <div className="space-y-3">
             {upcomingEvents.length > 0 ? (

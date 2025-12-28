@@ -15,6 +15,8 @@ from app.models.flow import (
     FlowActionType,
     FlowExecutionLog
 )
+from app.routers.websocket import broadcast_scheduled_playback, broadcast_queue_tracks
+import random
 
 router = APIRouter()
 
@@ -250,44 +252,147 @@ async def run_flow(request: Request, flow_id: str):
             if action_type == FlowActionType.PLAY_GENRE.value:
                 # Queue songs from the genre
                 genre = action.get("genre")
-                if genre and audio_player:
-                    # Get songs from this genre
-                    songs = await db.content.find({
-                        "type": "song",
-                        "genre": genre,
-                        "active": True
-                    }).limit(10).to_list(10)
+                if genre:
+                    # Get recently queued/played songs by checking last_played timestamp
+                    from datetime import timedelta
+                    one_hour_ago = datetime.utcnow() - timedelta(hours=1)
 
-                    # Add to queue (in production, would respect duration_minutes)
-                    for song in songs[:3]:  # Limit for now
-                        from app.services.audio_player import TrackInfo
-                        track = TrackInfo(
-                            content_id=str(song["_id"]),
-                            title=song.get("title", "Unknown"),
-                            artist=song.get("artist"),
-                            duration_seconds=song.get("duration_seconds", 0),
-                            file_path=song.get("local_cache_path", "")
-                        )
-                        audio_player.add_to_queue(track)
+                    # Get songs from this genre, excluding recently played
+                    query = {
+                        "type": "song",
+                        "active": True,
+                        "$or": [
+                            {"last_played": {"$lt": one_hour_ago}},
+                            {"last_played": None},
+                            {"last_played": {"$exists": False}}
+                        ]
+                    }
+                    if genre != "mixed":
+                        query["genre"] = genre
+
+                    songs = await db.content.find(query).to_list(100)
+
+                    # If not enough songs, fall back to all songs (excluding recently played)
+                    if len(songs) < 10:
+                        query_fallback = {
+                            "type": "song",
+                            "active": True,
+                            "$or": [
+                                {"last_played": {"$lt": one_hour_ago}},
+                                {"last_played": None},
+                                {"last_played": {"$exists": False}}
+                            ]
+                        }
+                        songs = await db.content.find(query_fallback).to_list(100)
+
+                    # If still not enough, just get any songs
+                    if len(songs) < 5:
+                        songs = await db.content.find({
+                            "type": "song",
+                            "active": True
+                        }).to_list(100)
+
+                    if songs:
+                        # Shuffle and select unique songs
+                        random.shuffle(songs)
+                        selected_songs = songs[:min(10, len(songs))]
+
+                        # Update last_played for selected songs to avoid re-selection
+                        for song in selected_songs:
+                            await db.content.update_one(
+                                {"_id": song["_id"]},
+                                {"$set": {"last_played": datetime.utcnow()}}
+                            )
+
+                        # Broadcast first song for immediate playback
+                        first_song = selected_songs[0]
+                        content_data = {
+                            "_id": str(first_song["_id"]),
+                            "title": first_song.get("title", "Unknown"),
+                            "artist": first_song.get("artist"),
+                            "type": first_song.get("type", "song"),
+                            "duration_seconds": first_song.get("duration_seconds", 0),
+                            "genre": first_song.get("genre"),
+                            "metadata": first_song.get("metadata", {})
+                        }
+                        await broadcast_scheduled_playback(content_data)
+
+                        # Queue remaining songs
+                        if len(selected_songs) > 1:
+                            queue_tracks = []
+                            for song in selected_songs[1:]:
+                                queue_tracks.append({
+                                    "_id": str(song["_id"]),
+                                    "title": song.get("title", "Unknown"),
+                                    "artist": song.get("artist"),
+                                    "type": song.get("type", "song"),
+                                    "duration_seconds": song.get("duration_seconds", 0),
+                                    "genre": song.get("genre"),
+                                    "metadata": song.get("metadata", {})
+                                })
+                            await broadcast_queue_tracks(queue_tracks)
+
+                        # Also add to VLC queue if available
+                        if audio_player:
+                            for song in selected_songs:
+                                from app.services.audio_player import TrackInfo
+                                track = TrackInfo(
+                                    content_id=str(song["_id"]),
+                                    title=song.get("title", "Unknown"),
+                                    artist=song.get("artist"),
+                                    duration_seconds=song.get("duration_seconds", 0),
+                                    file_path=song.get("local_cache_path", "")
+                                )
+                                audio_player.add_to_queue(track)
 
             elif action_type == FlowActionType.PLAY_COMMERCIALS.value:
                 count = action.get("commercial_count", 1)
-                if audio_player:
-                    commercials = await db.content.find({
-                        "type": "commercial",
-                        "active": True
-                    }).limit(count).to_list(count)
+                commercials = await db.content.find({
+                    "type": "commercial",
+                    "active": True
+                }).to_list(count)
 
-                    for commercial in commercials:
-                        from app.services.audio_player import TrackInfo
-                        track = TrackInfo(
-                            content_id=str(commercial["_id"]),
-                            title=commercial.get("title", "Commercial"),
-                            artist=None,
-                            duration_seconds=commercial.get("duration_seconds", 0),
-                            file_path=commercial.get("local_cache_path", "")
-                        )
-                        audio_player.add_to_queue(track, priority=10)  # High priority
+                if commercials:
+                    # Broadcast first commercial for immediate playback
+                    first_commercial = commercials[0]
+                    content_data = {
+                        "_id": str(first_commercial["_id"]),
+                        "title": first_commercial.get("title", "Commercial"),
+                        "artist": first_commercial.get("artist"),
+                        "type": "commercial",
+                        "duration_seconds": first_commercial.get("duration_seconds", 0),
+                        "genre": first_commercial.get("genre"),
+                        "metadata": first_commercial.get("metadata", {})
+                    }
+                    await broadcast_scheduled_playback(content_data)
+
+                    # Queue remaining commercials
+                    if len(commercials) > 1:
+                        queue_tracks = []
+                        for commercial in commercials[1:]:
+                            queue_tracks.append({
+                                "_id": str(commercial["_id"]),
+                                "title": commercial.get("title", "Commercial"),
+                                "artist": commercial.get("artist"),
+                                "type": "commercial",
+                                "duration_seconds": commercial.get("duration_seconds", 0),
+                                "genre": commercial.get("genre"),
+                                "metadata": commercial.get("metadata", {})
+                            })
+                        await broadcast_queue_tracks(queue_tracks)
+
+                    # Also add to VLC queue if available
+                    if audio_player:
+                        for commercial in commercials:
+                            from app.services.audio_player import TrackInfo
+                            track = TrackInfo(
+                                content_id=str(commercial["_id"]),
+                                title=commercial.get("title", "Commercial"),
+                                artist=None,
+                                duration_seconds=commercial.get("duration_seconds", 0),
+                                file_path=commercial.get("local_cache_path", "")
+                            )
+                            audio_player.add_to_queue(track, priority=10)  # High priority
 
             elif action_type == FlowActionType.SET_VOLUME.value:
                 volume = action.get("volume_level", 80)

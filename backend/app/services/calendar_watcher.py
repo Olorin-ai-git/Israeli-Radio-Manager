@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Set, Dict, Any
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -84,17 +84,29 @@ class CalendarWatcherService:
     async def _check_upcoming_events(self):
         """Check for events that should be triggered now."""
         if not self.calendar_service:
+            logger.debug("No calendar service available")
             return
 
-        now = datetime.now()
-        lookahead = now + timedelta(minutes=self.lookahead_minutes)
+        # Use UTC for Google Calendar API (it expects UTC times with "Z" suffix)
+        now_utc = datetime.now(timezone.utc)
+        lookahead_utc = now_utc + timedelta(minutes=self.lookahead_minutes)
+
+        # Local time for logging and comparison
+        now_local = datetime.now()
+
+        logger.info(f"Checking for events between {now_utc.strftime('%H:%M:%S')} UTC and {lookahead_utc.strftime('%H:%M:%S')} UTC (local: {now_local.strftime('%H:%M:%S')})")
 
         try:
-            # Get upcoming radio-managed events
+            # Get upcoming radio-managed events (use UTC times for API)
             events = await self.calendar_service.list_radio_events(
-                time_min=now - timedelta(seconds=30),  # Small buffer for timing
-                time_max=lookahead
+                time_min=now_utc - timedelta(seconds=30),  # Small buffer for timing
+                time_max=lookahead_utc
             )
+
+            logger.info(f"list_radio_events returned {len(events)} events")
+
+            if events:
+                logger.info(f"Found {len(events)} radio events in the next {self.lookahead_minutes} minutes")
 
             for event in events:
                 event_id = event.get("id")
@@ -124,7 +136,7 @@ class CalendarWatcherService:
                     continue
 
                 # Check if it's time to trigger (within 30 second window)
-                time_diff = (start_local - now).total_seconds()
+                time_diff = (start_local - now_local).total_seconds()
 
                 if -30 <= time_diff <= 30:
                     # Time to play!
@@ -173,21 +185,27 @@ class CalendarWatcherService:
                     # Update cache path in database
                     await self.db.content.update_one(
                         {"_id": ObjectId(content_id)},
-                        {"$set": {"local_cache_path": local_path}}
+                        {"$set": {"local_cache_path": str(local_path)}}
                     )
 
-            if not local_path:
-                logger.error(f"No local file path for content {content_id}")
-                return
-
-            # Play the content
-            logger.info(f"Playing scheduled content: {content.get('title')}")
-            self.audio_player.play(local_path)
+            # Broadcast to frontend via WebSocket for browser playback
+            from app.routers.websocket import broadcast_scheduled_playback
+            content_data = {
+                "_id": str(content["_id"]),
+                "title": content.get("title"),
+                "artist": content.get("artist"),
+                "type": content.get("type"),
+                "duration_seconds": content.get("duration_seconds"),
+                "genre": content.get("genre"),
+                "metadata": content.get("metadata", {}),
+            }
+            logger.info(f"Broadcasting scheduled playback to frontend: {content.get('title')}")
+            await broadcast_scheduled_playback(content_data)
 
             # Log the playback
             await self.db.playback_logs.insert_one({
-                "content_id": content_id,
-                "content_type": content_type,
+                "content_id": ObjectId(content_id),
+                "type": content_type,
                 "title": content.get("title"),
                 "started_at": datetime.utcnow(),
                 "triggered_by": "calendar",

@@ -1,11 +1,14 @@
 """WebSocket router for real-time updates."""
 
+import logging
 from typing import List
 import json
 import asyncio
 from datetime import datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -183,3 +186,23 @@ async def broadcast_notification(message: str, level: str = "info"):
         "level": level,  # "info", "warning", "error", "success"
         "timestamp": datetime.utcnow().isoformat()
     })
+
+
+async def broadcast_scheduled_playback(content: dict):
+    """Broadcast that a scheduled content should start playing."""
+    logger.info(f"Broadcasting scheduled_playback: {content.get('title', 'Unknown')} to {len(manager.active_connections)} clients")
+    await manager.broadcast({
+        "type": "scheduled_playback",
+        "data": content,
+        "timestamp": datetime.utcnow().isoformat()
+    }, channel="playback")
+
+
+async def broadcast_queue_tracks(tracks: list):
+    """Broadcast multiple tracks to be added to the queue."""
+    logger.info(f"Broadcasting queue_tracks: {len(tracks)} tracks to {len(manager.active_connections)} clients")
+    await manager.broadcast({
+        "type": "queue_tracks",
+        "data": tracks,
+        "timestamp": datetime.utcnow().isoformat()
+    }, channel="playback")
