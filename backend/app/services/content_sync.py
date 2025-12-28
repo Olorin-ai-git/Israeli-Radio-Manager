@@ -89,14 +89,14 @@ class ContentSyncService:
                 if content_type == "song" and folder_info.get("children"):
                     for genre_name, genre_info in folder_info["children"].items():
                         logger.info(f"Processing genre folder: {genre_name}")
-                        folder_stats = await self._sync_folder(
+                        # Recursively sync this genre folder and all subfolders
+                        genre_stats = await self._sync_folder_recursive(
                             genre_info["id"],
                             content_type,
                             genre=genre_name,
                             download=download_files
                         )
-                        self._merge_stats(stats, folder_stats)
-                        stats["folders_scanned"] += 1
+                        self._merge_stats(stats, genre_stats)
                 elif content_type == "show" and folder_info.get("children"):
                     # Process show subfolders (episodes)
                     for show_name, show_info in folder_info["children"].items():
@@ -125,12 +125,72 @@ class ContentSyncService:
         logger.info(f"Sync complete: {stats}")
         return stats
 
+    async def _sync_folder_recursive(
+        self,
+        folder_id: str,
+        content_type: str,
+        genre: Optional[str] = None,
+        artist_name: Optional[str] = None,
+        download: bool = False,
+        depth: int = 0
+    ) -> Dict[str, Any]:
+        """
+        Recursively sync a folder and all its subfolders.
+        For songs: genre comes from top-level folder, artist from subfolders.
+        """
+        stats = {
+            "folders_scanned": 1,
+            "files_found": 0,
+            "files_added": 0,
+            "files_updated": 0,
+            "files_downloaded": 0,
+            "errors": []
+        }
+
+        indent = "  " * depth
+        logger.info(f"{indent}Scanning folder (genre={genre}, artist={artist_name})")
+
+        # Sync files in this folder
+        folder_stats = await self._sync_folder(
+            folder_id,
+            content_type,
+            genre=genre,
+            artist_name=artist_name,
+            download=download
+        )
+        self._merge_stats(stats, folder_stats)
+
+        # Get subfolders and recursively process them
+        try:
+            subfolders = await self.drive.list_folders(folder_id)
+            for subfolder in subfolders:
+                subfolder_name = subfolder["name"]
+                # Use subfolder name as artist if we don't already have one
+                sub_artist = artist_name or subfolder_name
+                logger.info(f"{indent}Found subfolder: {subfolder_name} (artist: {sub_artist})")
+
+                sub_stats = await self._sync_folder_recursive(
+                    subfolder["id"],
+                    content_type,
+                    genre=genre,
+                    artist_name=sub_artist,
+                    download=download,
+                    depth=depth + 1
+                )
+                self._merge_stats(stats, sub_stats)
+        except Exception as e:
+            logger.error(f"Error listing subfolders: {e}")
+            stats["errors"].append(str(e))
+
+        return stats
+
     async def _sync_folder(
         self,
         folder_id: str,
         content_type: str,
         genre: Optional[str] = None,
         show_name: Optional[str] = None,
+        artist_name: Optional[str] = None,
         download: bool = False
     ) -> Dict[str, Any]:
         """Sync a single folder."""
@@ -153,6 +213,7 @@ class ContentSyncService:
                         content_type,
                         genre=genre,
                         show_name=show_name,
+                        artist_name=artist_name,
                         download=download
                     )
 
@@ -180,6 +241,7 @@ class ContentSyncService:
         content_type: str,
         genre: Optional[str] = None,
         show_name: Optional[str] = None,
+        artist_name: Optional[str] = None,
         download: bool = False
     ) -> str:
         """
@@ -204,12 +266,13 @@ class ContentSyncService:
             metadata = self._extract_metadata(local_path)
 
         # Build content document
+        # Use artist from metadata, or from folder name if provided
         content_doc = {
             "google_drive_id": drive_id,
             "google_drive_path": filename,
             "type": content_type,
             "title": metadata.get("title") or self._title_from_filename(filename),
-            "artist": metadata.get("artist"),
+            "artist": metadata.get("artist") or artist_name,
             "genre": genre or metadata.get("genre"),
             "duration_seconds": metadata.get("duration", 0),
             "local_cache_path": str(local_path) if local_path else None,
