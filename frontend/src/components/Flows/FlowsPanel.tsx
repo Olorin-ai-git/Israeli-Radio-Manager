@@ -683,33 +683,66 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
 
               {/* Schedule Info */}
               {flow.schedule && (
-                <div className="flex items-center gap-1 text-xs text-dark-400 mb-2">
-                  <Calendar size={12} />
-                  {flow.schedule.recurrence === 'none' && flow.schedule.start_datetime && flow.schedule.end_datetime ? (
-                    // One-time/multi-day flow: show datetime range
-                    <>
-                      <span className="text-[10px]">
-                        {new Date(flow.schedule.start_datetime).toLocaleDateString()} {new Date(flow.schedule.start_datetime).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
-                      </span>
-                      <span>→</span>
-                      <span className="text-[10px]">
-                        {new Date(flow.schedule.end_datetime).toLocaleDateString()} {new Date(flow.schedule.end_datetime).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
-                      </span>
-                    </>
-                  ) : (
-                    // Recurring flow: show time range
-                    <>
-                      <span>{flow.schedule.start_time}</span>
-                      {flow.schedule.end_time && <span>- {flow.schedule.end_time}</span>}
-                      {flow.schedule.recurrence && flow.schedule.recurrence !== 'none' && (
-                        <span className="ml-1 px-1.5 py-0.5 bg-primary-500/20 text-primary-400 rounded text-[10px]">
-                          {flow.schedule.recurrence === 'daily' ? (isRTL ? 'יומי' : 'Daily') :
-                           flow.schedule.recurrence === 'weekly' ? (isRTL ? 'שבועי' : 'Weekly') :
-                           flow.schedule.recurrence === 'monthly' ? (isRTL ? 'חודשי' : 'Monthly') :
-                           flow.schedule.recurrence === 'yearly' ? (isRTL ? 'שנתי' : 'Yearly') : ''}
+                <div className="flex flex-col gap-1 mb-2">
+                  <div className="flex items-center gap-1 text-xs text-dark-400">
+                    <Calendar size={12} />
+                    {flow.schedule.recurrence === 'none' && flow.schedule.start_datetime && flow.schedule.end_datetime ? (
+                      // One-time/multi-day flow: show datetime range
+                      <>
+                        <span className="text-[10px]">
+                          {new Date(flow.schedule.start_datetime).toLocaleDateString()} {new Date(flow.schedule.start_datetime).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
                         </span>
-                      )}
-                    </>
+                        <span>→</span>
+                        <span className="text-[10px]">
+                          {new Date(flow.schedule.end_datetime).toLocaleDateString()} {new Date(flow.schedule.end_datetime).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
+                        </span>
+                      </>
+                    ) : (
+                      // Recurring flow: show time range
+                      <>
+                        <span>{flow.schedule.start_time}</span>
+                        {flow.schedule.end_time && <span>- {flow.schedule.end_time}</span>}
+                        {flow.schedule.recurrence && flow.schedule.recurrence !== 'none' && (
+                          <span className="ml-1 px-1.5 py-0.5 bg-primary-500/20 text-primary-400 rounded text-[10px]">
+                            {flow.schedule.recurrence === 'daily' ? (isRTL ? 'יומי' : 'Daily') :
+                             flow.schedule.recurrence === 'weekly' ? (isRTL ? 'שבועי' : 'Weekly') :
+                             flow.schedule.recurrence === 'monthly' ? (isRTL ? 'חודשי' : 'Monthly') :
+                             flow.schedule.recurrence === 'yearly' ? (isRTL ? 'שנתי' : 'Yearly') : ''}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {/* Show specific days/dates for recurring flows */}
+                  {flow.schedule.recurrence === 'weekly' && flow.schedule.days_of_week && flow.schedule.days_of_week.length > 0 && (
+                    <div className="flex items-center gap-1 text-[10px] text-dark-500 ml-4">
+                      {flow.schedule.days_of_week.map((day: number) => {
+                        const dayNames = isRTL
+                          ? ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
+                          : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                        return (
+                          <span key={day} className="px-1 py-0.5 bg-dark-700/50 rounded">
+                            {dayNames[day]}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {flow.schedule.recurrence === 'monthly' && flow.schedule.day_of_month && (
+                    <div className="text-[10px] text-dark-500 ml-4">
+                      {isRTL ? `יום ${flow.schedule.day_of_month} בחודש` : `Day ${flow.schedule.day_of_month} of month`}
+                    </div>
+                  )}
+
+                  {flow.schedule.recurrence === 'yearly' && flow.schedule.month && flow.schedule.day_of_month && (
+                    <div className="text-[10px] text-dark-500 ml-4">
+                      {isRTL
+                        ? ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'][flow.schedule.month - 1]
+                        : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][flow.schedule.month - 1]
+                      } {flow.schedule.day_of_month}
+                    </div>
                   )}
                 </div>
               )}
