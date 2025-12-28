@@ -1259,11 +1259,15 @@ class TaskExecutor:
 
 Available action types:
 - play_genre: Play music from a genre (hasidi, mizrahi, happy, israeli, pop, rock, mediterranean, classic, hebrew, all, mixed)
+  * song_count: Exact number of songs to play (e.g., "play 1 song" -> song_count: 1, "play 5 songs" -> song_count: 5)
+  * duration_minutes: Alternative to song_count - play songs for this duration (system calculates ~4 min/song)
+  * If neither specified, defaults to 10 songs
 - play_commercials: Play commercials. Support:
-  * Specific count: commercial_count (number)
-  * Batch number: batch_number (1, 2, 3, etc.) - refers to predefined commercial batches
-  * Use 999 for ALL commercials
+  * commercial_count: How many times to REPEAT the commercial set (default 1, max 10)
+  * batch_number: (1, 2, 3, etc.) - refers to predefined commercial batches
+  * To play ALL commercials once: set commercial_count to 1 or omit it (system fetches all active commercials)
   * If "Batch-1", "Batch-2" etc mentioned, set batch_number field
+  * If "Play All Commercials" or "all commercial batches": generate MULTIPLE play_commercials actions, one for each batch (batch_number: 1, then batch_number: 2, then batch_number: 3)
 - wait: Wait for a duration
 - set_volume: Set volume level
 
@@ -1279,12 +1283,20 @@ PARSING RULES:
 
 Examples:
 
-Input: "Play happy music, then 2 commercials, then mizrahi"
+Input: "Play 1 song, then all commercials, then continue playing music"
 Output:
 [
-  {{"action_type": "play_genre", "genre": "happy", "duration_minutes": 30, "description": "Play happy music"}},
+  {{"action_type": "play_genre", "genre": "mixed", "song_count": 1, "description": "Play 1 song"}},
+  {{"action_type": "play_commercials", "commercial_count": 1, "description": "Play all commercials"}},
+  {{"action_type": "play_genre", "genre": "mixed", "song_count": 10, "description": "Continue playing music"}}
+]
+
+Input: "Play 3 happy songs, then 2 commercials, then mizrahi for 20 minutes"
+Output:
+[
+  {{"action_type": "play_genre", "genre": "happy", "song_count": 3, "description": "Play 3 happy songs"}},
   {{"action_type": "play_commercials", "commercial_count": 2, "description": "Play 2 commercials"}},
-  {{"action_type": "play_genre", "genre": "mizrahi", "duration_minutes": 30, "description": "Play mizrahi music"}}
+  {{"action_type": "play_genre", "genre": "mizrahi", "duration_minutes": 20, "description": "Play mizrahi for 20 minutes"}}
 ]
 
 Input: "Play music, every 30 min check time: on the hour play Batch-1 commercials, on half-hour play Batch-2 commercials, then continue music"
@@ -1295,6 +1307,16 @@ Output:
   {{"action_type": "play_genre", "genre": "mixed", "duration_minutes": 30, "description": "Continue playing music"}},
   {{"action_type": "play_commercials", "batch_number": 2, "description": "Play Batch-2 commercials (on half-hour)"}},
   {{"action_type": "play_genre", "genre": "mixed", "duration_minutes": 30, "description": "Continue playing music"}}
+]
+
+Input: "Play 1 song, then play all commercial batches, then continue music"
+Output:
+[
+  {{"action_type": "play_genre", "genre": "mixed", "song_count": 1, "description": "Play 1 song"}},
+  {{"action_type": "play_commercials", "batch_number": 1, "description": "Play Batch-1 commercials"}},
+  {{"action_type": "play_commercials", "batch_number": 2, "description": "Play Batch-2 commercials"}},
+  {{"action_type": "play_commercials", "batch_number": 3, "description": "Play Batch-3 commercials"}},
+  {{"action_type": "play_genre", "genre": "mixed", "song_count": 10, "description": "Continue playing music"}}
 ]
 
 Now parse this description: {description}
@@ -1512,7 +1534,7 @@ Return the JSON array:"""
                         duration_seconds=commercial.get("duration_seconds", 0),
                         file_path=commercial.get("local_cache_path", "")
                     )
-                    self._audio_player.add_to_queue(track, priority=10)
+                    self._audio_player.add_to_queue(track)  # Same priority as songs to preserve order
 
             actions_completed += 1
 

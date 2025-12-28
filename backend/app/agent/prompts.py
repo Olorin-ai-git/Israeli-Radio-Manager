@@ -67,8 +67,8 @@ IMPORTANT: Always match response language to input language! If asked in English
 - all (הכל), mixed (מעורב)
 
 פעולות זרימה / Flow actions:
-- play_genre: נגן ז'אנר מסוים (genre, duration_minutes)
-- play_commercials: נגן פרסומות (commercial_count או batch_number)
+- play_genre: נגן ז'אנר מסוים (genre, duration_minutes, song_count)
+- play_commercials: נגן פרסומות (commercial_count או batch_number). "Play All Commercials" = play all batches sequentially
 - play_content: נגן תוכן ספציפי (content_id)
 - play_show: נגן תוכנית (content_id)
 - wait: המתן (duration_minutes)

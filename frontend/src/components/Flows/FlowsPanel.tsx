@@ -804,7 +804,10 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   {flow.status === 'active' ? <Pause size={12} /> : <Play size={12} />}
                 </button>
                 <button
-                  onClick={() => runMutation.mutate(flow._id)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    runMutation.mutate(flow._id)
+                  }}
                   disabled={runMutation.isPending || flow.status === 'running'}
                   className="flex-1 glass-button py-1.5 text-xs flex items-center justify-center gap-1 text-green-400 hover:bg-green-500/20"
                   title={isRTL ? 'הפעל עכשיו' : 'Run Now'}

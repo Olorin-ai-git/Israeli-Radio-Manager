@@ -91,8 +91,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  addToQueue: async (track) => {
-    const { currentTrack, isPlaying } = get()
+  addToQueue: (track) => {
+    const { currentTrack, isPlaying, queue } = get()
 
     // If nothing is playing, play immediately instead of queuing
     if (!currentTrack || !isPlaying) {
@@ -100,15 +100,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return
     }
 
+    // Check if track already in queue (prevent duplicates)
+    if (queue.some(t => t._id === track._id)) {
+      console.log('Track already in queue, skipping:', track.title)
+      return
+    }
+
     // Add to local queue state
     set((state) => ({ queue: [...state.queue, track] }))
-
-    // Call backend API to sync queue
-    try {
-      await api.addToQueue(track._id)
-    } catch (error) {
-      console.error('Failed to sync queue to backend:', error)
-    }
   },
 
   // Insert at front of queue (will play next after current track)

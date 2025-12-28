@@ -29,6 +29,7 @@ export default function Layout({ children }: LayoutProps) {
   const { currentTrack, queue, playNext, playNow } = usePlayerStore()
   const wsRef = useRef<WebSocket | null>(null)
   const lastPlayedIdRef = useRef<string | null>(null) // Prevent duplicate playback
+  const lastQueueBatchRef = useRef<string | null>(null) // Prevent duplicate queue batches
   const isAutoPlayingRef = useRef(false) // Prevent recursive auto-play
 
   // Auto-play from queue when nothing is playing
@@ -115,6 +116,24 @@ export default function Layout({ children }: LayoutProps) {
           } else if (message.type === 'queue_tracks') {
             // Multiple tracks to add to queue
             const tracks = message.data
+
+            // Create a batch identifier from track IDs to prevent duplicate processing
+            const batchId = tracks.map((t: any) => t._id).sort().join(',')
+
+            // Prevent duplicate batch processing (multiple WS connections)
+            if (lastQueueBatchRef.current === batchId) {
+              console.log('Skipping duplicate queue batch, tracks:', tracks.length)
+              return
+            }
+            lastQueueBatchRef.current = batchId
+
+            // Clear the batch check after 5 seconds
+            setTimeout(() => {
+              if (lastQueueBatchRef.current === batchId) {
+                lastQueueBatchRef.current = null
+              }
+            }, 5000)
+
             console.log('Queue tracks received:', tracks.length)
 
             const { addToQueue } = usePlayerStore.getState()
@@ -127,6 +146,7 @@ export default function Layout({ children }: LayoutProps) {
                 duration_seconds: content.duration_seconds,
                 genre: content.genre,
                 metadata: content.metadata,
+                batches: content.batches,
               }
               addToQueue(track)
             })

@@ -24,6 +24,7 @@ class TrackInfo:
     artist: Optional[str]
     duration_seconds: int
     file_path: str
+    content_type: Optional[str] = None  # 'song', 'commercial', 'show'
 
 
 @dataclass

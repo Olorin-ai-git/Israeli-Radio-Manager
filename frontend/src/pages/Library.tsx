@@ -435,6 +435,13 @@ export default function Library() {
                     </span>
                   )}
 
+                  {/* Batches Badge (for commercials) */}
+                  {item.type === 'commercial' && item.batches && item.batches.length > 0 && (
+                    <span className="hidden md:inline-block px-3 py-1 text-xs rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                      {isRTL ? 'אצוות' : 'Batches'}: {item.batches.sort((a: number, b: number) => a - b).join(', ')}
+                    </span>
+                  )}
+
                   {/* Duration */}
                   <div className="hidden sm:flex items-center gap-1.5 text-sm text-dark-400 min-w-[60px]">
                     <Clock size={14} />

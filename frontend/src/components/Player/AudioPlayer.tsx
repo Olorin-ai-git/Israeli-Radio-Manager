@@ -44,6 +44,7 @@ interface Track {
   artist?: string
   type: string
   duration_seconds?: number
+  batches?: number[]
 }
 
 interface AudioPlayerProps {
@@ -98,6 +99,24 @@ function SortableQueueItem({
         <GripVertical size={16} className="text-dark-500" />
       </button>
       <span className="text-xs text-dark-500 w-5 text-center">{index + 1}</span>
+      {/* Type badge */}
+      <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded uppercase ${
+        item.type === 'commercial'
+          ? 'bg-amber-500/20 text-amber-400'
+          : item.type === 'show'
+            ? 'bg-emerald-500/20 text-emerald-400'
+            : 'bg-primary-500/20 text-primary-400'
+      }`}>
+        {item.type === 'commercial' ? (isRTL ? 'פרסומת' : 'AD') :
+         item.type === 'show' ? (isRTL ? 'תוכנית' : 'SHOW') :
+         (isRTL ? 'שיר' : 'SONG')}
+      </span>
+      {/* Batch badge for commercials */}
+      {item.type === 'commercial' && item.batches && item.batches.length > 0 && (
+        <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-orange-500/20 text-orange-400">
+          B{item.batches.sort((a, b) => a - b).join(',')}
+        </span>
+      )}
       <div className="flex-1 min-w-0">
         <p className="text-sm text-dark-200 truncate" dir="auto">
           {item.title}
@@ -528,8 +547,12 @@ export default function AudioPlayer({
           onLoadedMetadata={handleLoadedMetadata}
           onPlay={() => {
             setIsPlaying(true)
-            // For resume from pause (not new track), fade in
-            if (!needsFadeInRef.current && !isFadingOutRef.current && audioRef.current) {
+            // Fade in on play - for both new tracks and resume from pause
+            if (!isFadingOutRef.current && audioRef.current) {
+              // Clear the new track flag if set
+              if (needsFadeInRef.current) {
+                needsFadeInRef.current = false
+              }
               fadeIn()
             }
           }}
@@ -538,11 +561,6 @@ export default function AudioPlayer({
           onCanPlay={() => {
             setIsLoading(false)
             setHasError(false)
-            // Trigger fade in for new tracks when audio is ready
-            if (needsFadeInRef.current) {
-              needsFadeInRef.current = false
-              fadeIn()
-            }
           }}
           onWaiting={() => setIsLoading(true)}
           onError={handleError}

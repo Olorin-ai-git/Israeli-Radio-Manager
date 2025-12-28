@@ -99,6 +99,7 @@ async def get_queue(request: Request):
                 "title": item.track.title,
                 "artist": item.track.artist,
                 "duration_seconds": item.track.duration_seconds,
+                "type": item.track.content_type or "song",
                 "priority": item.priority
             }
             for item in queue_items

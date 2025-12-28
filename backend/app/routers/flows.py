@@ -763,9 +763,11 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
     """
     actions = flow.get("actions", [])
     actions_completed = 0
+    is_first_playback_action = True  # Only first action should use scheduled_playback (playNow)
 
-    for action in actions:
+    for idx, action in enumerate(actions):
         action_type = action.get("action_type")
+        logger.info(f"Action {idx+1}/{len(actions)}: {action_type}, is_first_playback_action={is_first_playback_action}")
 
         if action_type == FlowActionType.PLAY_GENRE.value:
             # Queue songs from the genre
@@ -810,9 +812,33 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
                     }).to_list(100)
 
                 if songs:
+                    # Determine how many songs to play
+                    song_count = action.get("song_count")
+                    duration_minutes = action.get("duration_minutes")
+                    description = action.get("description", "")
+
+                    # Try to extract song count from description if not explicitly set
+                    if not song_count and description:
+                        import re
+                        # Match patterns like "play 2 songs", "2 songs", "play 3 שירים"
+                        match = re.search(r'(\d+)\s*(?:songs?|שירים?)', description, re.IGNORECASE)
+                        if match:
+                            song_count = int(match.group(1))
+                            logger.info(f"Extracted song_count={song_count} from description: {description}")
+
+                    if song_count:
+                        # Explicit song count
+                        num_songs = min(song_count, len(songs))
+                    elif duration_minutes:
+                        # Calculate based on duration (assume ~4 min avg per song)
+                        num_songs = min(max(1, duration_minutes // 4), len(songs))
+                    else:
+                        # Default to 10 songs
+                        num_songs = min(10, len(songs))
+
                     # Shuffle and select unique songs
                     random.shuffle(songs)
-                    selected_songs = songs[:min(10, len(songs))]
+                    selected_songs = songs[:num_songs]
 
                     # Update last_played for selected songs to avoid re-selection
                     for song in selected_songs:
@@ -821,23 +847,39 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
                             {"$set": {"last_played": datetime.utcnow()}}
                         )
 
-                    # Broadcast first song for immediate playback
-                    first_song = selected_songs[0]
-                    content_data = {
-                        "_id": str(first_song["_id"]),
-                        "title": first_song.get("title", "Unknown"),
-                        "artist": first_song.get("artist"),
-                        "type": first_song.get("type", "song"),
-                        "duration_seconds": first_song.get("duration_seconds", 0),
-                        "genre": first_song.get("genre"),
-                        "metadata": first_song.get("metadata", {})
-                    }
-                    await broadcast_scheduled_playback(content_data)
+                    if is_first_playback_action:
+                        # First action: broadcast first song for immediate playback
+                        first_song = selected_songs[0]
+                        content_data = {
+                            "_id": str(first_song["_id"]),
+                            "title": first_song.get("title", "Unknown"),
+                            "artist": first_song.get("artist"),
+                            "type": first_song.get("type", "song"),
+                            "duration_seconds": first_song.get("duration_seconds", 0),
+                            "genre": first_song.get("genre"),
+                            "metadata": first_song.get("metadata", {})
+                        }
+                        await broadcast_scheduled_playback(content_data)
 
-                    # Queue remaining songs
-                    if len(selected_songs) > 1:
+                        # Queue remaining songs
+                        if len(selected_songs) > 1:
+                            queue_tracks = []
+                            for song in selected_songs[1:]:
+                                queue_tracks.append({
+                                    "_id": str(song["_id"]),
+                                    "title": song.get("title", "Unknown"),
+                                    "artist": song.get("artist"),
+                                    "type": song.get("type", "song"),
+                                    "duration_seconds": song.get("duration_seconds", 0),
+                                    "genre": song.get("genre"),
+                                    "metadata": song.get("metadata", {})
+                                })
+                            await broadcast_queue_tracks(queue_tracks)
+                        is_first_playback_action = False
+                    else:
+                        # Subsequent actions: just queue all songs
                         queue_tracks = []
-                        for song in selected_songs[1:]:
+                        for song in selected_songs:
                             queue_tracks.append({
                                 "_id": str(song["_id"]),
                                 "title": song.get("title", "Unknown"),
@@ -858,18 +900,40 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
                                 title=song.get("title", "Unknown"),
                                 artist=song.get("artist"),
                                 duration_seconds=song.get("duration_seconds", 0),
-                                file_path=song.get("local_cache_path", "")
+                                file_path=song.get("local_cache_path", ""),
+                                content_type="song"
                             )
                             audio_player.add_to_queue(track)
 
         elif action_type == FlowActionType.PLAY_COMMERCIALS.value:
-            # Get batch number (how many times to play the commercial set)
-            batch_count = action.get("commercial_count", 1)
+            # Get repeat count (how many times to play the commercial set)
+            # Safety limit: max 10 repeats to prevent queue explosion
+            repeat_count = min(action.get("commercial_count") or 1, 10)
+
+            # Get batch number to filter by (1, 2, 3, etc.)
+            batch_number = action.get("batch_number")
+            description = action.get("description", "")
+
+            # Try to extract batch number from description if not explicitly set
+            if not batch_number and description:
+                import re
+                # Match patterns like "batch1", "batch-1", "batch 1", "batch-A", "Batch-B"
+                match = re.search(r'batch[_\-\s]?(\d+)', description, re.IGNORECASE)
+                if match:
+                    batch_number = int(match.group(1))
+                    logger.info(f"Extracted batch_number={batch_number} from description: {description}")
+                else:
+                    # Try letter patterns: "batch-A", "batch-B" -> 1, 2
+                    match = re.search(r'batch[_\-\s]?([A-Za-z])\b', description, re.IGNORECASE)
+                    if match:
+                        letter = match.group(1).upper()
+                        batch_number = ord(letter) - ord('A') + 1
+                        logger.info(f"Extracted batch_number={batch_number} (from letter) from description: {description}")
 
             # Get specific commercial IDs if provided
             content_id = action.get("content_id")
 
-            logger.info(f"Playing commercials - batch_count: {batch_count}, content_id: {content_id}")
+            logger.info(f"Playing commercials - repeat_count: {repeat_count}, batch_number: {batch_number}, content_id: {content_id}")
 
             # Fetch commercials based on selection
             if content_id and content_id.strip():
@@ -889,6 +953,15 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
                             logger.info(f"  Found commercial: {commercial.get('title')}")
                     except Exception as e:
                         logger.warning(f"  Failed to fetch commercial {commercial_id}: {e}")
+            elif batch_number:
+                # Filter by batch number - commercials have a "batches" array field
+                logger.info(f"Fetching commercials for batch {batch_number}")
+                commercials = await db.content.find({
+                    "type": "commercial",
+                    "active": True,
+                    "batches": batch_number  # MongoDB matches if array contains value
+                }).to_list(100)
+                logger.info(f"  Found {len(commercials)} commercials in batch {batch_number}")
             else:
                 # All commercials - get all active commercials
                 logger.info("Fetching all active commercials")
@@ -898,31 +971,48 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
                 }).to_list(100)
                 logger.info(f"  Found {len(commercials)} commercials")
 
-            # Repeat commercials for batch count
+            # Repeat commercials for repeat count
             all_commercials = []
-            for _ in range(batch_count):
+            for _ in range(repeat_count):
                 all_commercials.extend(commercials)
 
             logger.info(f"Total commercials to play (after batch repeat): {len(all_commercials)}")
 
             if all_commercials:
-                # Broadcast first commercial for immediate playback
-                first_commercial = all_commercials[0]
-                content_data = {
-                    "_id": str(first_commercial["_id"]),
-                    "title": first_commercial.get("title", "Commercial"),
-                    "artist": first_commercial.get("artist"),
-                    "type": "commercial",
-                    "duration_seconds": first_commercial.get("duration_seconds", 0),
-                    "genre": first_commercial.get("genre"),
-                    "metadata": first_commercial.get("metadata", {})
-                }
-                await broadcast_scheduled_playback(content_data)
+                if is_first_playback_action:
+                    # First action: broadcast first commercial for immediate playback
+                    first_commercial = all_commercials[0]
+                    content_data = {
+                        "_id": str(first_commercial["_id"]),
+                        "title": first_commercial.get("title", "Commercial"),
+                        "artist": first_commercial.get("artist"),
+                        "type": "commercial",
+                        "duration_seconds": first_commercial.get("duration_seconds", 0),
+                        "genre": first_commercial.get("genre"),
+                        "metadata": first_commercial.get("metadata", {})
+                    }
+                    await broadcast_scheduled_playback(content_data)
 
-                # Queue remaining commercials
-                if len(all_commercials) > 1:
+                    # Queue remaining commercials
+                    if len(all_commercials) > 1:
+                        queue_tracks = []
+                        for commercial in all_commercials[1:]:
+                            queue_tracks.append({
+                                "_id": str(commercial["_id"]),
+                                "title": commercial.get("title", "Commercial"),
+                                "artist": commercial.get("artist"),
+                                "type": "commercial",
+                                "duration_seconds": commercial.get("duration_seconds", 0),
+                                "genre": commercial.get("genre"),
+                                "metadata": commercial.get("metadata", {}),
+                                "batches": commercial.get("batches", [])
+                            })
+                        await broadcast_queue_tracks(queue_tracks)
+                    is_first_playback_action = False
+                else:
+                    # Subsequent actions: just queue all commercials
                     queue_tracks = []
-                    for commercial in all_commercials[1:]:
+                    for commercial in all_commercials:
                         queue_tracks.append({
                             "_id": str(commercial["_id"]),
                             "title": commercial.get("title", "Commercial"),
@@ -930,7 +1020,8 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
                             "type": "commercial",
                             "duration_seconds": commercial.get("duration_seconds", 0),
                             "genre": commercial.get("genre"),
-                            "metadata": commercial.get("metadata", {})
+                            "metadata": commercial.get("metadata", {}),
+                            "batches": commercial.get("batches", [])
                         })
                     await broadcast_queue_tracks(queue_tracks)
 
@@ -943,9 +1034,10 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
                             title=commercial.get("title", "Commercial"),
                             artist=None,
                             duration_seconds=commercial.get("duration_seconds", 0),
-                            file_path=commercial.get("local_cache_path", "")
+                            file_path=commercial.get("local_cache_path", ""),
+                            content_type="commercial"
                         )
-                        audio_player.add_to_queue(track, priority=10)  # High priority
+                        audio_player.add_to_queue(track)  # Same priority as songs to preserve order
 
         elif action_type == FlowActionType.SET_VOLUME.value:
             volume = action.get("volume_level", 80)
@@ -960,6 +1052,7 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
 @router.post("/{flow_id}/run", response_model=dict)
 async def run_flow(request: Request, flow_id: str):
     """Manually trigger a flow to run."""
+    logger.info(f"=== RUN FLOW REQUESTED: {flow_id} ===")
     db = request.app.state.db
     audio_player = getattr(request.app.state, 'audio_player', None)
 
@@ -970,6 +1063,11 @@ async def run_flow(request: Request, flow_id: str):
 
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
+
+    # Log flow details for debugging
+    logger.info(f"Flow name: {flow.get('name')}")
+    logger.info(f"Flow description: {flow.get('description')}")
+    logger.info(f"Flow actions: {flow.get('actions')}")
 
     # Create execution log
     execution_log = {
@@ -1063,7 +1161,7 @@ async def run_flow(request: Request, flow_id: str):
         return {
             "message": f"Flow '{flow.get('name')}' executed successfully",
             "execution_id": execution_id,
-            "actions_completed": actions_completed
+            "actions_completed": total_actions_completed
         }
 
     except Exception as e:
@@ -1129,11 +1227,15 @@ async def parse_natural_language_flow(request: Request, text: str):
 
 Available action types:
 - play_genre: Play music from a genre (hasidi, mizrahi, happy, israeli, pop, rock, mediterranean, classic, hebrew, all, mixed)
+  * song_count: Exact number of songs to play (e.g., "play 1 song" -> song_count: 1, "play 5 songs" -> song_count: 5)
+  * duration_minutes: Alternative to song_count - play songs for this duration (system calculates ~4 min/song)
+  * If neither specified, defaults to 10 songs
 - play_commercials: Play commercials. Support:
-  * Specific count: commercial_count (number)
-  * Batch number: batch_number (1, 2, 3, etc.) - refers to predefined commercial batches
-  * Use 999 for ALL commercials
+  * commercial_count: How many times to REPEAT the commercial set (default 1, max 10)
+  * batch_number: (1, 2, 3, etc.) - refers to predefined commercial batches
+  * To play ALL commercials once: set commercial_count to 1 or omit it (system fetches all active commercials)
   * If "Batch-1", "Batch-2" etc mentioned, set batch_number field
+  * If "Play All Commercials" or "all commercial batches": generate MULTIPLE play_commercials actions, one for each batch (batch_number: 1, then batch_number: 2, then batch_number: 3)
 - wait: Wait for a duration
 - set_volume: Set volume level
 
@@ -1149,12 +1251,20 @@ PARSING RULES:
 
 Examples:
 
-Input: "Play happy music, then 2 commercials, then mizrahi"
+Input: "Play 1 song, then all commercials, then continue playing music"
 Output:
 [
-  {{"action_type": "play_genre", "genre": "happy", "duration_minutes": 30, "description": "Play happy music"}},
+  {{"action_type": "play_genre", "genre": "mixed", "song_count": 1, "description": "Play 1 song"}},
+  {{"action_type": "play_commercials", "commercial_count": 1, "description": "Play all commercials"}},
+  {{"action_type": "play_genre", "genre": "mixed", "song_count": 10, "description": "Continue playing music"}}
+]
+
+Input: "Play 3 happy songs, then 2 commercials, then mizrahi for 20 minutes"
+Output:
+[
+  {{"action_type": "play_genre", "genre": "happy", "song_count": 3, "description": "Play 3 happy songs"}},
   {{"action_type": "play_commercials", "commercial_count": 2, "description": "Play 2 commercials"}},
-  {{"action_type": "play_genre", "genre": "mizrahi", "duration_minutes": 30, "description": "Play mizrahi music"}}
+  {{"action_type": "play_genre", "genre": "mizrahi", "duration_minutes": 20, "description": "Play mizrahi for 20 minutes"}}
 ]
 
 Input: "Play music, every 30 min check time: on the hour play Batch-1 commercials, on half-hour play Batch-2 commercials, then continue music"
@@ -1165,6 +1275,16 @@ Output:
   {{"action_type": "play_genre", "genre": "mixed", "duration_minutes": 30, "description": "Continue playing music"}},
   {{"action_type": "play_commercials", "batch_number": 2, "description": "Play Batch-2 commercials (on half-hour)"}},
   {{"action_type": "play_genre", "genre": "mixed", "duration_minutes": 30, "description": "Continue playing music"}}
+]
+
+Input: "Play 1 song, then play all commercial batches, then continue music"
+Output:
+[
+  {{"action_type": "play_genre", "genre": "mixed", "song_count": 1, "description": "Play 1 song"}},
+  {{"action_type": "play_commercials", "batch_number": 1, "description": "Play Batch-1 commercials"}},
+  {{"action_type": "play_commercials", "batch_number": 2, "description": "Play Batch-2 commercials"}},
+  {{"action_type": "play_commercials", "batch_number": 3, "description": "Play Batch-3 commercials"}},
+  {{"action_type": "play_genre", "genre": "mixed", "song_count": 10, "description": "Continue playing music"}}
 ]
 
 Now parse this description: {text}

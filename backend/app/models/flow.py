@@ -31,6 +31,10 @@ class FlowAction(BaseModel):
 
     # For play_commercials
     commercial_count: Optional[int] = None
+    batch_number: Optional[int] = None  # Filter by commercial batch (1, 2, 3, etc.)
+
+    # For play_genre - exact number of songs
+    song_count: Optional[int] = None
 
     # Duration in minutes (for genre playback or wait)
     duration_minutes: Optional[int] = None

@@ -109,8 +109,22 @@ class ContentSyncService:
                         )
                         self._merge_stats(stats, sub_stats)
                         stats["folders_scanned"] += 1
+                elif content_type == "commercial" and folder_info.get("children"):
+                    # Process commercial batch subfolders
+                    for batch_folder_name, batch_info in folder_info["children"].items():
+                        # Extract batch number from folder name (e.g., "Batch-1", "batch1", "1")
+                        batch_number = self._extract_batch_number(batch_folder_name)
+                        logger.info(f"Processing commercial batch folder: {batch_folder_name} -> batch {batch_number}")
+                        sub_stats = await self._sync_folder(
+                            batch_info["id"],
+                            content_type,
+                            batch_number=batch_number,
+                            download=download_files
+                        )
+                        self._merge_stats(stats, sub_stats)
+                        stats["folders_scanned"] += 1
                 else:
-                    # Process directly for commercials (no subfolders)
+                    # Process directly (flat folder structure)
                     folder_stats = await self._sync_folder(
                         folder_info["id"],
                         content_type,
@@ -184,6 +198,22 @@ class ContentSyncService:
 
         return stats
 
+    def _extract_batch_number(self, folder_name: str) -> Optional[int]:
+        """Extract batch number from folder name like 'Batch-1', 'Batch-A', 'batch1', '1', etc."""
+        import re
+        # Try patterns: "Batch-1", "Batch1", "batch-1", "batch1", or just "1" (numbers)
+        match = re.search(r'batch[_-]?(\d+)|^(\d+)$', folder_name, re.IGNORECASE)
+        if match:
+            return int(match.group(1) or match.group(2))
+
+        # Try letter patterns: "Batch-A", "Batch-B" -> 1, 2, etc.
+        match = re.search(r'batch[_-]?([A-Za-z])$', folder_name, re.IGNORECASE)
+        if match:
+            letter = match.group(1).upper()
+            return ord(letter) - ord('A') + 1  # A=1, B=2, C=3, etc.
+
+        return None
+
     async def _sync_folder(
         self,
         folder_id: str,
@@ -191,6 +221,7 @@ class ContentSyncService:
         genre: Optional[str] = None,
         show_name: Optional[str] = None,
         artist_name: Optional[str] = None,
+        batch_number: Optional[int] = None,
         download: bool = False
     ) -> Dict[str, Any]:
         """Sync a single folder."""
@@ -214,6 +245,7 @@ class ContentSyncService:
                         genre=genre,
                         show_name=show_name,
                         artist_name=artist_name,
+                        batch_number=batch_number,
                         download=download
                     )
 
@@ -242,6 +274,7 @@ class ContentSyncService:
         genre: Optional[str] = None,
         show_name: Optional[str] = None,
         artist_name: Optional[str] = None,
+        batch_number: Optional[int] = None,
         download: bool = False
     ) -> str:
         """
@@ -291,9 +324,15 @@ class ContentSyncService:
 
         if existing:
             # Update existing record
+            update_ops = {"$set": content_doc}
+
+            # For commercials with batch_number, add to batches array (not replace)
+            if batch_number is not None and content_type == "commercial":
+                update_ops["$addToSet"] = {"batches": batch_number}
+
             await self.db.content.update_one(
                 {"_id": existing["_id"]},
-                {"$set": content_doc}
+                update_ops
             )
             return "updated"
         else:
@@ -301,6 +340,11 @@ class ContentSyncService:
             content_doc["created_at"] = datetime.utcnow()
             content_doc["play_count"] = 0
             content_doc["last_played"] = None
+
+            # For commercials, initialize batches array
+            if batch_number is not None and content_type == "commercial":
+                content_doc["batches"] = [batch_number]
+
             await self.db.content.insert_one(content_doc)
             return "added"
 
