@@ -4,7 +4,7 @@ from datetime import datetime, time
 from typing import List, Optional, Literal
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class FlowActionType(str, Enum):
@@ -64,11 +64,13 @@ class RecurrenceType(str, Enum):
 
 class FlowSchedule(BaseModel):
     """Schedule configuration for a flow."""
-    # Start time (HH:MM format)
-    start_time: str
-
-    # Optional end time
+    # For recurring events: time of day (HH:MM format)
+    start_time: Optional[str] = None
     end_time: Optional[str] = None
+
+    # For one-time/multi-day events: full datetime (ISO 8601 format)
+    start_datetime: Optional[str] = None
+    end_datetime: Optional[str] = None
 
     # Recurrence pattern
     recurrence: RecurrenceType = RecurrenceType.WEEKLY
@@ -82,11 +84,22 @@ class FlowSchedule(BaseModel):
     # Month (1-12) - used for yearly recurrence
     month: Optional[int] = None
 
-    # Start date for one-time events (YYYY-MM-DD format)
-    start_date: Optional[str] = None
-
     # Google Calendar event ID (for syncing)
     calendar_event_id: Optional[str] = None
+
+    @model_validator(mode='after')
+    def validate_schedule_fields(self):
+        """Validate that the correct fields are provided based on recurrence type."""
+        if self.recurrence == RecurrenceType.NONE:
+            # One-time/multi-day events require start_datetime and end_datetime
+            if not self.start_datetime or not self.end_datetime:
+                raise ValueError("One-time events require both start_datetime and end_datetime")
+        else:
+            # Recurring events require start_time and end_time
+            if not self.start_time or not self.end_time:
+                raise ValueError("Recurring events require both start_time and end_time")
+
+        return self
 
 
 class FlowStatus(str, Enum):

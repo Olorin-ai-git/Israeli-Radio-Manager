@@ -469,20 +469,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     const name = formData.get('name') as string
     const description = formData.get('description') as string
     const triggerType = formData.get('trigger_type') as string
-    const startTime = formData.get('start_time') as string
-    const endTime = formData.get('end_time') as string
-    const startDate = formData.get('start_date') as string
-    const dayOfMonth = formData.get('day_of_month') as string
-    const month = formData.get('month') as string
     const loop = formData.get('loop') === 'on'
-
-    // Collect selected days (for weekly recurrence)
-    const daysOfWeek: number[] = []
-    for (let i = 0; i < 7; i++) {
-      if (formData.get(`day_${i}`)) {
-        daysOfWeek.push(i)
-      }
-    }
 
     // Use the pre-parsed preview actions
     const actions = previewActions.length > 0 ? previewActions : [{
@@ -493,15 +480,44 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     }]
 
     // Build schedule object if scheduled
-    const schedule = triggerType === 'scheduled' ? {
-      start_time: startTime || '09:00',
-      end_time: endTime || undefined,
-      recurrence: recurrenceType,
-      days_of_week: recurrenceType === 'weekly' ? (daysOfWeek.length > 0 ? daysOfWeek : [0, 1, 2, 3, 4, 5, 6]) : [],
-      day_of_month: (recurrenceType === 'monthly' || recurrenceType === 'yearly') && dayOfMonth ? parseInt(dayOfMonth) : undefined,
-      month: recurrenceType === 'yearly' && month ? parseInt(month) : undefined,
-      start_date: recurrenceType === 'none' && startDate ? startDate : undefined,
-    } : undefined
+    let schedule = undefined
+    if (triggerType === 'scheduled') {
+      if (recurrenceType === 'none') {
+        // One-time/multi-day event: use datetime-local inputs
+        const startDatetime = formData.get('start_datetime') as string
+        const endDatetime = formData.get('end_datetime') as string
+
+        schedule = {
+          start_datetime: startDatetime ? new Date(startDatetime).toISOString() : undefined,
+          end_datetime: endDatetime ? new Date(endDatetime).toISOString() : undefined,
+          recurrence: recurrenceType,
+          days_of_week: [],
+        }
+      } else {
+        // Recurring event: use time inputs
+        const startTime = formData.get('start_time') as string
+        const endTime = formData.get('end_time') as string
+        const dayOfMonth = formData.get('day_of_month') as string
+        const month = formData.get('month') as string
+
+        // Collect selected days (for weekly recurrence)
+        const daysOfWeek: number[] = []
+        for (let i = 0; i < 7; i++) {
+          if (formData.get(`day_${i}`)) {
+            daysOfWeek.push(i)
+          }
+        }
+
+        schedule = {
+          start_time: startTime || '09:00',
+          end_time: endTime || undefined,
+          recurrence: recurrenceType,
+          days_of_week: recurrenceType === 'weekly' ? (daysOfWeek.length > 0 ? daysOfWeek : [0, 1, 2, 3, 4, 5, 6]) : [],
+          day_of_month: (recurrenceType === 'monthly' || recurrenceType === 'yearly') && dayOfMonth ? parseInt(dayOfMonth) : undefined,
+          month: recurrenceType === 'yearly' && month ? parseInt(month) : undefined,
+        }
+      }
+    }
 
     console.log('Creating flow with schedule:', schedule)
 
@@ -875,30 +891,6 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   {isRTL ? 'הגדרות תזמון (לזרימות מתוזמנות)' : 'Schedule Settings (for scheduled flows)'}
                 </p>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-dark-300 text-xs mb-1">
-                      {isRTL ? 'שעת התחלה' : 'Start Time'}
-                    </label>
-                    <input
-                      type="time"
-                      name="start_time"
-                      className="w-full glass-input text-sm"
-                      defaultValue="09:00"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-dark-300 text-xs mb-1">
-                      {isRTL ? 'שעת סיום' : 'End Time'}
-                    </label>
-                    <input
-                      type="time"
-                      name="end_time"
-                      className="w-full glass-input text-sm"
-                    />
-                  </div>
-                </div>
-
                 {/* Recurrence Type */}
                 <div>
                   <label className="block text-dark-300 text-xs mb-1">
@@ -910,7 +902,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                     onChange={(e) => setRecurrenceType(e.target.value as RecurrenceType)}
                     className="w-full glass-input text-sm"
                   >
-                    <option value="none">{isRTL ? 'פעם אחת' : 'Once'}</option>
+                    <option value="none">{isRTL ? 'פעם אחת / מרובה ימים' : 'Once / Multi-day'}</option>
                     <option value="daily">{isRTL ? 'יומי' : 'Daily'}</option>
                     <option value="weekly">{isRTL ? 'שבועי' : 'Weekly'}</option>
                     <option value="monthly">{isRTL ? 'חודשי' : 'Monthly'}</option>
@@ -918,17 +910,67 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   </select>
                 </div>
 
-                {/* One-time: Date picker */}
+                {/* One-time/Multi-day: Datetime pickers */}
                 {recurrenceType === 'none' && (
-                  <div>
-                    <label className="block text-dark-300 text-xs mb-1">
-                      {isRTL ? 'תאריך' : 'Date'}
-                    </label>
-                    <input
-                      type="date"
-                      name="start_date"
-                      className="w-full glass-input text-sm"
-                    />
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-dark-300 text-xs mb-1">
+                          {isRTL ? 'תחילה' : 'Start Date & Time'}
+                        </label>
+                        <input
+                          type="datetime-local"
+                          name="start_datetime"
+                          className="w-full glass-input text-sm"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-dark-300 text-xs mb-1">
+                          {isRTL ? 'סיום' : 'End Date & Time'}
+                        </label>
+                        <input
+                          type="datetime-local"
+                          name="end_datetime"
+                          className="w-full glass-input text-sm"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-dark-500 italic">
+                      {isRTL
+                        ? 'ניתן ליצור זרימה שנמשכת מספר ימים על ידי הגדרת תאריך וזמן התחלה וסיום'
+                        : 'Create multi-day flows by setting start and end date+time'}
+                    </p>
+                  </>
+                )}
+
+                {/* Recurring events: Time pickers */}
+                {recurrenceType !== 'none' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-dark-300 text-xs mb-1">
+                        {isRTL ? 'שעת התחלה' : 'Start Time'} *
+                      </label>
+                      <input
+                        type="time"
+                        name="start_time"
+                        className="w-full glass-input text-sm"
+                        defaultValue="09:00"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-dark-300 text-xs mb-1">
+                        {isRTL ? 'שעת סיום' : 'End Time'} *
+                      </label>
+                      <input
+                        type="time"
+                        name="end_time"
+                        className="w-full glass-input text-sm"
+                        required
+                      />
+                    </div>
                   </div>
                 )}
 
@@ -1173,30 +1215,47 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                 e.preventDefault()
                 const formData = new FormData(e.currentTarget)
                 const triggerType = formData.get('trigger_type') as string
-                const startTime = formData.get('start_time') as string
-                const endTime = formData.get('end_time') as string
-                const startDate = formData.get('start_date') as string
-                const dayOfMonth = formData.get('day_of_month') as string
-                const month = formData.get('month') as string
                 const loop = formData.get('loop') === 'on'
 
-                // Collect selected days (for weekly recurrence)
-                const daysOfWeek: number[] = []
-                for (let i = 0; i < 7; i++) {
-                  if (formData.get(`day_${i}`)) {
-                    daysOfWeek.push(i)
+                // Build schedule object
+                let schedule = undefined
+                if (triggerType === 'scheduled') {
+                  if (editRecurrenceType === 'none') {
+                    // One-time/multi-day event: use datetime-local inputs
+                    const startDatetime = formData.get('start_datetime') as string
+                    const endDatetime = formData.get('end_datetime') as string
+
+                    schedule = {
+                      start_datetime: startDatetime ? new Date(startDatetime).toISOString() : undefined,
+                      end_datetime: endDatetime ? new Date(endDatetime).toISOString() : undefined,
+                      recurrence: editRecurrenceType,
+                      days_of_week: [],
+                    }
+                  } else {
+                    // Recurring event: use time inputs
+                    const startTime = formData.get('start_time') as string
+                    const endTime = formData.get('end_time') as string
+                    const dayOfMonth = formData.get('day_of_month') as string
+                    const month = formData.get('month') as string
+
+                    // Collect selected days (for weekly recurrence)
+                    const daysOfWeek: number[] = []
+                    for (let i = 0; i < 7; i++) {
+                      if (formData.get(`day_${i}`)) {
+                        daysOfWeek.push(i)
+                      }
+                    }
+
+                    schedule = {
+                      start_time: startTime || '09:00',
+                      end_time: endTime || undefined,
+                      recurrence: editRecurrenceType,
+                      days_of_week: editRecurrenceType === 'weekly' ? (daysOfWeek.length > 0 ? daysOfWeek : [0, 1, 2, 3, 4, 5, 6]) : [],
+                      day_of_month: (editRecurrenceType === 'monthly' || editRecurrenceType === 'yearly') && dayOfMonth ? parseInt(dayOfMonth) : undefined,
+                      month: editRecurrenceType === 'yearly' && month ? parseInt(month) : undefined,
+                    }
                   }
                 }
-
-                const schedule = triggerType === 'scheduled' ? {
-                  start_time: startTime || '09:00',
-                  end_time: endTime || undefined,
-                  recurrence: editRecurrenceType,
-                  days_of_week: editRecurrenceType === 'weekly' ? (daysOfWeek.length > 0 ? daysOfWeek : [0, 1, 2, 3, 4, 5, 6]) : [],
-                  day_of_month: (editRecurrenceType === 'monthly' || editRecurrenceType === 'yearly') && dayOfMonth ? parseInt(dayOfMonth) : undefined,
-                  month: editRecurrenceType === 'yearly' && month ? parseInt(month) : undefined,
-                  start_date: editRecurrenceType === 'none' && startDate ? startDate : undefined,
-                } : undefined
 
                 updateMutation.mutate({
                   flowId: editingFlow._id,
@@ -1260,31 +1319,6 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   {isRTL ? 'הגדרות תזמון' : 'Schedule Settings'}
                 </p>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-dark-300 text-xs mb-1">
-                      {isRTL ? 'שעת התחלה' : 'Start Time'}
-                    </label>
-                    <input
-                      type="time"
-                      name="start_time"
-                      className="w-full glass-input text-sm"
-                      defaultValue={editingFlow.schedule?.start_time || '09:00'}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-dark-300 text-xs mb-1">
-                      {isRTL ? 'שעת סיום' : 'End Time'}
-                    </label>
-                    <input
-                      type="time"
-                      name="end_time"
-                      className="w-full glass-input text-sm"
-                      defaultValue={editingFlow.schedule?.end_time || ''}
-                    />
-                  </div>
-                </div>
-
                 {/* Recurrence Type */}
                 <div>
                   <label className="block text-dark-300 text-xs mb-1">
@@ -1296,7 +1330,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                     onChange={(e) => setEditRecurrenceType(e.target.value as RecurrenceType)}
                     className="w-full glass-input text-sm"
                   >
-                    <option value="none">{isRTL ? 'פעם אחת' : 'Once'}</option>
+                    <option value="none">{isRTL ? 'פעם אחת / מרובה ימים' : 'Once / Multi-day'}</option>
                     <option value="daily">{isRTL ? 'יומי' : 'Daily'}</option>
                     <option value="weekly">{isRTL ? 'שבועי' : 'Weekly'}</option>
                     <option value="monthly">{isRTL ? 'חודשי' : 'Monthly'}</option>
@@ -1304,18 +1338,70 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   </select>
                 </div>
 
-                {/* One-time: Date picker */}
+                {/* One-time/Multi-day: Datetime pickers */}
                 {editRecurrenceType === 'none' && (
-                  <div>
-                    <label className="block text-dark-300 text-xs mb-1">
-                      {isRTL ? 'תאריך' : 'Date'}
-                    </label>
-                    <input
-                      type="date"
-                      name="start_date"
-                      className="w-full glass-input text-sm"
-                      defaultValue={editingFlow.schedule?.start_date || ''}
-                    />
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-dark-300 text-xs mb-1">
+                          {isRTL ? 'תחילה' : 'Start Date & Time'}
+                        </label>
+                        <input
+                          type="datetime-local"
+                          name="start_datetime"
+                          className="w-full glass-input text-sm"
+                          defaultValue={editingFlow.schedule?.start_datetime ? new Date(editingFlow.schedule.start_datetime).toISOString().slice(0, 16) : ''}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-dark-300 text-xs mb-1">
+                          {isRTL ? 'סיום' : 'End Date & Time'}
+                        </label>
+                        <input
+                          type="datetime-local"
+                          name="end_datetime"
+                          className="w-full glass-input text-sm"
+                          defaultValue={editingFlow.schedule?.end_datetime ? new Date(editingFlow.schedule.end_datetime).toISOString().slice(0, 16) : ''}
+                          required
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-dark-500 italic">
+                      {isRTL
+                        ? 'ניתן ליצור זרימה שנמשכת מספר ימים על ידי הגדרת תאריך וזמן התחלה וסיום'
+                        : 'Create multi-day flows by setting start and end date+time'}
+                    </p>
+                  </>
+                )}
+
+                {/* Recurring events: Time pickers */}
+                {editRecurrenceType !== 'none' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-dark-300 text-xs mb-1">
+                        {isRTL ? 'שעת התחלה' : 'Start Time'} *
+                      </label>
+                      <input
+                        type="time"
+                        name="start_time"
+                        className="w-full glass-input text-sm"
+                        defaultValue={editingFlow.schedule?.start_time || '09:00'}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-dark-300 text-xs mb-1">
+                        {isRTL ? 'שעת סיום' : 'End Time'} *
+                      </label>
+                      <input
+                        type="time"
+                        name="end_time"
+                        className="w-full glass-input text-sm"
+                        defaultValue={editingFlow.schedule?.end_time || ''}
+                        required
+                      />
+                    </div>
                   </div>
                 )}
 

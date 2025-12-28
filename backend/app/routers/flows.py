@@ -43,38 +43,7 @@ async def sync_flow_to_calendar(
         calendar_service = GoogleCalendarService()
         await calendar_service.authenticate()
 
-        # Parse schedule
-        start_time_str = schedule.get("start_time", "09:00")
-        end_time_str = schedule.get("end_time")
-        days_of_week = schedule.get("days_of_week", [0, 1, 2, 3, 4, 5, 6])
-
-        # Calculate next occurrence
-        now = datetime.now()
-        hour, minute = map(int, start_time_str.split(":"))
-        start_dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-        # If time has passed today, start tomorrow
-        if start_dt < now:
-            start_dt += timedelta(days=1)
-
-        # Find next valid day
-        while start_dt.weekday() not in [(d + 6) % 7 for d in days_of_week]:  # Convert Sunday=0 to Python's Monday=0
-            start_dt += timedelta(days=1)
-
-        # Calculate end time
-        if end_time_str:
-            end_hour, end_minute = map(int, end_time_str.split(":"))
-            end_dt = start_dt.replace(hour=end_hour, minute=end_minute)
-            if end_dt <= start_dt:
-                end_dt += timedelta(days=1)
-        else:
-            end_dt = start_dt + timedelta(hours=1)
-
-        # Build recurrence rule as dict (GoogleCalendarService.create_event expects this format)
-        recurrence = {
-            "frequency": "WEEKLY",
-            "by_day": [DAY_NAMES[d] for d in days_of_week]
-        }
+        recurrence_type = schedule.get("recurrence", "weekly")
 
         # Event summary with flow emoji
         summary = f"🔄 {flow_name}"
@@ -85,37 +54,111 @@ async def sync_flow_to_calendar(
             description += f"\n{flow_description}\n"
         description += f"\nFlow ID: {flow_id}\nType: flow"
 
-        if existing_event_id:
-            # Update existing event
-            try:
-                event = await calendar_service.update_event(
-                    event_id=existing_event_id,
-                    summary=summary,
-                    start_time=start_dt,
-                    end_time=end_dt,
-                    description=description,
-                    recurrence=recurrence
-                )
-                logger.info(f"Updated calendar event for flow {flow_name}: {existing_event_id}")
-                return existing_event_id
-            except Exception as e:
-                logger.warning(f"Failed to update event, creating new: {e}")
-                # Fall through to create new event
+        if recurrence_type == "none":
+            # One-time/multi-day event with datetime
+            start_dt_str = schedule.get("start_datetime")
+            end_dt_str = schedule.get("end_datetime")
 
-        # Create new event
-        event = await calendar_service.create_event(
-            summary=summary,
-            start_time=start_dt,
-            end_time=end_dt,
-            description=description,
-            content_type="flow",
-            content_id=flow_id,
-            recurrence=recurrence
-        )
+            if not start_dt_str or not end_dt_str:
+                logger.error("One-time flow missing start_datetime or end_datetime")
+                return None
 
-        event_id = event.get("id")
-        logger.info(f"Created calendar event for flow {flow_name}: {event_id}")
-        return event_id
+            start_dt = datetime.fromisoformat(start_dt_str.replace('Z', '+00:00'))
+            end_dt = datetime.fromisoformat(end_dt_str.replace('Z', '+00:00'))
+
+            if existing_event_id:
+                try:
+                    event = await calendar_service.update_event(
+                        event_id=existing_event_id,
+                        summary=summary,
+                        start_time=start_dt,
+                        end_time=end_dt,
+                        description=description,
+                        recurrence=None  # No recurrence for one-time events
+                    )
+                    logger.info(f"Updated calendar event for flow {flow_name}: {existing_event_id}")
+                    return existing_event_id
+                except Exception as e:
+                    logger.warning(f"Failed to update event, creating new: {e}")
+
+            event = await calendar_service.create_event(
+                summary=summary,
+                start_time=start_dt,
+                end_time=end_dt,
+                description=description,
+                content_type="flow",
+                content_id=flow_id,
+                recurrence=None
+            )
+
+            event_id = event.get("id")
+            logger.info(f"Created calendar event for one-time flow {flow_name}: {event_id}")
+            return event_id
+
+        else:
+            # Recurring event with time of day
+            start_time_str = schedule.get("start_time")
+            end_time_str = schedule.get("end_time")
+
+            if not start_time_str or not end_time_str:
+                logger.error("Recurring flow missing start_time or end_time")
+                return None
+
+            days_of_week = schedule.get("days_of_week", [0, 1, 2, 3, 4, 5, 6])
+
+            # Calculate next occurrence
+            now = datetime.now()
+            hour, minute = map(int, start_time_str.split(":"))
+            start_dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+            # If time has passed today, start tomorrow
+            if start_dt < now:
+                start_dt += timedelta(days=1)
+
+            # Find next valid day
+            while start_dt.weekday() not in [(d + 6) % 7 for d in days_of_week]:
+                start_dt += timedelta(days=1)
+
+            # Calculate end time
+            end_hour, end_minute = map(int, end_time_str.split(":"))
+            end_dt = start_dt.replace(hour=end_hour, minute=end_minute)
+            if end_dt <= start_dt:
+                end_dt += timedelta(days=1)
+
+            # Build recurrence rule
+            recurrence = {
+                "frequency": "WEEKLY",
+                "by_day": [DAY_NAMES[d] for d in days_of_week]
+            }
+
+            if existing_event_id:
+                try:
+                    event = await calendar_service.update_event(
+                        event_id=existing_event_id,
+                        summary=summary,
+                        start_time=start_dt,
+                        end_time=end_dt,
+                        description=description,
+                        recurrence=recurrence
+                    )
+                    logger.info(f"Updated calendar event for flow {flow_name}: {existing_event_id}")
+                    return existing_event_id
+                except Exception as e:
+                    logger.warning(f"Failed to update event, creating new: {e}")
+
+            event = await calendar_service.create_event(
+                summary=summary,
+                start_time=start_dt,
+                end_time=end_dt,
+                description=description,
+                content_type="flow",
+                content_id=flow_id,
+                recurrence=recurrence
+            )
+
+            event_id = event.get("id")
+            logger.info(f"Created calendar event for recurring flow {flow_name}: {event_id}")
+            return event_id
 
     except Exception as e:
         logger.error(f"Failed to sync flow to calendar: {e}")
@@ -215,96 +258,143 @@ async def check_schedule_overlap(db, new_schedule: dict, exclude_flow_id: str = 
 
     existing_flows = await db.flows.find(query).to_list(None)
 
-    new_start = new_schedule.get("start_time")
-    new_end = new_schedule.get("end_time")
     new_recurrence = new_schedule.get("recurrence", "none")
-    new_days_of_week = set(new_schedule.get("days_of_week", []))
-    new_day_of_month = new_schedule.get("day_of_month")
-    new_month = new_schedule.get("month")
 
-    if not new_start or not new_end:
-        return []
+    # Check if this is a datetime-based (one-time/multi-day) or time-based (recurring) schedule
+    is_datetime_based = new_recurrence == "none"
 
-    # Parse time strings to minutes for comparison
-    def time_to_minutes(time_str):
-        h, m = map(int, time_str.split(':'))
-        return h * 60 + m
+    if is_datetime_based:
+        # Datetime-based schedule
+        new_start_dt_str = new_schedule.get("start_datetime")
+        new_end_dt_str = new_schedule.get("end_datetime")
 
-    new_start_min = time_to_minutes(new_start)
-    new_end_min = time_to_minutes(new_end)
+        if not new_start_dt_str or not new_end_dt_str:
+            return []
 
-    # Handle overnight flows
-    if new_end_min < new_start_min:
-        new_end_min += 24 * 60
+        from datetime import datetime as dt
+        new_start_dt = dt.fromisoformat(new_start_dt_str.replace('Z', '+00:00'))
+        new_end_dt = dt.fromisoformat(new_end_dt_str.replace('Z', '+00:00'))
 
-    conflicting_flows = []
+        conflicting_flows = []
 
-    for flow in existing_flows:
-        schedule = flow.get("schedule", {})
-        existing_start = schedule.get("start_time")
-        existing_end = schedule.get("end_time")
-        existing_recurrence = schedule.get("recurrence", "none")
-        existing_days_of_week = set(schedule.get("days_of_week", []))
-        existing_day_of_month = schedule.get("day_of_month")
-        existing_month = schedule.get("month")
+        for flow in existing_flows:
+            schedule = flow.get("schedule", {})
+            existing_recurrence = schedule.get("recurrence", "none")
 
-        if not existing_start or not existing_end:
-            continue
+            if existing_recurrence == "none":
+                # Both are one-time events - check datetime overlap
+                existing_start_dt_str = schedule.get("start_datetime")
+                existing_end_dt_str = schedule.get("end_datetime")
 
-        existing_start_min = time_to_minutes(existing_start)
-        existing_end_min = time_to_minutes(existing_end)
+                if existing_start_dt_str and existing_end_dt_str:
+                    existing_start_dt = dt.fromisoformat(existing_start_dt_str.replace('Z', '+00:00'))
+                    existing_end_dt = dt.fromisoformat(existing_end_dt_str.replace('Z', '+00:00'))
 
-        if existing_end_min < existing_start_min:
-            existing_end_min += 24 * 60
+                    # Check datetime overlap
+                    if not (new_end_dt <= existing_start_dt or new_start_dt >= existing_end_dt):
+                        conflicting_flows.append({
+                            "_id": str(flow["_id"]),
+                            "name": flow.get("name"),
+                            "schedule": schedule
+                        })
+            else:
+                # Existing is recurring, new is one-time
+                # Check if the one-time event falls within recurring event times
+                # For simplicity, we'll check if any day in the one-time range matches
+                # This is a conservative check
+                pass  # TODO: Implement cross-type overlap detection if needed
 
-        # Check if time ranges overlap
-        times_overlap = not (new_end_min <= existing_start_min or new_start_min >= existing_end_min)
+        return conflicting_flows
 
-        if not times_overlap:
-            continue
+    else:
+        # Time-based recurring schedule
+        new_start = new_schedule.get("start_time")
+        new_end = new_schedule.get("end_time")
+        new_days_of_week = set(new_schedule.get("days_of_week", []))
+        new_day_of_month = new_schedule.get("day_of_month")
+        new_month = new_schedule.get("month")
 
-        # Now check if recurrence patterns overlap
-        recurrence_overlaps = False
+        if not new_start or not new_end:
+            return []
 
-        # Daily recurrence always overlaps with daily
-        if new_recurrence == "daily" and existing_recurrence == "daily":
-            recurrence_overlaps = True
+        # Parse time strings to minutes for comparison
+        def time_to_minutes(time_str):
+            h, m = map(int, time_str.split(':'))
+            return h * 60 + m
 
-        # Weekly: check if any days overlap
-        elif new_recurrence == "weekly" and existing_recurrence == "weekly":
-            if new_days_of_week & existing_days_of_week:  # Intersection
+        new_start_min = time_to_minutes(new_start)
+        new_end_min = time_to_minutes(new_end)
+
+        # Handle overnight flows
+        if new_end_min < new_start_min:
+            new_end_min += 24 * 60
+
+        conflicting_flows = []
+
+        for flow in existing_flows:
+            schedule = flow.get("schedule", {})
+            existing_recurrence = schedule.get("recurrence", "none")
+
+            # Skip one-time events when checking recurring
+            if existing_recurrence == "none":
+                continue
+
+            existing_start = schedule.get("start_time")
+            existing_end = schedule.get("end_time")
+            existing_days_of_week = set(schedule.get("days_of_week", []))
+            existing_day_of_month = schedule.get("day_of_month")
+            existing_month = schedule.get("month")
+
+            if not existing_start or not existing_end:
+                continue
+
+            existing_start_min = time_to_minutes(existing_start)
+            existing_end_min = time_to_minutes(existing_end)
+
+            if existing_end_min < existing_start_min:
+                existing_end_min += 24 * 60
+
+            # Check if time ranges overlap
+            times_overlap = not (new_end_min <= existing_start_min or new_start_min >= existing_end_min)
+
+            if not times_overlap:
+                continue
+
+            # Now check if recurrence patterns overlap
+            recurrence_overlaps = False
+
+            # Daily recurrence always overlaps with daily
+            if new_recurrence == "daily" and existing_recurrence == "daily":
                 recurrence_overlaps = True
 
-        # Daily overlaps with weekly on all weekly days
-        elif (new_recurrence == "daily" and existing_recurrence == "weekly") or \
-             (new_recurrence == "weekly" and existing_recurrence == "daily"):
-            recurrence_overlaps = True
+            # Weekly: check if any days overlap
+            elif new_recurrence == "weekly" and existing_recurrence == "weekly":
+                if new_days_of_week & existing_days_of_week:  # Intersection
+                    recurrence_overlaps = True
 
-        # Monthly: check if same day of month
-        elif new_recurrence == "monthly" and existing_recurrence == "monthly":
-            if new_day_of_month == existing_day_of_month:
+            # Daily overlaps with weekly on all weekly days
+            elif (new_recurrence == "daily" and existing_recurrence == "weekly") or \
+                 (new_recurrence == "weekly" and existing_recurrence == "daily"):
                 recurrence_overlaps = True
 
-        # Yearly: check if same month and day
-        elif new_recurrence == "yearly" and existing_recurrence == "yearly":
-            if new_month == existing_month and new_day_of_month == existing_day_of_month:
-                recurrence_overlaps = True
+            # Monthly: check if same day of month
+            elif new_recurrence == "monthly" and existing_recurrence == "monthly":
+                if new_day_of_month == existing_day_of_month:
+                    recurrence_overlaps = True
 
-        # One-time (none) events: check specific dates if provided
-        elif new_recurrence == "none" or existing_recurrence == "none":
-            # For now, we'll be conservative and not flag one-time events as overlapping
-            # unless they're on the same date (which would require date comparison)
-            # This is a simplification - you might want more sophisticated logic
-            continue
+            # Yearly: check if same month and day
+            elif new_recurrence == "yearly" and existing_recurrence == "yearly":
+                if new_month == existing_month and new_day_of_month == existing_day_of_month:
+                    recurrence_overlaps = True
 
-        if recurrence_overlaps:
-            conflicting_flows.append({
-                "_id": str(flow["_id"]),
-                "name": flow.get("name"),
-                "schedule": schedule
-            })
+            if recurrence_overlaps:
+                conflicting_flows.append({
+                    "_id": str(flow["_id"]),
+                    "name": flow.get("name"),
+                    "schedule": schedule
+                })
 
-    return conflicting_flows
+        return conflicting_flows
 
 
 @router.post("/", response_model=dict)
