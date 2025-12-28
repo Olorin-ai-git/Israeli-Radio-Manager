@@ -267,6 +267,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
   const [selectedActionType, setSelectedActionType] = useState('play_genre')
   const [selectedCommercials, setSelectedCommercials] = useState<Set<string>>(new Set())
   const [flowToPause, setFlowToPause] = useState<Flow | null>(null)
+  const [overlapError, setOverlapError] = useState<{ message: string; conflictingFlows: any[] } | null>(null)
 
   // Fetch commercials for selection
   const { data: commercials } = useQuery({
@@ -372,6 +373,13 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['flows'] })
       setShowCreateModal(false)
+      setOverlapError(null)
+    },
+    onError: (error: any) => {
+      const detail = error.response?.data?.detail
+      if (detail && detail.conflicting_flows) {
+        setOverlapError(detail)
+      }
     },
   })
 
@@ -380,6 +388,13 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['flows'] })
       closeEditModal()
+      setOverlapError(null)
+    },
+    onError: (error: any) => {
+      const detail = error.response?.data?.detail
+      if (detail && detail.conflicting_flows) {
+        setOverlapError(detail)
+      }
     },
   })
 
@@ -391,6 +406,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     setShowAddActionModal(false)
     setSelectedActionType('play_genre')
     setSelectedCommercials(new Set())
+    setOverlapError(null)
   }
 
   // Handle drag end for reordering actions
@@ -1004,6 +1020,33 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                 </label>
               </div>
 
+              {/* Overlap Error Display */}
+              {overlapError && (
+                <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg">
+                  <p className="text-sm text-red-400 font-medium mb-2">
+                    {isRTL ? 'חפיפה בלוח זמנים' : 'Schedule Overlap Detected'}
+                  </p>
+                  <p className="text-sm text-red-300 mb-2">
+                    {isRTL
+                      ? 'הזרימה חופפת לזרימות הבאות:'
+                      : 'This flow overlaps with the following flows:'}
+                  </p>
+                  <ul className="space-y-1" dir={isRTL ? 'rtl' : 'ltr'}>
+                    {overlapError.conflicting_flows.map((flow: any) => (
+                      <li key={flow._id} className="text-sm text-red-200 flex items-start gap-2">
+                        <span className="text-red-400 mt-0.5">•</span>
+                        <div>
+                          <span className="font-medium">{flow.name}</span>
+                          <span className="text-red-300/70 text-xs ml-2">
+                            {flow.schedule?.start_time} - {flow.schedule?.end_time}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <div className="flex gap-2 pt-4">
                 <button
                   type="button"
@@ -1417,6 +1460,33 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   </div>
                 </label>
               </div>
+
+              {/* Overlap Error Display */}
+              {overlapError && (
+                <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg">
+                  <p className="text-sm text-red-400 font-medium mb-2">
+                    {isRTL ? 'חפיפה בלוח זמנים' : 'Schedule Overlap Detected'}
+                  </p>
+                  <p className="text-sm text-red-300 mb-2">
+                    {isRTL
+                      ? 'הזרימה חופפת לזרימות הבאות:'
+                      : 'This flow overlaps with the following flows:'}
+                  </p>
+                  <ul className="space-y-1" dir={isRTL ? 'rtl' : 'ltr'}>
+                    {overlapError.conflicting_flows.map((flow: any) => (
+                      <li key={flow._id} className="text-sm text-red-200 flex items-start gap-2">
+                        <span className="text-red-400 mt-0.5">•</span>
+                        <div>
+                          <span className="font-medium">{flow.name}</span>
+                          <span className="text-red-300/70 text-xs ml-2">
+                            {flow.schedule?.start_time} - {flow.schedule?.end_time}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div className="flex gap-2 pt-4">
                 <button

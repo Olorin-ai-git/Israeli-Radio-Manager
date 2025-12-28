@@ -196,10 +196,135 @@ async def get_flow(request: Request, flow_id: str):
     return serialize_flow(flow)
 
 
+async def check_schedule_overlap(db, new_schedule: dict, exclude_flow_id: str = None) -> List[dict]:
+    """
+    Check if a schedule overlaps with any existing active flows.
+    Returns a list of conflicting flows.
+    """
+    if not new_schedule:
+        return []
+
+    # Get all active scheduled flows (excluding the one being edited)
+    query = {
+        "trigger_type": "scheduled",
+        "status": {"$in": ["active", "running"]},
+        "schedule": {"$exists": True}
+    }
+    if exclude_flow_id:
+        query["_id"] = {"$ne": ObjectId(exclude_flow_id)}
+
+    existing_flows = await db.flows.find(query).to_list(None)
+
+    new_start = new_schedule.get("start_time")
+    new_end = new_schedule.get("end_time")
+    new_recurrence = new_schedule.get("recurrence", "none")
+    new_days_of_week = set(new_schedule.get("days_of_week", []))
+    new_day_of_month = new_schedule.get("day_of_month")
+    new_month = new_schedule.get("month")
+
+    if not new_start or not new_end:
+        return []
+
+    # Parse time strings to minutes for comparison
+    def time_to_minutes(time_str):
+        h, m = map(int, time_str.split(':'))
+        return h * 60 + m
+
+    new_start_min = time_to_minutes(new_start)
+    new_end_min = time_to_minutes(new_end)
+
+    # Handle overnight flows
+    if new_end_min < new_start_min:
+        new_end_min += 24 * 60
+
+    conflicting_flows = []
+
+    for flow in existing_flows:
+        schedule = flow.get("schedule", {})
+        existing_start = schedule.get("start_time")
+        existing_end = schedule.get("end_time")
+        existing_recurrence = schedule.get("recurrence", "none")
+        existing_days_of_week = set(schedule.get("days_of_week", []))
+        existing_day_of_month = schedule.get("day_of_month")
+        existing_month = schedule.get("month")
+
+        if not existing_start or not existing_end:
+            continue
+
+        existing_start_min = time_to_minutes(existing_start)
+        existing_end_min = time_to_minutes(existing_end)
+
+        if existing_end_min < existing_start_min:
+            existing_end_min += 24 * 60
+
+        # Check if time ranges overlap
+        times_overlap = not (new_end_min <= existing_start_min or new_start_min >= existing_end_min)
+
+        if not times_overlap:
+            continue
+
+        # Now check if recurrence patterns overlap
+        recurrence_overlaps = False
+
+        # Daily recurrence always overlaps with daily
+        if new_recurrence == "daily" and existing_recurrence == "daily":
+            recurrence_overlaps = True
+
+        # Weekly: check if any days overlap
+        elif new_recurrence == "weekly" and existing_recurrence == "weekly":
+            if new_days_of_week & existing_days_of_week:  # Intersection
+                recurrence_overlaps = True
+
+        # Daily overlaps with weekly on all weekly days
+        elif (new_recurrence == "daily" and existing_recurrence == "weekly") or \
+             (new_recurrence == "weekly" and existing_recurrence == "daily"):
+            recurrence_overlaps = True
+
+        # Monthly: check if same day of month
+        elif new_recurrence == "monthly" and existing_recurrence == "monthly":
+            if new_day_of_month == existing_day_of_month:
+                recurrence_overlaps = True
+
+        # Yearly: check if same month and day
+        elif new_recurrence == "yearly" and existing_recurrence == "yearly":
+            if new_month == existing_month and new_day_of_month == existing_day_of_month:
+                recurrence_overlaps = True
+
+        # One-time (none) events: check specific dates if provided
+        elif new_recurrence == "none" or existing_recurrence == "none":
+            # For now, we'll be conservative and not flag one-time events as overlapping
+            # unless they're on the same date (which would require date comparison)
+            # This is a simplification - you might want more sophisticated logic
+            continue
+
+        if recurrence_overlaps:
+            conflicting_flows.append({
+                "_id": str(flow["_id"]),
+                "name": flow.get("name"),
+                "schedule": schedule
+            })
+
+    return conflicting_flows
+
+
 @router.post("/", response_model=dict)
 async def create_flow(request: Request, flow_data: FlowCreate):
     """Create a new auto flow."""
     db = request.app.state.db
+
+    # Check for schedule overlaps if this is a scheduled flow
+    if flow_data.trigger_type == FlowTriggerType.SCHEDULED and flow_data.schedule:
+        schedule_data = flow_data.schedule.model_dump()
+        conflicts = await check_schedule_overlap(db, schedule_data)
+        if conflicts:
+            conflict_names = [f["name"] for f in conflicts]
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Schedule overlaps with existing flows",
+                    "conflicting_flows": conflicts
+                }
+            )
 
     # Build flow document
     schedule_data = flow_data.schedule.model_dump() if flow_data.schedule else None
@@ -257,6 +382,21 @@ async def update_flow(request: Request, flow_id: str, update_data: FlowUpdate):
 
     if not existing:
         raise HTTPException(status_code=404, detail="Flow not found")
+
+    # Check for schedule overlaps if this is a scheduled flow
+    if update_data.schedule is not None:
+        new_trigger = update_data.trigger_type.value if update_data.trigger_type else existing.get("trigger_type")
+        if new_trigger == "scheduled":
+            schedule_data = update_data.schedule.model_dump()
+            conflicts = await check_schedule_overlap(db, schedule_data, exclude_flow_id=flow_id)
+            if conflicts:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "message": "Schedule overlaps with existing flows",
+                        "conflicting_flows": conflicts
+                    }
+                )
 
     # Build update document
     update_doc = {"updated_at": datetime.utcnow()}
