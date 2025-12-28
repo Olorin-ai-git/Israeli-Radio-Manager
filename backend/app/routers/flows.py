@@ -17,7 +17,8 @@ from app.models.flow import (
     FlowExecutionLog,
     FlowTriggerType
 )
-from app.routers.websocket import broadcast_scheduled_playback, broadcast_queue_tracks
+from app.routers.websocket import broadcast_scheduled_playback, broadcast_queue_tracks, broadcast_queue_update
+from app.routers.playback import add_to_queue as add_to_backend_queue, get_queue as get_backend_queue
 from app.services.google_calendar import GoogleCalendarService
 import random
 
@@ -863,33 +864,33 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
 
                         # Queue remaining songs
                         if len(selected_songs) > 1:
-                            queue_tracks = []
                             for song in selected_songs[1:]:
-                                queue_tracks.append({
+                                add_to_backend_queue({
                                     "_id": str(song["_id"]),
                                     "title": song.get("title", "Unknown"),
                                     "artist": song.get("artist"),
                                     "type": song.get("type", "song"),
                                     "duration_seconds": song.get("duration_seconds", 0),
                                     "genre": song.get("genre"),
-                                    "metadata": song.get("metadata", {})
+                                    "metadata": song.get("metadata", {}),
+                                    "batches": song.get("batches", [])
                                 })
-                            await broadcast_queue_tracks(queue_tracks)
+                            await broadcast_queue_update(get_backend_queue())
                         is_first_playback_action = False
                     else:
                         # Subsequent actions: just queue all songs
-                        queue_tracks = []
                         for song in selected_songs:
-                            queue_tracks.append({
+                            add_to_backend_queue({
                                 "_id": str(song["_id"]),
                                 "title": song.get("title", "Unknown"),
                                 "artist": song.get("artist"),
                                 "type": song.get("type", "song"),
                                 "duration_seconds": song.get("duration_seconds", 0),
                                 "genre": song.get("genre"),
-                                "metadata": song.get("metadata", {})
+                                "metadata": song.get("metadata", {}),
+                                "batches": song.get("batches", [])
                             })
-                        await broadcast_queue_tracks(queue_tracks)
+                        await broadcast_queue_update(get_backend_queue())
 
                     # Also add to VLC queue if available
                     if audio_player:
@@ -995,9 +996,8 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
 
                     # Queue remaining commercials
                     if len(all_commercials) > 1:
-                        queue_tracks = []
                         for commercial in all_commercials[1:]:
-                            queue_tracks.append({
+                            add_to_backend_queue({
                                 "_id": str(commercial["_id"]),
                                 "title": commercial.get("title", "Commercial"),
                                 "artist": commercial.get("artist"),
@@ -1007,13 +1007,12 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
                                 "metadata": commercial.get("metadata", {}),
                                 "batches": commercial.get("batches", [])
                             })
-                        await broadcast_queue_tracks(queue_tracks)
+                        await broadcast_queue_update(get_backend_queue())
                     is_first_playback_action = False
                 else:
                     # Subsequent actions: just queue all commercials
-                    queue_tracks = []
                     for commercial in all_commercials:
-                        queue_tracks.append({
+                        add_to_backend_queue({
                             "_id": str(commercial["_id"]),
                             "title": commercial.get("title", "Commercial"),
                             "artist": commercial.get("artist"),
@@ -1023,7 +1022,7 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
                             "metadata": commercial.get("metadata", {}),
                             "batches": commercial.get("batches", [])
                         })
-                    await broadcast_queue_tracks(queue_tracks)
+                    await broadcast_queue_update(get_backend_queue())
 
                 # Also add to VLC queue if available
                 if audio_player:

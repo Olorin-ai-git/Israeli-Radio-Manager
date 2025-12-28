@@ -1,0 +1,20 @@
+site,existing_url,page_title,primary_topic,action,redirect_target,notes
+olorin.ai,/,Home,fraud?,inventory,,
+olorin.ai,/services,Services,fraud?,inventory,,
+olorin.ai,/platform,Platform,fraud?,inventory,,
+olorin.ai,/industries,Industries,fraud?,inventory,,
+olorin.ai,/case-studies,Case Studies,fraud?,inventory,,
+olorin.ai,/about,About,company,inventory,,
+olorin.ai,/contact,Contact,lead-capture,inventory,,
+
+fraud.olorin.ai,/,Home,fraud,new,,
+fraud.olorin.ai,/platform,Platform,fraud,new,,
+fraud.olorin.ai,/services,Services,fraud,new,,
+fraud.olorin.ai,/industries,Industries,fraud,new,,
+fraud.olorin.ai,/trust,Trust,fraud,new,,
+fraud.olorin.ai,/demo,Demo,fraud,new,,
+
+olorin.ai,/solutions/radio,Radio Solution,non-fraud,new,,
+olorin.ai,/services/ai-agents,AI Agent Services,non-fraud,new,,
+olorin.ai,/projects,Projects,non-fraud,new,,
+

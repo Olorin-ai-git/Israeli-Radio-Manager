@@ -206,3 +206,13 @@ async def broadcast_queue_tracks(tracks: list):
         "data": tracks,
         "timestamp": datetime.utcnow().isoformat()
     }, channel="playback")
+
+
+async def broadcast_queue_update(queue: list):
+    """Broadcast the full queue state to all clients."""
+    logger.info(f"Broadcasting queue_update: {len(queue)} items to {len(manager.active_connections)} clients")
+    await manager.broadcast({
+        "type": "queue_update",
+        "data": queue,
+        "timestamp": datetime.utcnow().isoformat()
+    }, channel="playback")

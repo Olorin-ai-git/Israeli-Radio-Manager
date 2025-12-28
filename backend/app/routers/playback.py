@@ -11,6 +11,42 @@ from bson import ObjectId
 
 router = APIRouter()
 
+# In-memory queue storage (stores full content documents)
+# This is the authoritative queue that persists across frontend refreshes
+_playback_queue: List[dict] = []
+
+
+def get_queue() -> List[dict]:
+    """Get the current queue."""
+    return _playback_queue
+
+
+def add_to_queue(content: dict):
+    """Add a content item to the queue."""
+    _playback_queue.append(content)
+
+
+def remove_from_queue(index: int) -> bool:
+    """Remove an item from the queue by index."""
+    if 0 <= index < len(_playback_queue):
+        _playback_queue.pop(index)
+        return True
+    return False
+
+
+def clear_queue_storage():
+    """Clear the queue."""
+    _playback_queue.clear()
+
+
+def reorder_queue_storage(from_idx: int, to_idx: int) -> bool:
+    """Reorder queue items."""
+    if 0 <= from_idx < len(_playback_queue) and 0 <= to_idx < len(_playback_queue):
+        item = _playback_queue.pop(from_idx)
+        _playback_queue.insert(to_idx, item)
+        return True
+    return False
+
 
 async def broadcast_playback_state(audio_player):
     """Broadcast current playback state to all connected clients."""
@@ -87,25 +123,9 @@ async def get_now_playing(request: Request):
 
 
 @router.get("/queue", response_model=List[dict])
-async def get_queue(request: Request):
+async def get_queue_endpoint(request: Request):
     """Get the current playback queue."""
-    audio_player = getattr(request.app.state, 'audio_player', None)
-
-    if audio_player:
-        queue_items = audio_player.get_queue()
-        return [
-            {
-                "content_id": item.track.content_id,
-                "title": item.track.title,
-                "artist": item.track.artist,
-                "duration_seconds": item.track.duration_seconds,
-                "type": item.track.content_type or "song",
-                "priority": item.priority
-            }
-            for item in queue_items
-        ]
-
-    return []
+    return get_queue()
 
 
 @router.post("/play")
@@ -221,110 +241,66 @@ async def skip_track(request: Request):
 
 
 @router.post("/queue")
-async def add_to_queue(request: Request, item: QueueItem):
+async def add_to_queue_endpoint(request: Request, item: QueueItem):
     """Add a track to the playback queue."""
-    audio_player = getattr(request.app.state, 'audio_player', None)
-    content_sync = getattr(request.app.state, 'content_sync', None)
     db = request.app.state.db
-
-    if not audio_player:
-        raise HTTPException(status_code=503, detail="Audio player not available")
+    from app.routers.websocket import broadcast_queue_update
 
     # Get content from database
     content = await db.content.find_one({"_id": ObjectId(item.content_id)})
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
 
-    # Download file if needed
-    if content_sync:
-        local_path = await content_sync.download_for_playback(item.content_id)
-        if not local_path:
-            raise HTTPException(status_code=500, detail="Failed to download audio file")
-    else:
-        local_path = content.get("local_cache_path")
-        if not local_path:
-            raise HTTPException(status_code=500, detail="Audio file not available")
+    # Build queue item with all needed fields
+    queue_item = {
+        "_id": str(content["_id"]),
+        "title": content.get("title", "Unknown"),
+        "artist": content.get("artist"),
+        "type": content.get("type", "song"),
+        "duration_seconds": content.get("duration_seconds", 0),
+        "genre": content.get("genre"),
+        "metadata": content.get("metadata", {}),
+        "batches": content.get("batches", [])
+    }
 
-    # Create track info and add to queue
-    from app.services.audio_player import TrackInfo
-    track = TrackInfo(
-        content_id=item.content_id,
-        title=content.get("title", "Unknown"),
-        artist=content.get("artist"),
-        duration_seconds=content.get("duration_seconds", 0),
-        file_path=str(local_path)
-    )
+    # Add to queue
+    add_to_queue(queue_item)
 
-    audio_player.add_to_queue(track, item.priority)
-
-    # Auto-play if nothing is currently playing
-    if audio_player.state.value == "stopped":
-        success = await audio_player.play(track)
-        if success:
-            # Remove from queue since we're playing it now
-            audio_player.remove_from_queue(0)
-
-            # Log playback
-            await db.playback_logs.insert_one({
-                "content_id": ObjectId(item.content_id),
-                "title": content.get("title"),
-                "type": content.get("type"),
-                "started_at": datetime.utcnow(),
-                "ended_at": None,
-                "source": "queue_auto"
-            })
-
-            # Broadcast scheduled playback event to trigger browser playback
-            from app.routers.websocket import broadcast_scheduled_playback
-            await broadcast_scheduled_playback({
-                "_id": item.content_id,
-                "title": content.get("title"),
-                "artist": content.get("artist"),
-                "type": content.get("type"),
-                "duration_seconds": content.get("duration_seconds", 0),
-                "genre": content.get("genre"),
-                "metadata": content.get("metadata", {})
-            })
-
-            return {
-                "message": f"Now playing: {content.get('title')}",
-                "auto_played": True,
-                "queue_length": audio_player.queue_length
-            }
+    # Broadcast queue update to all clients
+    await broadcast_queue_update(get_queue())
 
     return {
         "message": f"Added '{content.get('title')}' to queue",
-        "auto_played": False,
-        "queue_length": audio_player.queue_length
+        "queue_length": len(get_queue())
     }
 
 
 @router.delete("/queue/{position}")
-async def remove_from_queue(request: Request, position: int):
+async def remove_from_queue_endpoint(request: Request, position: int):
     """Remove a track from the queue by position."""
-    audio_player = getattr(request.app.state, 'audio_player', None)
+    from app.routers.websocket import broadcast_queue_update
 
-    if not audio_player:
-        raise HTTPException(status_code=503, detail="Audio player not available")
-
-    success = audio_player.remove_from_queue(position)
+    success = remove_from_queue(position)
     if success:
+        # Broadcast queue update to all clients
+        await broadcast_queue_update(get_queue())
         return {
             "message": f"Removed item at position {position}",
-            "queue_length": audio_player.queue_length
+            "queue_length": len(get_queue())
         }
     raise HTTPException(status_code=404, detail=f"No item at position {position}")
 
 
 @router.post("/queue/clear")
-async def clear_queue(request: Request):
+async def clear_queue_endpoint(request: Request):
     """Clear the playback queue."""
-    audio_player = getattr(request.app.state, 'audio_player', None)
+    from app.routers.websocket import broadcast_queue_update
 
-    if not audio_player:
-        raise HTTPException(status_code=503, detail="Audio player not available")
+    clear_queue_storage()
 
-    audio_player.clear_queue()
+    # Broadcast queue update to all clients
+    await broadcast_queue_update(get_queue())
+
     return {"message": "Queue cleared"}
 
 
@@ -335,31 +311,29 @@ class QueueReorderRequest(BaseModel):
 
 
 @router.post("/queue/reorder")
-async def reorder_queue(request: Request, reorder: QueueReorderRequest):
+async def reorder_queue_endpoint(request: Request, reorder: QueueReorderRequest):
     """Reorder items in the queue."""
-    audio_player = getattr(request.app.state, 'audio_player', None)
+    from app.routers.websocket import broadcast_queue_update
 
-    if not audio_player:
-        raise HTTPException(status_code=503, detail="Audio player not available")
-
-    # Get current queue
-    queue = audio_player.get_queue()
+    queue = get_queue()
 
     # Validate indices
     if not (0 <= reorder.from_index < len(queue) and 0 <= reorder.to_index < len(queue)):
         raise HTTPException(status_code=400, detail="Invalid queue indices")
 
     # Reorder the queue
-    item = queue.pop(reorder.from_index)
-    queue.insert(reorder.to_index, item)
+    success = reorder_queue_storage(reorder.from_index, reorder.to_index)
 
-    # Update the queue in audio player
-    audio_player._queue = queue
+    if success:
+        # Broadcast queue update to all clients
+        await broadcast_queue_update(get_queue())
 
-    return {
-        "message": "Queue reordered",
-        "queue_length": len(queue)
-    }
+        return {
+            "message": "Queue reordered",
+            "queue_length": len(get_queue())
+        }
+
+    raise HTTPException(status_code=400, detail="Failed to reorder queue")
 
 
 @router.post("/volume")

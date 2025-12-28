@@ -15,7 +15,6 @@ import ChatSidebar from '../Agent/ChatSidebar'
 import AudioPlayer from '../Player/AudioPlayer'
 import FlowsPanel from '../Flows/FlowsPanel'
 import { usePlayerStore } from '../../store/playerStore'
-import { toast } from '../../store/toastStore'
 
 interface LayoutProps {
   children: ReactNode
@@ -29,7 +28,6 @@ export default function Layout({ children }: LayoutProps) {
   const { currentTrack, queue, playNext, playNow } = usePlayerStore()
   const wsRef = useRef<WebSocket | null>(null)
   const lastPlayedIdRef = useRef<string | null>(null) // Prevent duplicate playback
-  const lastQueueBatchRef = useRef<string | null>(null) // Prevent duplicate queue batches
   const isAutoPlayingRef = useRef(false) // Prevent recursive auto-play
 
   // Auto-play from queue when nothing is playing
@@ -113,49 +111,13 @@ export default function Layout({ children }: LayoutProps) {
 
             // Play immediately, interrupting current track if needed
             playNow(track)
-          } else if (message.type === 'queue_tracks') {
-            // Multiple tracks to add to queue
-            const tracks = message.data
+          } else if (message.type === 'queue_update') {
+            // Full queue update from backend
+            const queue = message.data
+            console.log('Queue update received:', queue.length, 'items')
 
-            // Create a batch identifier from track IDs to prevent duplicate processing
-            const batchId = tracks.map((t: any) => t._id).sort().join(',')
-
-            // Prevent duplicate batch processing (multiple WS connections)
-            if (lastQueueBatchRef.current === batchId) {
-              console.log('Skipping duplicate queue batch, tracks:', tracks.length)
-              return
-            }
-            lastQueueBatchRef.current = batchId
-
-            // Clear the batch check after 5 seconds
-            setTimeout(() => {
-              if (lastQueueBatchRef.current === batchId) {
-                lastQueueBatchRef.current = null
-              }
-            }, 5000)
-
-            console.log('Queue tracks received:', tracks.length)
-
-            const { addToQueue } = usePlayerStore.getState()
-            tracks.forEach((content: any) => {
-              const track = {
-                _id: content._id,
-                title: content.title,
-                artist: content.artist,
-                type: content.type,
-                duration_seconds: content.duration_seconds,
-                genre: content.genre,
-                metadata: content.metadata,
-                batches: content.batches,
-              }
-              addToQueue(track)
-            })
-
-            toast.info(
-              isRTL
-                ? `נוספו ${tracks.length} שירים לתור`
-                : `Added ${tracks.length} songs to queue`
-            )
+            const { setQueue } = usePlayerStore.getState()
+            setQueue(queue)
           }
         } catch (e) {
           console.error('WebSocket message error:', e)
