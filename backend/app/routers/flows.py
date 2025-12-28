@@ -767,20 +767,35 @@ Available action types:
 
 Description: {text}
 
-Return format (JSON array only):
+PARSING RULES:
+1. If description mentions ALTERNATING patterns (e.g., "every 30 minutes", "on the hour do X, on the half-hour do Y"), create a sequence that can loop
+2. For time-based patterns, create actions in the order they would execute in one cycle
+3. Each commercial batch mention should be a SEPARATE action
+4. After commercials, add a music action to continue playing if the description implies returning to music
+5. If "repeat" or "loop" is mentioned, the flow should loop - still create the action sequence for one cycle
+
+Examples:
+
+Input: "Play happy music, then 2 commercials, then mizrahi"
+Output:
 [
-  {{"action_type": "play_genre", "genre": "happy", "description": "Play happy music", "duration_minutes": 30}},
-  {{"action_type": "play_commercials", "batch_number": 1, "description": "Play Batch-1 commercials"}},
-  {{"action_type": "play_commercials", "batch_number": 2, "description": "Play Batch-2 commercials"}},
-  {{"action_type": "play_genre", "genre": "mixed", "description": "Continue playing songs"}}
+  {{"action_type": "play_genre", "genre": "happy", "duration_minutes": 30, "description": "Play happy music"}},
+  {{"action_type": "play_commercials", "commercial_count": 2, "description": "Play 2 commercials"}},
+  {{"action_type": "play_genre", "genre": "mizrahi", "duration_minutes": 30, "description": "Play mizrahi music"}}
 ]
 
-IMPORTANT:
-- If "Batch-1", "Batch 1", or similar is mentioned, use "batch_number": 1
-- If "Batch-2", "Batch 2", or similar is mentioned, use "batch_number": 2
-- Each batch mention should be a separate action
+Input: "Play music, every 30 min check time: on the hour play Batch-1 commercials, on half-hour play Batch-2 commercials, then continue music"
+Output:
+[
+  {{"action_type": "play_genre", "genre": "mixed", "duration_minutes": 30, "description": "Play music"}},
+  {{"action_type": "play_commercials", "batch_number": 1, "description": "Play Batch-1 commercials (on the hour)"}},
+  {{"action_type": "play_genre", "genre": "mixed", "duration_minutes": 30, "description": "Continue playing music"}},
+  {{"action_type": "play_commercials", "batch_number": 2, "description": "Play Batch-2 commercials (on half-hour)"}}
+]
 
-Parse the description and return the JSON array:"""
+Now parse this description: {text}
+
+Return the JSON array:"""
 
             response = client.messages.create(
                 model="claude-3-haiku-20240307",
