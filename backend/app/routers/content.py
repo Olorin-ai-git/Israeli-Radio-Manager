@@ -188,6 +188,14 @@ async def get_sync_status(request: Request):
     return await content_sync.get_sync_status()
 
 
+@router.get("/sync/folders")
+async def get_folder_structure(request: Request):
+    """Get the Google Drive folder structure for debugging."""
+    content_sync = request.app.state.content_sync
+    structure = await content_sync.drive.get_folder_structure()
+    return structure
+
+
 @router.post("/sync/start")
 async def start_sync(request: Request, download_files: bool = False):
     """

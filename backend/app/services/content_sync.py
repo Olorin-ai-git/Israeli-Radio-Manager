@@ -88,6 +88,7 @@ class ContentSyncService:
                 # For songs, process subfolders (genres)
                 if content_type == "song" and folder_info.get("children"):
                     for genre_name, genre_info in folder_info["children"].items():
+                        logger.info(f"Processing genre folder: {genre_name}")
                         folder_stats = await self._sync_folder(
                             genre_info["id"],
                             content_type,
@@ -96,26 +97,26 @@ class ContentSyncService:
                         )
                         self._merge_stats(stats, folder_stats)
                         stats["folders_scanned"] += 1
+                elif content_type == "show" and folder_info.get("children"):
+                    # Process show subfolders (episodes)
+                    for show_name, show_info in folder_info["children"].items():
+                        logger.info(f"Processing show folder: {show_name}")
+                        sub_stats = await self._sync_folder(
+                            show_info["id"],
+                            content_type,
+                            show_name=show_name,
+                            download=download_files
+                        )
+                        self._merge_stats(stats, sub_stats)
+                        stats["folders_scanned"] += 1
                 else:
-                    # Process directly for shows/commercials
+                    # Process directly for commercials (no subfolders)
                     folder_stats = await self._sync_folder(
                         folder_info["id"],
                         content_type,
                         download=download_files
                     )
                     self._merge_stats(stats, folder_stats)
-
-                # Also check for subfolders (e.g., show episodes)
-                if folder_info.get("children"):
-                    for sub_name, sub_info in folder_info["children"].items():
-                        sub_stats = await self._sync_folder(
-                            sub_info["id"],
-                            content_type,
-                            show_name=sub_name if content_type == "show" else None,
-                            download=download_files
-                        )
-                        self._merge_stats(stats, sub_stats)
-                        stats["folders_scanned"] += 1
 
         except Exception as e:
             logger.error(f"Sync error: {e}")
