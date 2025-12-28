@@ -148,18 +148,22 @@
 
 .audio-bar {
   @apply bg-primary-500;
+}
+
+/* Only animate when parent has .is-playing class */
+.is-playing .audio-bar {
   animation: pulse-audio 0.8s ease-in-out infinite;
 }
 
-.audio-bar:nth-child(2) {
+.is-playing .audio-bar:nth-child(2) {
   animation-delay: 0.1s;
 }
 
-.audio-bar:nth-child(3) {
+.is-playing .audio-bar:nth-child(3) {
   animation-delay: 0.2s;
 }
 
-.audio-bar:nth-child(4) {
+.is-playing .audio-bar:nth-child(4) {
   animation-delay: 0.3s;
 }
 
@@ -177,20 +181,20 @@
   animation: glow-pulse 2s ease-in-out infinite;
 }
 
-/* Toast slide-in animation */
-@keyframes slide-in {
+/* Toast fade-in animation */
+@keyframes toast-fade-in {
   from {
-    transform: translateX(100%);
+    transform: translateY(8px) scale(0.96);
     opacity: 0;
   }
   to {
-    transform: translateX(0);
+    transform: translateY(0) scale(1);
     opacity: 1;
   }
 }
 
 .animate-slide-in {
-  animation: slide-in 0.3s ease-out forwards;
+  animation: toast-fade-in 0.25s ease-out forwards;
 }
 
 /* Slide up animation for panels */

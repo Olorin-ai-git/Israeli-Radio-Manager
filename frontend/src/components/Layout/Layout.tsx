@@ -277,7 +277,7 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* Flows Panel - Fixed on left side */}
       <div
-        className="fixed left-0 top-0 h-full z-20 overflow-visible"
+        className="fixed left-0 top-0 h-full z-20 overflow-visible transition-[width] duration-300 ease-in-out"
         style={{ width: flowsCollapsed ? '48px' : `${flowsPanelWidth}px` }}
       >
         <FlowsPanel
@@ -298,7 +298,7 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* Main layout container - offset by flows panel width */}
       <div
-        className="h-full flex transition-none"
+        className="h-full flex transition-[margin] duration-300 ease-in-out"
         style={{ marginLeft: flowsCollapsed ? '48px' : `${flowsPanelWidth}px` }}
       >
         {/* Sidebar Navigation - Right side for English, Left side for Hebrew */}
@@ -374,7 +374,7 @@ export default function Layout({ children }: LayoutProps) {
           </div>
 
           {/* Audio Player - Fixed at bottom */}
-          <div className="flex-shrink-0 p-4 border-t border-white/5">
+          <div className="flex-shrink-0 px-4 py-3 border-t border-white/10 bg-dark-900/80 backdrop-blur-sm">
             <AudioPlayer
               track={currentTrack}
               onTrackEnd={playNext}
@@ -405,6 +405,14 @@ export default function Layout({ children }: LayoutProps) {
           {isRTL ? 'דבר עם הסוכן' : 'Chat'}
         </span>
       </button>
+
+      {/* Chat Sidebar Backdrop */}
+      <div
+        className={`fixed inset-0 bg-black/20 backdrop-blur-sm z-40 transition-opacity duration-300 ${
+          chatExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={() => setChatExpanded(false)}
+      />
 
       {/* Chat Sidebar */}
       <ChatSidebar

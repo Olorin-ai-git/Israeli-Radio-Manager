@@ -21,7 +21,7 @@ function AlbumCover({ contentId, isPlaying, type }: { contentId: string; isPlayi
 
   if (hasError) {
     return isPlaying ? (
-      <div className="flex items-end gap-0.5 h-5">
+      <div className="flex items-end gap-0.5 h-5 is-playing">
         <div className="w-1 bg-white audio-bar h-3 rounded-full"></div>
         <div className="w-1 bg-white audio-bar h-5 rounded-full"></div>
         <div className="w-1 bg-white audio-bar h-4 rounded-full"></div>

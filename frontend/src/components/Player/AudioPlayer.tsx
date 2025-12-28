@@ -85,7 +85,7 @@ function SortableQueueItem({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-3 p-2 rounded-lg bg-dark-700/30 hover:bg-dark-700/50 transition-colors group"
+      className="flex items-center gap-2 p-2 rounded-lg bg-dark-700/50 hover:bg-dark-600/50 transition-colors group"
     >
       <button
         {...attributes}
@@ -496,12 +496,12 @@ export default function AudioPlayer({
     <div className="glass-card">
       {/* Queue Panel - Expandable */}
       {queueExpanded && (
-        <div className="border-b border-white/5 p-4 max-h-64 overflow-y-auto">
+        <div className="border-b border-white/10 p-4 max-h-60 overflow-y-auto bg-dark-800/50">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-dark-100 flex items-center gap-2">
               <ListMusic size={16} className="text-primary-400" />
               {isRTL ? 'תור השמעה' : 'Play Queue'}
-              <span className="px-2 py-0.5 text-xs bg-dark-700 rounded-full text-dark-400">
+              <span className="px-1.5 py-0.5 text-xs bg-dark-600 rounded-full text-dark-300">
                 {queue.length}
               </span>
             </h3>
@@ -541,10 +541,10 @@ export default function AudioPlayer({
               </SortableContext>
             </DndContext>
           ) : (
-            <div className="text-center py-6 text-dark-500">
-              <ListMusic size={32} className="mx-auto mb-2 opacity-50" />
-              <p className="text-sm">{isRTL ? 'התור ריק' : 'Queue is empty'}</p>
-              <p className="text-xs text-dark-600 mt-1">
+            <div className="text-center py-4 text-dark-500">
+              <ListMusic size={24} className="mx-auto mb-2 opacity-40" />
+              <p className="text-xs">{isRTL ? 'התור ריק' : 'Queue is empty'}</p>
+              <p className="text-xs text-dark-600 mt-0.5">
                 {isRTL ? 'לחץ על + ליד שיר כדי להוסיף' : 'Click + next to a song to add it'}
               </p>
             </div>

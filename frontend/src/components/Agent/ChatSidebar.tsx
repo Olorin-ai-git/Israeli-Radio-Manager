@@ -291,9 +291,9 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
   return (
     <div
       className={`fixed right-0 top-0 h-full z-50
-        transition-transform duration-300 ease-in-out
-        ${expanded ? 'translate-x-0' : 'translate-x-full'}
-        flex flex-col glass-sidebar`}
+        transition-all duration-300 ease-in-out
+        ${expanded ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'}
+        flex flex-col glass-sidebar shadow-2xl`}
       style={{ width: `${width}px` }}
     >
       {/* Resize Handle */}

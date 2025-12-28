@@ -20,7 +20,8 @@ import {
   Eye,
   CheckCircle,
   GripVertical,
-  RotateCcw
+  RotateCcw,
+  Repeat
 } from 'lucide-react'
 import {
   DndContext,
@@ -174,7 +175,8 @@ const ActionIcon = ({ type }: { type: string }) => {
   }
 }
 
-const StatusBadge = ({ status }: { status: string }) => {
+const StatusBadge = ({ status, isRunning }: { status: string; isRunning?: boolean }) => {
+  const effectiveStatus = isRunning ? 'running' : status
   const colors = {
     active: 'bg-green-500/20 text-green-400 border-green-500/30',
     paused: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
@@ -183,8 +185,11 @@ const StatusBadge = ({ status }: { status: string }) => {
   }
 
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full border ${colors[status as keyof typeof colors] || colors.disabled}`}>
-      {status}
+    <span className={`text-xs px-2 py-0.5 rounded-full border flex items-center gap-1 ${colors[effectiveStatus as keyof typeof colors] || colors.disabled}`}>
+      {(isRunning || effectiveStatus === 'running') && (
+        <Loader2 size={10} className="animate-spin" />
+      )}
+      {effectiveStatus}
     </span>
   )
 }
@@ -275,6 +280,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
   const [selectedCommercials, setSelectedCommercials] = useState<Set<string>>(new Set())
   const [flowToPause, setFlowToPause] = useState<Flow | null>(null)
   const [overlapError, setOverlapError] = useState<{ message: string; conflictingFlows: any[] } | null>(null)
+  const [runningFlowIds, setRunningFlowIds] = useState<Set<string>>(new Set())
 
   // Fetch commercials for selection
   const { data: commercials } = useQuery({
@@ -367,7 +373,31 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
 
   const runMutation = useMutation({
     mutationFn: (flowId: string) => api.runFlow(flowId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['flows'] }),
+    onMutate: (flowId) => {
+      // Optimistically mark as running
+      setRunningFlowIds(prev => new Set(prev).add(flowId))
+    },
+    onSuccess: (_, flowId) => {
+      // Keep showing running until refetch completes
+      queryClient.invalidateQueries({ queryKey: ['flows'] }).then(() => {
+        // Remove from running set after refetch - the actual status will be shown
+        setTimeout(() => {
+          setRunningFlowIds(prev => {
+            const next = new Set(prev)
+            next.delete(flowId)
+            return next
+          })
+        }, 500) // Small delay to ensure UI updates smoothly
+      })
+    },
+    onError: (_, flowId) => {
+      // Remove from running set on error
+      setRunningFlowIds(prev => {
+        const next = new Set(prev)
+        next.delete(flowId)
+        return next
+      })
+    },
   })
 
   const resetMutation = useMutation({
@@ -566,19 +596,25 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     setShowSuggested(false)
   }
 
-  if (collapsed) {
-    return (
-      <div className="w-12 h-full glass-sidebar flex flex-col items-center py-4 gap-4 relative overflow-visible">
-        <button
-          onClick={onToggle}
-          className="absolute -right-4 top-1/2 -translate-y-1/2 z-30 glass-button-primary p-3 rounded-r-xl shadow-glow flex items-center gap-2"
-          title={isRTL ? 'הצג זרימות' : 'Show Flows'}
-        >
-          <Workflow size={24} />
-          <span className="text-sm font-medium hidden md:inline">
-            {isRTL ? 'זרימות' : 'Flows'}
-          </span>
-        </button>
+  return (
+    <div
+      className="h-full glass-sidebar flex flex-col relative transition-all duration-300 ease-in-out"
+      style={{ width: collapsed ? '48px' : `${width}px` }}
+    >
+      {/* Expand button - visible when collapsed, positioned outside container */}
+      <button
+        onClick={onToggle}
+        className={`fixed top-1/2 -translate-y-1/2 z-30 glass-button-primary p-3 rounded-r-xl shadow-glow flex items-center gap-2 transition-all duration-300 ${collapsed ? 'opacity-100 left-12' : 'opacity-0 pointer-events-none left-0'}`}
+        title={isRTL ? 'הצג זרימות' : 'Show Flows'}
+      >
+        <Workflow size={24} />
+        <span className="text-sm font-medium hidden md:inline">
+          {isRTL ? 'זרימות' : 'Flows'}
+        </span>
+      </button>
+
+      {/* Collapsed view - mini icons */}
+      <div className={`absolute inset-0 flex flex-col items-center py-4 gap-4 transition-opacity duration-300 ${collapsed ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <Workflow size={20} className="text-primary-400" />
         {flows?.slice(0, 5).map((flow) => (
           <button
@@ -600,11 +636,9 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
           </button>
         ))}
       </div>
-    )
-  }
 
-  return (
-    <div className="h-full glass-sidebar flex flex-col" style={{ width: `${width}px` }}>
+      {/* Expanded view - full content */}
+      <div className={`flex flex-col h-full transition-opacity duration-300 ${collapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
       {/* Header */}
       <div className="p-4 border-b border-white/5 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -663,7 +697,17 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                     {isRTL ? flow.name_he || flow.name : flow.name}
                   </h3>
                 </button>
-                <StatusBadge status={flow.status} />
+                <div className="flex items-center gap-1.5">
+                  {flow.loop && (
+                    <span
+                      className="text-primary-400"
+                      title={isRTL ? 'זרימה חוזרת' : 'Looping'}
+                    >
+                      <Repeat size={14} />
+                    </span>
+                  )}
+                  <StatusBadge status={flow.status} isRunning={runningFlowIds.has(flow._id)} />
+                </div>
               </div>
 
               {/* Actions Preview */}
@@ -815,11 +859,11 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                       e.stopPropagation()
                       resetMutation.mutate(flow._id)
                     }}
-                    disabled={resetMutation.isPending}
+                    disabled={resetMutation.isPending && resetMutation.variables === flow._id}
                     className="flex-1 glass-button py-1.5 text-xs flex items-center justify-center gap-1 text-yellow-400 hover:bg-yellow-500/20"
                     title={isRTL ? 'אפס סטטוס' : 'Reset Status'}
                   >
-                    {resetMutation.isPending ? (
+                    {resetMutation.isPending && resetMutation.variables === flow._id ? (
                       <Loader2 size={12} className="animate-spin" />
                     ) : (
                       <RotateCcw size={12} />
@@ -831,11 +875,11 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                       e.stopPropagation()
                       runMutation.mutate(flow._id)
                     }}
-                    disabled={runMutation.isPending}
+                    disabled={runningFlowIds.has(flow._id)}
                     className="flex-1 glass-button py-1.5 text-xs flex items-center justify-center gap-1 text-green-400 hover:bg-green-500/20"
                     title={isRTL ? 'הפעל עכשיו' : 'Run Now'}
                   >
-                    {runMutation.isPending ? (
+                    {runningFlowIds.has(flow._id) ? (
                       <Loader2 size={12} className="animate-spin" />
                     ) : (
                       <Play size={12} />
@@ -858,11 +902,15 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                 </button>
                 <button
                   onClick={() => deleteMutation.mutate(flow._id)}
-                  disabled={deleteMutation.isPending}
+                  disabled={deleteMutation.isPending && deleteMutation.variables === flow._id}
                   className="glass-button py-1.5 px-2 text-xs text-red-400 hover:bg-red-500/20"
                   title={isRTL ? 'מחק' : 'Delete'}
                 >
-                  <Trash2 size={12} />
+                  {deleteMutation.isPending && deleteMutation.variables === flow._id ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={12} />
+                  )}
                 </button>
               </div>
             </div>
@@ -876,6 +924,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
             </p>
           </div>
         )}
+      </div>
       </div>
 
       {/* Create Flow Modal */}
@@ -1138,7 +1187,8 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
               </div>
               )}
 
-              {/* Loop Option */}
+              {/* Loop Option - Only show for scheduled flows */}
+              {triggerType === 'scheduled' && (
               <div className="p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1158,6 +1208,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   </div>
                 </label>
               </div>
+              )}
 
               {/* Overlap Error Display */}
               {overlapError && (
@@ -1630,7 +1681,8 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                 )}
               </div>
 
-              {/* Loop Option */}
+              {/* Loop Option - Only show for scheduled flows */}
+              {editTriggerType === 'scheduled' && (
               <div className="p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1651,6 +1703,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   </div>
                 </label>
               </div>
+              )}
 
               {/* Overlap Error Display */}
               {overlapError && (

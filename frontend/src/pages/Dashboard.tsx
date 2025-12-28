@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { Music, Radio, Megaphone, Clock, Calendar, BarChart2, RefreshCw } from 'lucide-react'
+import { Music, Radio, Megaphone, Clock, Calendar, BarChart2, RefreshCw, Bot } from 'lucide-react'
 import { api } from '../services/api'
 import { usePlayerStore } from '../store/playerStore'
 
@@ -82,7 +82,7 @@ export default function Dashboard() {
 
             <div className="flex items-center gap-4">
               {/* Album art */}
-              <div className="w-24 h-24 rounded-xl flex items-center justify-center border border-white/10 glow-animate overflow-hidden bg-dark-700/50 flex-shrink-0">
+              <div className={`w-24 h-24 rounded-xl flex items-center justify-center border border-white/10 overflow-hidden bg-dark-700/50 flex-shrink-0 ${isPlaying ? 'glow-animate' : ''}`}>
                 {coverUrl && !coverError ? (
                   <img
                     src={coverUrl}
@@ -91,7 +91,7 @@ export default function Dashboard() {
                     onError={() => setCoverError(true)}
                   />
                 ) : isPlaying ? (
-                  <div className="flex items-end gap-1 h-8">
+                  <div className="flex items-end gap-1 h-8 is-playing">
                     <div className="w-1.5 bg-primary-400 audio-bar h-4 rounded-full"></div>
                     <div className="w-1.5 bg-primary-400 audio-bar h-6 rounded-full"></div>
                     <div className="w-1.5 bg-primary-400 audio-bar h-8 rounded-full"></div>
@@ -234,8 +234,14 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Agent Status */}
+          {/* Orchestrator AI Agent Status */}
           <div className="mt-6 pt-4 border-t border-white/5">
+            <div className="flex items-center gap-2 mb-3">
+              <Bot size={16} className="text-primary-400" />
+              <span className="text-sm font-medium text-dark-200">
+                {isRTL ? 'סוכן AI מתזמר' : 'Orchestrator AI Agent'}
+              </span>
+            </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-dark-400">{t('agent.status')}</span>
               <span className={`badge ${
@@ -252,6 +258,17 @@ export default function Dashboard() {
                 {agentStatus?.mode === 'full_automation' ? t('agent.fullAuto') : t('agent.promptMode')}
               </span>
             </div>
+            {/* Mode explanation */}
+            <p className="text-xs text-dark-500 mt-2">
+              {agentStatus?.mode === 'full_automation'
+                ? (isRTL
+                    ? 'הסוכן מבצע פעולות אוטומטית ללא אישור'
+                    : 'Agent executes actions automatically without approval')
+                : (isRTL
+                    ? 'הסוכן מבקש אישור לפני ביצוע פעולות'
+                    : 'Agent requests approval before executing actions')
+              }
+            </p>
             {agentStatus?.pending_actions > 0 && (
               <div className="mt-3 p-2 bg-amber-500/10 border border-amber-500/30 rounded-xl">
                 <p className="text-sm text-amber-400">
