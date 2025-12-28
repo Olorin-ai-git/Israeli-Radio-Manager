@@ -537,6 +537,7 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
     const startDate = formData.get('start_date') as string
     const dayOfMonth = formData.get('day_of_month') as string
     const month = formData.get('month') as string
+    const loop = formData.get('loop') === 'on'
 
     // Collect selected days (for weekly recurrence)
     const daysOfWeek: number[] = []
@@ -572,7 +573,7 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
       trigger_type: triggerType,
       schedule,
       priority: 0,
-      loop: false,
+      loop,
     })
   }
 
@@ -1053,6 +1054,27 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                 )}
               </div>
 
+              {/* Loop Option */}
+              <div className="p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="loop"
+                    className="w-4 h-4 rounded border-2 border-primary-500 bg-dark-800 checked:bg-primary-500 checked:border-primary-500"
+                  />
+                  <div className="flex-1">
+                    <span className="text-sm font-medium text-dark-100">
+                      {isRTL ? 'חזור על הפעולות עד סוף הזמן' : 'Repeat actions until end time'}
+                    </span>
+                    <p className="text-xs text-dark-400 mt-0.5">
+                      {isRTL
+                        ? 'אם מוגדר זמן סיום, הזרימה תחזור על כל הפעולות עד שהזמן יגמר'
+                        : 'If an end time is set, the flow will repeat all actions until that time'}
+                    </p>
+                  </div>
+                </label>
+              </div>
+
               <div className="flex gap-2 pt-4">
                 <button
                   type="button"
@@ -1175,6 +1197,7 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                 const startDate = formData.get('start_date') as string
                 const dayOfMonth = formData.get('day_of_month') as string
                 const month = formData.get('month') as string
+                const loop = formData.get('loop') === 'on'
 
                 // Collect selected days (for weekly recurrence)
                 const daysOfWeek: number[] = []
@@ -1202,6 +1225,7 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                     trigger_type: triggerType,
                     schedule,
                     actions: editParsedActions.length > 0 ? editParsedActions : editingFlow.actions,
+                    loop,
                   },
                 })
               }}
@@ -1441,6 +1465,28 @@ export default function FlowsPanel({ collapsed, onToggle }: FlowsPanelProps) {
                     {isRTL ? 'הקלד תיאור לראות פעולות...' : 'Type a description to see actions...'}
                   </p>
                 )}
+              </div>
+
+              {/* Loop Option */}
+              <div className="p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="loop"
+                    defaultChecked={editingFlow.loop}
+                    className="w-4 h-4 rounded border-2 border-primary-500 bg-dark-800 checked:bg-primary-500 checked:border-primary-500"
+                  />
+                  <div className="flex-1">
+                    <span className="text-sm font-medium text-dark-100">
+                      {isRTL ? 'חזור על הפעולות עד סוף הזמן' : 'Repeat actions until end time'}
+                    </span>
+                    <p className="text-xs text-dark-400 mt-0.5">
+                      {isRTL
+                        ? 'אם מוגדר זמן סיום, הזרימה תחזור על כל הפעולות עד שהזמן יגמר'
+                        : 'If an end time is set, the flow will repeat all actions until that time'}
+                    </p>
+                  </div>
+                </label>
               </div>
 
               <div className="flex gap-2 pt-4">

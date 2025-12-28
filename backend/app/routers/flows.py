@@ -624,7 +624,46 @@ async def run_flow(request: Request, flow_id: str):
 
     # Execute flow actions
     try:
-        actions_completed = await run_flow_actions(db, flow, audio_player)
+        # Check if flow should loop until end_time
+        should_loop = flow.get("loop", False)
+        end_time_str = flow.get("schedule", {}).get("end_time") if flow.get("schedule") else None
+
+        total_actions_completed = 0
+        loop_count = 0
+
+        if should_loop and end_time_str:
+            logger.info(f"Flow {flow_id} will loop until {end_time_str}")
+
+            # Parse end time
+            from datetime import datetime, time as dt_time
+            end_hour, end_minute = map(int, end_time_str.split(':'))
+            end_time = datetime.utcnow().replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
+
+            # If end time is earlier than current time, it's tomorrow
+            if end_time < datetime.utcnow():
+                end_time = end_time + timedelta(days=1)
+
+            # Loop until end time
+            while datetime.utcnow() < end_time:
+                loop_count += 1
+                logger.info(f"Flow {flow_id} - Loop iteration {loop_count}")
+
+                actions_completed = await run_flow_actions(db, flow, audio_player)
+                total_actions_completed += actions_completed
+
+                # Small delay between loops to avoid tight loop
+                import asyncio
+                await asyncio.sleep(1)
+
+                # Check if we've passed the end time
+                if datetime.utcnow() >= end_time:
+                    logger.info(f"Flow {flow_id} - Reached end time, stopping loop")
+                    break
+
+            logger.info(f"Flow {flow_id} - Completed {loop_count} loops with {total_actions_completed} total actions")
+        else:
+            # Single execution
+            total_actions_completed = await run_flow_actions(db, flow, audio_player)
 
         # Mark as completed
         await db.flow_executions.update_one(
@@ -633,7 +672,7 @@ async def run_flow(request: Request, flow_id: str):
                 "$set": {
                     "status": "completed",
                     "ended_at": datetime.utcnow(),
-                    "actions_completed": actions_completed
+                    "actions_completed": total_actions_completed
                 }
             }
         )
