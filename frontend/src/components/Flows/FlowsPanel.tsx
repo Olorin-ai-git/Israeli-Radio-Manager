@@ -124,13 +124,17 @@ interface FlowAction {
 type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
 
 interface FlowSchedule {
-  start_time: string
+  // For recurring events
+  start_time?: string
   end_time?: string
+  // For one-time/multi-day events
+  start_datetime?: string
+  end_datetime?: string
+  // Common fields
   recurrence: RecurrenceType
   days_of_week: number[]
   day_of_month?: number
   month?: number
-  start_date?: string
 }
 
 interface Flow {
@@ -677,15 +681,31 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
               {flow.schedule && (
                 <div className="flex items-center gap-1 text-xs text-dark-400 mb-2">
                   <Calendar size={12} />
-                  <span>{flow.schedule.start_time}</span>
-                  {flow.schedule.end_time && <span>- {flow.schedule.end_time}</span>}
-                  {flow.schedule.recurrence && flow.schedule.recurrence !== 'none' && (
-                    <span className="ml-1 px-1.5 py-0.5 bg-primary-500/20 text-primary-400 rounded text-[10px]">
-                      {flow.schedule.recurrence === 'daily' ? (isRTL ? 'יומי' : 'Daily') :
-                       flow.schedule.recurrence === 'weekly' ? (isRTL ? 'שבועי' : 'Weekly') :
-                       flow.schedule.recurrence === 'monthly' ? (isRTL ? 'חודשי' : 'Monthly') :
-                       flow.schedule.recurrence === 'yearly' ? (isRTL ? 'שנתי' : 'Yearly') : ''}
-                    </span>
+                  {flow.schedule.recurrence === 'none' && flow.schedule.start_datetime && flow.schedule.end_datetime ? (
+                    // One-time/multi-day flow: show datetime range
+                    <>
+                      <span className="text-[10px]">
+                        {new Date(flow.schedule.start_datetime).toLocaleDateString()} {new Date(flow.schedule.start_datetime).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
+                      </span>
+                      <span>→</span>
+                      <span className="text-[10px]">
+                        {new Date(flow.schedule.end_datetime).toLocaleDateString()} {new Date(flow.schedule.end_datetime).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
+                      </span>
+                    </>
+                  ) : (
+                    // Recurring flow: show time range
+                    <>
+                      <span>{flow.schedule.start_time}</span>
+                      {flow.schedule.end_time && <span>- {flow.schedule.end_time}</span>}
+                      {flow.schedule.recurrence && flow.schedule.recurrence !== 'none' && (
+                        <span className="ml-1 px-1.5 py-0.5 bg-primary-500/20 text-primary-400 rounded text-[10px]">
+                          {flow.schedule.recurrence === 'daily' ? (isRTL ? 'יומי' : 'Daily') :
+                           flow.schedule.recurrence === 'weekly' ? (isRTL ? 'שבועי' : 'Weekly') :
+                           flow.schedule.recurrence === 'monthly' ? (isRTL ? 'חודשי' : 'Monthly') :
+                           flow.schedule.recurrence === 'yearly' ? (isRTL ? 'שנתי' : 'Yearly') : ''}
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
               )}
