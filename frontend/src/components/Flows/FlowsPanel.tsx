@@ -694,23 +694,23 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
               {/* Action Buttons */}
               <div className="flex items-center gap-1 mt-2 pt-2 border-t border-white/5">
                 <button
+                  onClick={() => toggleMutation.mutate(flow._id)}
+                  className="flex-1 glass-button py-1.5 text-xs flex items-center justify-center gap-1"
+                  title={flow.status === 'active' ? (isRTL ? 'השהה' : 'Pause') : (isRTL ? 'הפעל' : 'Enable')}
+                >
+                  {flow.status === 'active' ? <Pause size={12} /> : <Play size={12} />}
+                </button>
+                <button
                   onClick={() => runMutation.mutate(flow._id)}
                   disabled={runMutation.isPending || flow.status === 'running'}
-                  className="flex-1 glass-button py-1.5 text-xs flex items-center justify-center gap-1"
-                  title={isRTL ? 'הפעל' : 'Run'}
+                  className="flex-1 glass-button py-1.5 text-xs flex items-center justify-center gap-1 text-green-400 hover:bg-green-500/20"
+                  title={isRTL ? 'הפעל עכשיו' : 'Run Now'}
                 >
                   {runMutation.isPending ? (
                     <Loader2 size={12} className="animate-spin" />
                   ) : (
                     <Play size={12} />
                   )}
-                </button>
-                <button
-                  onClick={() => toggleMutation.mutate(flow._id)}
-                  className="flex-1 glass-button py-1.5 text-xs flex items-center justify-center gap-1"
-                  title={flow.status === 'active' ? (isRTL ? 'השהה' : 'Pause') : (isRTL ? 'הפעל' : 'Enable')}
-                >
-                  {flow.status === 'active' ? <Pause size={12} /> : <Play size={12} />}
                 </button>
                 <button
                   onClick={() => {
