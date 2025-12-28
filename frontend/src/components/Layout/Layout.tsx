@@ -1,6 +1,7 @@
 import { ReactNode, useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   LayoutDashboard,
   CalendarDays,
@@ -9,7 +10,10 @@ import {
   Bot,
   Settings,
   MessageCircle,
-  Globe
+  Globe,
+  Blocks,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react'
 import ChatSidebar from '../Agent/ChatSidebar'
 import AudioPlayer from '../Player/AudioPlayer'
@@ -23,17 +27,45 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const { t, i18n } = useTranslation()
   const location = useLocation()
+  const queryClient = useQueryClient()
   const [chatExpanded, setChatExpanded] = useState(false)
   const [flowsCollapsed, setFlowsCollapsed] = useState(true)
-  const { currentTrack, queue, playNext, playNow } = usePlayerStore()
+  const [navCollapsed, setNavCollapsed] = useState(() => {
+    const saved = localStorage.getItem('navCollapsed')
+    return saved ? saved === 'true' : false
+  })
+  const { currentTrack, queue, playNext, playNow, hasUserInteracted, setUserInteracted } = usePlayerStore()
   const wsRef = useRef<WebSocket | null>(null)
   const lastPlayedIdRef = useRef<string | null>(null) // Prevent duplicate playback
   const isAutoPlayingRef = useRef(false) // Prevent recursive auto-play
 
-  // Auto-play from queue when nothing is playing
+  // Track user interaction for autoplay policy
+  useEffect(() => {
+    if (hasUserInteracted) return // Already tracked
+
+    const markInteracted = () => {
+      setUserInteracted()
+    }
+
+    // Listen for any user interaction
+    document.addEventListener('click', markInteracted, { once: true })
+    document.addEventListener('keydown', markInteracted, { once: true })
+    document.addEventListener('touchstart', markInteracted, { once: true })
+
+    return () => {
+      document.removeEventListener('click', markInteracted)
+      document.removeEventListener('keydown', markInteracted)
+      document.removeEventListener('touchstart', markInteracted)
+    }
+  }, [hasUserInteracted, setUserInteracted])
+
+  // Auto-play from queue when nothing is playing (only after user interaction)
   useEffect(() => {
     // Guard against rapid successive calls
     if (isAutoPlayingRef.current) return
+
+    // Only auto-play if user has interacted with the page (browser autoplay policy)
+    if (!hasUserInteracted) return
 
     if (!currentTrack && queue.length > 0) {
       isAutoPlayingRef.current = true
@@ -44,7 +76,7 @@ export default function Layout({ children }: LayoutProps) {
         isAutoPlayingRef.current = false
       }, 100)
     }
-  }, [currentTrack, queue.length, playNext])
+  }, [currentTrack, queue.length, playNext, hasUserInteracted])
 
   // Panel width state with localStorage persistence
   const [flowsPanelWidth, setFlowsPanelWidth] = useState(() => {
@@ -118,6 +150,10 @@ export default function Layout({ children }: LayoutProps) {
 
             const { setQueue } = usePlayerStore.getState()
             setQueue(queue)
+          } else if (message.type === 'calendar_update') {
+            // Calendar was updated (event added/modified/deleted)
+            console.log('Calendar update received, refreshing...')
+            queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
           }
         } catch (e) {
           console.error('WebSocket message error:', e)
@@ -143,11 +179,12 @@ export default function Layout({ children }: LayoutProps) {
         wsRef.current.close()
       }
     }
-  }, [isRTL, playNow])
+  }, [isRTL, playNow, queryClient])
 
   const navItems = [
     { path: '/', icon: LayoutDashboard, label: t('nav.dashboard') },
     { path: '/calendar', icon: CalendarDays, label: isRTL ? 'לוח שידורים' : 'Broadcast Schedule' },
+    { path: '/actions-studio', icon: Blocks, label: isRTL ? 'סטודיו פעולות' : 'Actions Studio' },
     { path: '/library', icon: Library, label: t('nav.library') },
     { path: '/upload', icon: Upload, label: t('nav.upload') },
     { path: '/agent', icon: Bot, label: t('nav.agent') },
@@ -156,6 +193,12 @@ export default function Layout({ children }: LayoutProps) {
 
   const toggleLanguage = () => {
     i18n.changeLanguage(i18n.language === 'en' ? 'he' : 'en')
+  }
+
+  const toggleNav = () => {
+    const newValue = !navCollapsed
+    setNavCollapsed(newValue)
+    localStorage.setItem('navCollapsed', String(newValue))
   }
 
   // Resize handlers for Flows panel
@@ -259,22 +302,36 @@ export default function Layout({ children }: LayoutProps) {
         style={{ marginLeft: flowsCollapsed ? '48px' : `${flowsPanelWidth}px` }}
       >
         {/* Sidebar Navigation - Right side for English, Left side for Hebrew */}
-        <nav className={`relative z-10 w-64 glass-sidebar flex flex-col flex-shrink-0 ${isRTL ? '' : 'order-last'}`}>
-          {/* Logo */}
-          <div className="p-4 border-b border-white/5">
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <img
-                  src="/Logo.jpg"
-                  alt="Israeli Radio Manager"
-                  className="w-12 h-12"
-                />
-                <div className="absolute inset-0 bg-primary-500/20 rounded-full blur-xl -z-10" />
+        <nav className={`relative z-10 glass-sidebar flex flex-col flex-shrink-0 transition-all duration-300 ${navCollapsed ? 'w-16' : 'w-64'} ${isRTL ? '' : 'order-last'}`}>
+          {/* Logo & Collapse Toggle */}
+          <div className={`border-b border-white/5 ${navCollapsed ? 'p-2' : 'p-4'}`}>
+            <div className={`flex items-center ${navCollapsed ? 'flex-col gap-2' : 'justify-between'}`}>
+              <div className={`flex items-center ${navCollapsed ? '' : 'gap-3'}`}>
+                <div className="relative">
+                  <img
+                    src="/Logo.jpg"
+                    alt="Israeli Radio Manager"
+                    className={`transition-all duration-300 ${navCollapsed ? 'w-10 h-10' : 'w-12 h-12'}`}
+                  />
+                  <div className="absolute inset-0 bg-primary-500/20 rounded-full blur-xl -z-10" />
+                </div>
+                {!navCollapsed && (
+                  <div>
+                    <h1 className="font-bold text-dark-100">{t('app.name')}</h1>
+                    <p className="text-xs text-dark-400">{t('app.tagline')}</p>
+                  </div>
+                )}
               </div>
-              <div>
-                <h1 className="font-bold text-dark-100">{t('app.name')}</h1>
-                <p className="text-xs text-dark-400">{t('app.tagline')}</p>
-              </div>
+              <button
+                onClick={toggleNav}
+                className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+              >
+                {navCollapsed ? (
+                  isRTL ? <ChevronLeft size={18} /> : <ChevronRight size={18} />
+                ) : (
+                  isRTL ? <ChevronRight size={18} /> : <ChevronLeft size={18} />
+                )}
+              </button>
             </div>
           </div>
 
@@ -287,29 +344,31 @@ export default function Layout({ children }: LayoutProps) {
                 <Link
                   key={item.path}
                   to={item.path}
-                  className={`nav-item ${isActive ? 'nav-item-active' : ''}`}
+                  className={`nav-item ${isActive ? 'nav-item-active' : ''} ${navCollapsed ? 'justify-center px-2' : ''}`}
+                  title={navCollapsed ? item.label : undefined}
                 >
                   <Icon size={20} className={isActive ? 'text-primary-400' : ''} />
-                  <span className="font-medium">{item.label}</span>
+                  {!navCollapsed && <span className="font-medium">{item.label}</span>}
                 </Link>
               )
             })}
           </div>
 
           {/* Language Toggle */}
-          <div className="p-4 border-t border-white/5">
+          <div className={`border-t border-white/5 ${navCollapsed ? 'p-2' : 'p-4'}`}>
             <button
               onClick={toggleLanguage}
-              className="flex items-center gap-2 text-dark-400 hover:text-dark-100 transition-colors"
+              className={`flex items-center text-dark-400 hover:text-dark-100 transition-colors ${navCollapsed ? 'justify-center w-full p-2' : 'gap-2'}`}
+              title={navCollapsed ? (i18n.language === 'en' ? 'עברית' : 'English') : undefined}
             >
               <Globe size={20} />
-              <span>{i18n.language === 'en' ? 'עברית' : 'English'}</span>
+              {!navCollapsed && <span>{i18n.language === 'en' ? 'עברית' : 'English'}</span>}
             </button>
           </div>
         </nav>
 
         {/* Main Content */}
-        <main dir={isRTL ? 'rtl' : 'ltr'} className="relative z-10 flex-1 overflow-auto flex flex-col min-w-0">
+        <main dir={isRTL ? 'rtl' : 'ltr'} className="relative flex-1 overflow-auto flex flex-col min-w-0">
           <div className="flex-1 overflow-auto">
             {children}
           </div>

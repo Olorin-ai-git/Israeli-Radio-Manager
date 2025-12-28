@@ -1,5 +1,6 @@
 """Auto Flows router for managing automated workflows."""
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -1114,15 +1115,21 @@ async def run_flow(request: Request, flow_id: str):
 
             # Loop until end time
             while datetime.utcnow() < end_time:
-                loop_count += 1
-                logger.info(f"Flow {flow_id} - Loop iteration {loop_count}")
+                # Check queue size before adding more content
+                queue_size = len(audio_player.get_queue()) if audio_player else 0
 
-                actions_completed = await run_flow_actions(db, flow, audio_player)
-                total_actions_completed += actions_completed
+                # Only add more content if queue is running low (less than 5 items)
+                if queue_size < 5:
+                    loop_count += 1
+                    logger.info(f"Flow {flow_id} - Loop iteration {loop_count} (queue has {queue_size} items)")
 
-                # Small delay between loops to avoid tight loop
-                import asyncio
-                await asyncio.sleep(1)
+                    actions_completed = await run_flow_actions(db, flow, audio_player)
+                    total_actions_completed += actions_completed
+                else:
+                    logger.debug(f"Flow {flow_id} - Queue has {queue_size} items, waiting...")
+
+                # Delay between checks - longer when queue is full
+                await asyncio.sleep(10 if queue_size >= 5 else 1)
 
                 # Check if we've passed the end time
                 if datetime.utcnow() >= end_time:

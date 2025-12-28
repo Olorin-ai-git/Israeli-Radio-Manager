@@ -75,6 +75,7 @@ class CalendarWatcherService:
         while self._running:
             try:
                 await self._check_upcoming_events()
+                await self._check_scheduled_tasks()
                 self._last_check = datetime.now()
             except Exception as e:
                 logger.error(f"Error in calendar watcher: {e}", exc_info=True)
@@ -94,7 +95,7 @@ class CalendarWatcherService:
         # Local time for logging and comparison
         now_local = datetime.now()
 
-        logger.info(f"Checking for events between {now_utc.strftime('%H:%M:%S')} UTC and {lookahead_utc.strftime('%H:%M:%S')} UTC (local: {now_local.strftime('%H:%M:%S')})")
+        logger.info(f"Calendar watcher checking: UTC {now_utc.strftime('%H:%M:%S')}-{lookahead_utc.strftime('%H:%M:%S')}, local time: {now_local.strftime('%Y-%m-%d %H:%M:%S')}")
 
         try:
             # Get upcoming radio-managed events (use UTC times for API)
@@ -124,19 +125,27 @@ class CalendarWatcherService:
 
                 # Parse ISO datetime (handle timezone)
                 try:
-                    # Remove timezone info for comparison (we compare local times)
-                    start_time = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-                    # Convert to local time
-                    start_local = start_time.replace(tzinfo=None)
-                    if start_time.tzinfo:
-                        # Rough conversion - just compare times
-                        start_local = datetime.fromisoformat(start_str[:19])
+                    # Parse the datetime with timezone (handle both Z suffix and +HH:MM offset)
+                    if start_str.endswith("Z"):
+                        start_time = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                    else:
+                        start_time = datetime.fromisoformat(start_str)
+
+                    # Convert to local timezone for comparison
+                    if start_time.tzinfo is not None:
+                        start_local = start_time.astimezone().replace(tzinfo=None)
+                    else:
+                        # Naive datetime - assume it's already local
+                        start_local = start_time
+
+                    logger.info(f"Event '{event.get('summary')}' start_str={start_str}, start_local={start_local}, now_local={now_local}")
                 except ValueError as e:
                     logger.warning(f"Failed to parse event time {start_str}: {e}")
                     continue
 
                 # Check if it's time to trigger (within 30 second window)
                 time_diff = (start_local - now_local).total_seconds()
+                logger.info(f"Event '{event.get('summary')}' time_diff={time_diff:.1f}s (trigger window: -30 to +30)")
 
                 if -30 <= time_diff <= 30:
                     # Time to play!
@@ -270,6 +279,91 @@ class CalendarWatcherService:
 
         except Exception as e:
             logger.error(f"Failed to trigger flow {flow_id}: {e}", exc_info=True)
+
+    async def _check_scheduled_tasks(self):
+        """Check for scheduled tasks in MongoDB that should be triggered now."""
+        now = datetime.now()
+
+        # Find pending tasks whose scheduled_time has arrived (within 30 second window)
+        window_start = now - timedelta(seconds=30)
+        window_end = now + timedelta(seconds=30)
+
+        # Also check for any pending tasks to help debug
+        pending_count = await self.db.scheduled_tasks.count_documents({"status": "pending"})
+        if pending_count > 0:
+            logger.info(f"Found {pending_count} pending scheduled tasks, checking window {window_start} to {window_end}")
+            # Log all pending tasks for debugging
+            async for task in self.db.scheduled_tasks.find({"status": "pending"}).limit(5):
+                sched_time = task.get("scheduled_time")
+                logger.info(f"  Pending task: scheduled_time={sched_time}, now={now}")
+
+        cursor = self.db.scheduled_tasks.find({
+            "status": "pending",
+            "scheduled_time": {"$gte": window_start, "$lte": window_end}
+        })
+
+        async for task in cursor:
+            task_id = str(task["_id"])
+            content_id = task.get("content_id")
+
+            if not content_id:
+                continue
+
+            # Mark as triggered to prevent duplicate execution
+            await self.db.scheduled_tasks.update_one(
+                {"_id": task["_id"]},
+                {"$set": {"status": "triggered", "triggered_at": now}}
+            )
+
+            logger.info(f"Triggering scheduled task {task_id} for content {content_id}")
+
+            try:
+                # Get content from database
+                content = await self.db.content.find_one({"_id": content_id})
+                if not content:
+                    logger.error(f"Content {content_id} not found for scheduled task")
+                    await self.db.scheduled_tasks.update_one(
+                        {"_id": task["_id"]},
+                        {"$set": {"status": "failed", "error": "Content not found"}}
+                    )
+                    continue
+
+                # Broadcast to frontend via WebSocket for browser playback
+                from app.routers.websocket import broadcast_scheduled_playback
+                content_data = {
+                    "_id": str(content["_id"]),
+                    "title": content.get("title"),
+                    "artist": content.get("artist"),
+                    "type": content.get("type"),
+                    "duration_seconds": content.get("duration_seconds"),
+                    "genre": content.get("genre"),
+                    "metadata": content.get("metadata", {}),
+                }
+                logger.info(f"Broadcasting scheduled playback from task: {content.get('title')}")
+                await broadcast_scheduled_playback(content_data)
+
+                # Mark as completed
+                await self.db.scheduled_tasks.update_one(
+                    {"_id": task["_id"]},
+                    {"$set": {"status": "completed", "completed_at": datetime.utcnow()}}
+                )
+
+                # Log the playback
+                await self.db.playback_logs.insert_one({
+                    "content_id": content_id,
+                    "type": content.get("type"),
+                    "title": content.get("title"),
+                    "started_at": datetime.utcnow(),
+                    "triggered_by": "scheduled_task",
+                    "task_id": task_id
+                })
+
+            except Exception as e:
+                logger.error(f"Failed to trigger scheduled task {task_id}: {e}", exc_info=True)
+                await self.db.scheduled_tasks.update_one(
+                    {"_id": task["_id"]},
+                    {"$set": {"status": "failed", "error": str(e)}}
+                )
 
     async def _file_exists(self, path: str) -> bool:
         """Check if a file exists."""

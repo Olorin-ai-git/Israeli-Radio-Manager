@@ -9,6 +9,8 @@ from enum import Enum
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 
+from app.routers.websocket import broadcast_calendar_update
+
 logger = logging.getLogger(__name__)
 
 
@@ -159,6 +161,18 @@ class TaskExecutor:
         self._calendar_service = calendar_service
         self._scheduled_tasks: List[Dict[str, Any]] = []
 
+    @staticmethod
+    def _to_regex_string(value: Any) -> Optional[str]:
+        """
+        Safely convert a value to a string for use in MongoDB $regex queries.
+        Returns None if the value is None or empty after conversion.
+        """
+        if value is None:
+            return None
+        # Convert to string and strip whitespace
+        str_value = str(value).strip()
+        return str_value if str_value else None
+
     async def execute_task(self, task: ParsedTask) -> Dict[str, Any]:
         """
         Execute a parsed task.
@@ -238,8 +252,8 @@ class TaskExecutor:
         from app.routers.websocket import broadcast_scheduled_playback
         import random
 
-        title = task.parameters.get("title")
-        artist = task.parameters.get("artist")
+        title = self._to_regex_string(task.parameters.get("title"))
+        artist = self._to_regex_string(task.parameters.get("artist"))
         content_type = task.parameters.get("content_type", "song")
 
         logger.info(f"Play request - title: {title}, artist: {artist}")
@@ -365,37 +379,74 @@ class TaskExecutor:
 
     async def _execute_schedule(self, task: ParsedTask) -> Dict[str, Any]:
         """Schedule content for a specific time."""
-        title = task.parameters.get("title")
-        scheduled_time = task.parameters.get("time")
+        title = self._to_regex_string(task.parameters.get("title"))
+        artist = self._to_regex_string(task.parameters.get("artist"))
+        time_str = self._to_regex_string(task.parameters.get("time"))
+        date_str = self._to_regex_string(task.parameters.get("date"))
 
-        if not scheduled_time:
+        if not time_str:
             return {
                 "success": False,
                 "message": "❌ לא ציינת שעה. לדוגמה: 'תזמן את השיר לשעה 16:00'",
                 "message_en": "No time specified. Example: 'Schedule the song for 4:00 PM'"
             }
 
-        # Find the content
-        content = await self.db.content.find_one({
-            "$or": [
-                {"title": {"$regex": title, "$options": "i"}},
-                {"title_he": {"$regex": title, "$options": "i"}}
-            ],
-            "active": True
-        })
-
-        if content:
-            await self._schedule_for_later(content, scheduled_time)
+        # Parse the time string into a datetime object
+        scheduled_time = self._parse_datetime(date_str, time_str)
+        if not scheduled_time:
             return {
-                "success": True,
-                "message": f"✅ '{content['title']}' תוזמן לשעה {scheduled_time.strftime('%H:%M')}",
-                "message_en": f"'{content['title']}' scheduled for {scheduled_time.strftime('%H:%M')}"
+                "success": False,
+                "message": f"❌ לא הצלחתי לפרסר את השעה: {time_str}",
+                "message_en": f"Couldn't parse time: {time_str}"
             }
 
+        # Build query for finding content
+        query: Dict[str, Any] = {"active": True}
+        if title:
+            query["$or"] = [
+                {"title": {"$regex": title, "$options": "i"}},
+                {"title_he": {"$regex": title, "$options": "i"}}
+            ]
+        if artist:
+            query["artist"] = {"$regex": artist, "$options": "i"}
+
+        # Find the content - if only artist specified, pick a random song
+        if artist and not title:
+            import random
+            songs = await self.db.content.find(query).to_list(50)
+            content = random.choice(songs) if songs else None
+        else:
+            content = await self.db.content.find_one(query)
+
+        if content:
+            # Schedule internally for playback
+            await self._schedule_for_later(content, scheduled_time)
+
+            # Also add to Google Calendar if available
+            calendar_msg = ""
+            if self._calendar_service:
+                try:
+                    event = await self._calendar_service.schedule_content(
+                        content=content,
+                        start_time=scheduled_time
+                    )
+                    if event:
+                        calendar_msg = " ונוסף ליומן"
+                        await broadcast_calendar_update("created")
+                except Exception as e:
+                    logger.warning(f"Failed to add to calendar: {e}")
+
+            return {
+                "success": True,
+                "message": f"✅ '{content['title']}' תוזמן לשעה {scheduled_time.strftime('%H:%M')}{calendar_msg}",
+                "message_en": f"'{content['title']}' scheduled for {scheduled_time.strftime('%H:%M')}{' and added to calendar' if calendar_msg else ''}"
+            }
+
+        search_term = title or artist or "unknown"
         return {
             "success": False,
-            "message": f"❌ לא מצאתי תוכן בשם '{title}'",
-            "message_en": f"Couldn't find content named '{title}'"
+            "message": f"❌ לא מצאתי תוכן: '{search_term}'",
+            "message_en": f"Couldn't find content: '{search_term}'"
         }
 
     async def _execute_skip(self, task: ParsedTask) -> Dict[str, Any]:
@@ -438,7 +489,14 @@ class TaskExecutor:
 
     async def _execute_add_queue(self, task: ParsedTask) -> Dict[str, Any]:
         """Add content to queue."""
-        title = task.parameters.get("title")
+        title = self._to_regex_string(task.parameters.get("title"))
+
+        if not title:
+            return {
+                "success": False,
+                "message": "❌ לא ציינת שם שיר",
+                "message_en": "No song title specified"
+            }
 
         content = await self.db.content.find_one({
             "$or": [
@@ -496,7 +554,7 @@ class TaskExecutor:
         from app.routers.websocket import broadcast_scheduled_playback
         import random
 
-        genre = task.parameters.get("genre")
+        genre = self._to_regex_string(task.parameters.get("genre"))
 
         # Map Hebrew genre names to English equivalents
         genre_map = {
@@ -646,7 +704,14 @@ class TaskExecutor:
 
     async def _execute_search(self, task: ParsedTask) -> Dict[str, Any]:
         """Search for content."""
-        query_text = task.parameters.get("query", "")
+        query_text = self._to_regex_string(task.parameters.get("query")) or ""
+
+        if not query_text:
+            return {
+                "success": False,
+                "message": "❌ לא ציינת מה לחפש",
+                "message_en": "No search query specified"
+            }
 
         results = await self.db.content.find({
             "$or": [
@@ -686,6 +751,8 @@ class TaskExecutor:
 
     async def _find_similar(self, search_term: str, limit: int = 5, search_type: str = "title") -> List[Dict]:
         """Find similar content or artists."""
+        # Ensure search_term is a string for regex queries
+        search_term = self._to_regex_string(search_term) if search_term else None
         if not search_term:
             # Return random artists from library
             pipeline = [
@@ -820,7 +887,7 @@ class TaskExecutor:
                 "message_en": "Google Calendar service not configured"
             }
 
-        title = task.parameters.get("title")
+        title = self._to_regex_string(task.parameters.get("title"))
         date_str = task.parameters.get("date")
         time_str = task.parameters.get("time")
 
@@ -898,6 +965,9 @@ class TaskExecutor:
                 reminders=reminders,
                 description=description
             )
+
+            # Notify frontend to refresh calendar
+            await broadcast_calendar_update("created")
 
             event_link = event.get("htmlLink", "")
             recurrence_text = ""
@@ -1028,6 +1098,9 @@ class TaskExecutor:
 
             event = await self._calendar_service.update_event(event_id, **update_params)
 
+            # Notify frontend to refresh calendar
+            await broadcast_calendar_update("updated")
+
             return {
                 "success": True,
                 "message": f"✅ האירוע עודכן בהצלחה",
@@ -1064,6 +1137,9 @@ class TaskExecutor:
             success = await self._calendar_service.delete_event(event_id)
 
             if success:
+                # Notify frontend to refresh calendar
+                await broadcast_calendar_update("deleted")
+
                 return {
                     "success": True,
                     "message": "✅ האירוע נמחק מהיומן",
@@ -1440,7 +1516,7 @@ Return the JSON array:"""
 
     async def _execute_run_flow(self, task: ParsedTask) -> Dict[str, Any]:
         """Run/execute a flow."""
-        flow_name = task.parameters.get("name")
+        flow_name = self._to_regex_string(task.parameters.get("name"))
         flow_id = task.parameters.get("flow_id")
 
         # Find the flow
@@ -1558,7 +1634,7 @@ Return the JSON array:"""
 
     async def _execute_update_flow(self, task: ParsedTask) -> Dict[str, Any]:
         """Update a flow."""
-        flow_name = task.parameters.get("name")
+        flow_name = self._to_regex_string(task.parameters.get("name"))
         flow_id = task.parameters.get("flow_id")
 
         if not flow_name and not flow_id:
@@ -1571,13 +1647,15 @@ Return the JSON array:"""
         # Find flow
         if flow_id:
             flow = await self.db.flows.find_one({"_id": ObjectId(flow_id)})
-        else:
+        elif flow_name:
             flow = await self.db.flows.find_one({
                 "$or": [
                     {"name": {"$regex": flow_name, "$options": "i"}},
                     {"name_he": {"$regex": flow_name, "$options": "i"}}
                 ]
             })
+        else:
+            flow = None
 
         if not flow:
             return {
@@ -1606,7 +1684,7 @@ Return the JSON array:"""
 
     async def _execute_delete_flow(self, task: ParsedTask) -> Dict[str, Any]:
         """Delete a flow."""
-        flow_name = task.parameters.get("name")
+        flow_name = self._to_regex_string(task.parameters.get("name"))
         flow_id = task.parameters.get("flow_id")
 
         if not flow_name and not flow_id:
@@ -1619,15 +1697,17 @@ Return the JSON array:"""
         # Find flow
         if flow_id:
             result = await self.db.flows.delete_one({"_id": ObjectId(flow_id)})
-        else:
+        elif flow_name:
             result = await self.db.flows.delete_one({
                 "$or": [
                     {"name": {"$regex": flow_name, "$options": "i"}},
                     {"name_he": {"$regex": flow_name, "$options": "i"}}
                 ]
             })
+        else:
+            result = None
 
-        if result.deleted_count > 0:
+        if result and result.deleted_count > 0:
             return {
                 "success": True,
                 "message": f"🗑️ הזרימה נמחקה",
@@ -1642,7 +1722,7 @@ Return the JSON array:"""
 
     async def _execute_toggle_flow(self, task: ParsedTask) -> Dict[str, Any]:
         """Toggle flow status (enable/disable)."""
-        flow_name = task.parameters.get("name")
+        flow_name = self._to_regex_string(task.parameters.get("name"))
         flow_id = task.parameters.get("flow_id")
 
         # Find flow

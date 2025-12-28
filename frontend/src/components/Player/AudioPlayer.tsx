@@ -13,8 +13,6 @@ import {
   ListMusic,
   X,
   Trash2,
-  ChevronUp,
-  ChevronDown,
   GripVertical
 } from 'lucide-react'
 import {
@@ -27,7 +25,6 @@ import {
   DragEndEvent
 } from '@dnd-kit/core'
 import {
-  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
@@ -166,9 +163,13 @@ export default function AudioPlayer({
   const [isMuted, setIsMuted] = useState(false)
   const [queueExpanded, setQueueExpanded] = useState(false)
   const [isFading, setIsFading] = useState(false)
+  const [pendingAutoplay, setPendingAutoplay] = useState(false) // Track waiting for user interaction
 
-  const { queue, removeFromQueue, clearQueue, reorderQueue } = usePlayerStore()
+  const { queue, removeFromQueue, clearQueue, reorderQueue, hasUserInteracted, setUserInteracted } = usePlayerStore()
   const isRTL = i18n.language === 'he'
+
+  // Show if we have queued items but user hasn't interacted yet
+  const showClickToPlay = !track && queue.length > 0 && !hasUserInteracted
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -310,12 +311,24 @@ export default function AudioPlayer({
         audioRef.current.play().catch((error) => {
           console.error('Playback error:', error)
           setIsLoading(false)
-          setHasError(true)
           needsFadeInRef.current = false // Don't fade in if error
-          const errorMsg = isRTL
-            ? `לא ניתן לנגן: ${track.title}. הקובץ לא נמצא.`
-            : `Cannot play: ${track.title}. File not found.`
-          toast.error(errorMsg)
+
+          // Check if it's an autoplay policy error
+          if (error.name === 'NotAllowedError') {
+            // Browser blocked autoplay - show visual indicator
+            setPendingAutoplay(true)
+            const errorMsg = isRTL
+              ? `לחץ על ▶ כדי לנגן: ${track.title}`
+              : `Click ▶ to play: ${track.title}`
+            toast.info(errorMsg)
+            // Don't mark as error - user can click play manually
+          } else {
+            setHasError(true)
+            const errorMsg = isRTL
+              ? `לא ניתן לנגן: ${track.title}. הקובץ לא נמצא.`
+              : `Cannot play: ${track.title}. File not found.`
+            toast.error(errorMsg)
+          }
         })
       }
 
@@ -547,6 +560,7 @@ export default function AudioPlayer({
           onLoadedMetadata={handleLoadedMetadata}
           onPlay={() => {
             setIsPlaying(true)
+            setPendingAutoplay(false) // Clear pending state when playback starts
             // Fade in on resume from pause (not for new tracks - those use onCanPlay)
             if (!isFadingOutRef.current && audioRef.current && !needsFadeInRef.current) {
               fadeIn()
@@ -569,25 +583,52 @@ export default function AudioPlayer({
 
         <div className="flex items-center gap-4">
         {/* Track Info */}
-        <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div
+          className={`flex items-center gap-3 flex-1 min-w-0 ${showClickToPlay ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+          onClick={showClickToPlay ? () => setUserInteracted() : undefined}
+        >
           <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
-            hasError ? 'bg-red-500/20' : 'bg-primary-500/20'
+            hasError ? 'bg-red-500/20' : (showClickToPlay || pendingAutoplay) ? 'bg-yellow-500/20 animate-pulse' : 'bg-primary-500/20'
           }`}>
             {isLoading ? (
               <Loader2 size={24} className="text-primary-400 animate-spin" />
             ) : hasError ? (
               <AlertCircle size={24} className="text-red-400" />
+            ) : (showClickToPlay || pendingAutoplay) ? (
+              <Play size={24} className="text-yellow-400" />
             ) : (
               <Music size={24} className="text-primary-400" />
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="font-medium text-dark-100 truncate" dir="auto">
-              {track?.title || (isRTL ? 'לא מנגן' : 'Not Playing')}
-            </p>
-            <p className="text-sm text-dark-400 truncate" dir="auto">
-              {track?.artist || (track?.type === 'commercial' ? (isRTL ? 'פרסומת' : 'Commercial') : '')}
-            </p>
+            {showClickToPlay ? (
+              <>
+                <p className="font-medium text-yellow-400 truncate">
+                  {isRTL ? 'לחץ כדי להתחיל' : 'Click to start'}
+                </p>
+                <p className="text-sm text-dark-400 truncate">
+                  {isRTL ? `${queue.length} פריטים בתור` : `${queue.length} items in queue`}
+                </p>
+              </>
+            ) : pendingAutoplay && track ? (
+              <>
+                <p className="font-medium text-yellow-400 truncate" dir="auto">
+                  {track.title}
+                </p>
+                <p className="text-sm text-yellow-500/80 truncate">
+                  {isRTL ? '⏵ לחץ על הכפתור לניגון' : '⏵ Click play to start'}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-medium text-dark-100 truncate" dir="auto">
+                  {track?.title || (isRTL ? 'לא מנגן' : 'Not Playing')}
+                </p>
+                <p className="text-sm text-dark-400 truncate" dir="auto">
+                  {track?.artist || (track?.type === 'commercial' ? (isRTL ? 'פרסומת' : 'Commercial') : '')}
+                </p>
+              </>
+            )}
           </div>
         </div>
 
@@ -604,7 +645,11 @@ export default function AudioPlayer({
           <button
             onClick={handlePlayPause}
             disabled={!track}
-            className="p-3 bg-primary-500 hover:bg-primary-600 rounded-full transition-colors disabled:opacity-30"
+            className={`p-3 rounded-full transition-colors disabled:opacity-30 ${
+              pendingAutoplay
+                ? 'bg-yellow-500 hover:bg-yellow-600 animate-pulse shadow-lg shadow-yellow-500/50'
+                : 'bg-primary-500 hover:bg-primary-600'
+            }`}
           >
             {isPlaying ? (
               <Pause size={24} className="text-white" />

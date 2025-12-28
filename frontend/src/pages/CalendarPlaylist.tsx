@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -10,7 +10,6 @@ import {
   Megaphone,
   Clock,
   Trash2,
-  Edit,
   Plus,
   Loader2,
   X,
@@ -18,7 +17,6 @@ import {
   Repeat
 } from 'lucide-react'
 import { api } from '../services/api'
-import { usePlayerStore } from '../store/playerStore'
 
 interface CalendarEvent {
   id: string
@@ -60,9 +58,8 @@ const ContentTypeIcon = ({ type }: { type?: string }) => {
 }
 
 export default function CalendarPlaylist() {
-  const { t, i18n } = useTranslation()
+  const { i18n } = useTranslation()
   const queryClient = useQueryClient()
-  const { play } = usePlayerStore()
   const isRTL = i18n.language === 'he'
 
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
@@ -82,7 +79,6 @@ export default function CalendarPlaylist() {
   const [selectedFlowId, setSelectedFlowId] = useState<string>('')
   const [contentTypeFilter, setContentTypeFilter] = useState<string>('all')
   const [genreFilter, setGenreFilter] = useState<string>('all')
-  const [preselectedDate, setPreselectedDate] = useState<string>('')
   const [scheduleRecurrence, setScheduleRecurrence] = useState<'none' | 'daily' | 'weekly'>('none')
   const [scheduleDaysOfWeek, setScheduleDaysOfWeek] = useState<number[]>([0, 1, 2, 3, 4, 5, 6])
 
@@ -151,6 +147,7 @@ export default function CalendarPlaylist() {
     mutationFn: (data: any) => api.createCalendarEvent(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
+      refetch()
       setShowScheduleModal(false)
       setSelectedContentId('')
       setSelectedFlowId('')
@@ -209,27 +206,8 @@ export default function CalendarPlaylist() {
     return date.toDateString() === today.toDateString()
   }
 
-  const handleEventClick = async (event: CalendarEvent) => {
+  const handleEventClick = (event: CalendarEvent) => {
     setSelectedEvent(event)
-
-    // Try to play the content
-    const contentId = event.extendedProperties?.private?.radio_content_id
-    if (contentId) {
-      try {
-        const content = await api.getContentById(contentId)
-        if (content) {
-          play({
-            _id: content._id,
-            title: content.title,
-            artist: content.artist,
-            type: content.type,
-            duration_seconds: content.duration_seconds,
-          })
-        }
-      } catch (e) {
-        console.error('Failed to get content for event', e)
-      }
-    }
   }
 
   const handleScheduleContent = (e: React.FormEvent<HTMLFormElement>) => {
@@ -464,7 +442,9 @@ export default function CalendarPlaylist() {
                               {formatTime(event.start.dateTime)}
                             </span>
                             {isRecurring && (
-                              <Repeat size={12} className="text-primary-400" title="Recurring event" />
+                              <span title="Recurring event">
+                                <Repeat size={12} className="text-primary-400" />
+                              </span>
                             )}
                           </div>
                           <p className="text-sm text-dark-100 truncate" dir="auto">
@@ -483,7 +463,7 @@ export default function CalendarPlaylist() {
 
       {/* Event Details Sidebar */}
       {selectedEvent && (
-        <div className="fixed right-0 top-0 h-full w-80 glass-sidebar z-50 p-6">
+        <div className="fixed right-0 top-0 h-full w-80 glass-sidebar z-[100] p-6 shadow-2xl">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-semibold text-dark-100">
               {isRTL ? 'פרטי אירוע' : 'Event Details'}
@@ -554,7 +534,7 @@ export default function CalendarPlaylist() {
 
       {/* Schedule Modal */}
       {showScheduleModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center">
           <div className="glass-card p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-semibold text-dark-100">

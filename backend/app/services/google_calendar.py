@@ -205,23 +205,22 @@ class GoogleCalendarService:
         """
         self._ensure_authenticated()
 
-        # Auto-detect timezone if not provided
+        # Auto-detect timezone if not provided - use local system timezone
         if not timezone:
-            import time
-            import os
-            # Try to get system timezone
-            if hasattr(time, 'tzname') and time.tzname[0]:
-                # Get timezone from environment or system
-                timezone = os.environ.get('TZ')
-                if not timezone:
-                    # Fallback to UTC offset format
-                    offset_hours = -time.timezone / 3600
-                    if offset_hours >= 0:
-                        timezone = f"Etc/GMT-{int(offset_hours)}"
+            try:
+                import os
+                # On macOS/Linux, read the timezone from /etc/localtime symlink
+                if os.path.islink('/etc/localtime'):
+                    tz_path = os.readlink('/etc/localtime')
+                    # Extract timezone name from path like /var/db/timezone/zoneinfo/Asia/Jerusalem
+                    if 'zoneinfo/' in tz_path:
+                        timezone = tz_path.split('zoneinfo/')[-1]
                     else:
-                        timezone = f"Etc/GMT+{int(-offset_hours)}"
-            else:
-                timezone = "UTC"
+                        timezone = 'UTC'
+                else:
+                    timezone = 'UTC'
+            except:
+                timezone = 'UTC'
 
         # Default end time to start + 1 hour
         if not end_time:
@@ -299,6 +298,7 @@ class GoogleCalendarService:
             event["attendees"] = [{"email": email} for email in attendees]
 
         try:
+            logger.info(f"Creating calendar event with body: {event}")
             result = self._service.events().insert(
                 calendarId=self._calendar_id,
                 body=event,
@@ -306,6 +306,7 @@ class GoogleCalendarService:
             ).execute()
 
             logger.info(f"Created calendar event: {result.get('id')} - {summary}")
+            logger.info(f"Event start: {result.get('start')}, end: {result.get('end')}")
             return result
 
         except HttpError as e:
@@ -393,16 +394,19 @@ class GoogleCalendarService:
                 start = kwargs["start_time"]
                 timezone = kwargs.get("timezone")
                 if not timezone:
-                    # Auto-detect system timezone
-                    import time
-                    import os
-                    timezone = os.environ.get('TZ')
-                    if not timezone:
-                        offset_hours = -time.timezone / 3600
-                        if offset_hours >= 0:
-                            timezone = f"Etc/GMT-{int(offset_hours)}"
+                    # Auto-detect local system timezone
+                    try:
+                        import os
+                        if os.path.islink('/etc/localtime'):
+                            tz_path = os.readlink('/etc/localtime')
+                            if 'zoneinfo/' in tz_path:
+                                timezone = tz_path.split('zoneinfo/')[-1]
+                            else:
+                                timezone = 'UTC'
                         else:
-                            timezone = f"Etc/GMT+{int(-offset_hours)}"
+                            timezone = 'UTC'
+                    except:
+                        timezone = 'UTC'
                 if kwargs.get("all_day"):
                     event["start"] = {"date": start.strftime("%Y-%m-%d")}
                 else:
@@ -414,16 +418,19 @@ class GoogleCalendarService:
                 end = kwargs["end_time"]
                 timezone = kwargs.get("timezone")
                 if not timezone:
-                    # Auto-detect system timezone
-                    import time
-                    import os
-                    timezone = os.environ.get('TZ')
-                    if not timezone:
-                        offset_hours = -time.timezone / 3600
-                        if offset_hours >= 0:
-                            timezone = f"Etc/GMT-{int(offset_hours)}"
+                    # Auto-detect local system timezone
+                    try:
+                        import os
+                        if os.path.islink('/etc/localtime'):
+                            tz_path = os.readlink('/etc/localtime')
+                            if 'zoneinfo/' in tz_path:
+                                timezone = tz_path.split('zoneinfo/')[-1]
+                            else:
+                                timezone = 'UTC'
                         else:
-                            timezone = f"Etc/GMT+{int(-offset_hours)}"
+                            timezone = 'UTC'
+                    except:
+                        timezone = 'UTC'
                 if kwargs.get("all_day"):
                     event["end"] = {"date": end.strftime("%Y-%m-%d")}
                 else:

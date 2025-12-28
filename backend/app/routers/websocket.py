@@ -216,3 +216,13 @@ async def broadcast_queue_update(queue: list):
         "data": queue,
         "timestamp": datetime.utcnow().isoformat()
     }, channel="playback")
+
+
+async def broadcast_calendar_update(action: str = "updated"):
+    """Broadcast that calendar was updated (event added/modified/deleted)."""
+    logger.info(f"Broadcasting calendar_update ({action}) to {len(manager.active_connections)} clients")
+    await manager.broadcast({
+        "type": "calendar_update",
+        "action": action,
+        "timestamp": datetime.utcnow().isoformat()
+    }, channel="all")
