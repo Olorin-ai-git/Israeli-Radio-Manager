@@ -39,6 +39,9 @@ class TaskType(str, Enum):
     UPDATE_FLOW = "update_flow"             # Update a flow
     DELETE_FLOW = "delete_flow"             # Delete a flow
     TOGGLE_FLOW = "toggle_flow"             # Enable/disable a flow
+    # Library queries
+    LIST_ARTISTS = "list_artists"           # List all artists in the library
+    LIST_GENRES = "list_genres"             # List available genres
     UNKNOWN = "unknown"                     # Unknown task
 
 
@@ -211,6 +214,10 @@ class TaskExecutor:
                 return await self._execute_delete_flow(task)
             elif task.task_type == TaskType.TOGGLE_FLOW:
                 return await self._execute_toggle_flow(task)
+            elif task.task_type == TaskType.LIST_ARTISTS:
+                return await self._execute_list_artists(task)
+            elif task.task_type == TaskType.LIST_GENRES:
+                return await self._execute_list_genres(task)
             else:
                 return {
                     "success": False,
@@ -320,21 +327,40 @@ class TaskExecutor:
                     "content": content
                 }
         else:
-            # Search suggestions
-            search_term = title or artist or ""
-            suggestions = await self._find_similar(search_term)
+            # Search suggestions - use artist search type when looking for artists
             if artist and not title:
+                suggestions = await self._find_similar(artist, limit=5, search_type="artist")
+                # Format artists as readable list
+                if suggestions:
+                    artist_list = ", ".join([s["artist"] for s in suggestions])
+                    return {
+                        "success": False,
+                        "message": f"❌ לא מצאתי שירים של '{artist}'. האמנים הזמינים: {artist_list}",
+                        "message_en": f"Couldn't find any songs by '{artist}'. Available artists: {artist_list}",
+                        "suggestions": suggestions
+                    }
                 return {
                     "success": False,
-                    "message": f"❌ לא מצאתי שירים של '{artist}'",
-                    "message_en": f"Couldn't find any songs by '{artist}'",
+                    "message": f"❌ לא מצאתי שירים של '{artist}'. אין אמנים בספרייה.",
+                    "message_en": f"Couldn't find any songs by '{artist}'. No artists in library.",
+                    "suggestions": []
+                }
+
+            search_term = title or ""
+            suggestions = await self._find_similar(search_term)
+            if suggestions:
+                suggestion_list = ", ".join([f"{s['title']} - {s.get('artist', 'Unknown')}" for s in suggestions[:3]])
+                return {
+                    "success": False,
+                    "message": f"❌ לא מצאתי את '{search_term}'. אולי התכוונת ל: {suggestion_list}",
+                    "message_en": f"Couldn't find '{search_term}'. Did you mean: {suggestion_list}",
                     "suggestions": suggestions
                 }
             return {
                 "success": False,
-                "message": f"❌ לא מצאתי את '{search_term}'. האם התכוונת לאחד מאלה?",
-                "message_en": f"Couldn't find '{search_term}'. Did you mean one of these?",
-                "suggestions": suggestions
+                "message": f"❌ לא מצאתי את '{search_term}'.",
+                "message_en": f"Couldn't find '{search_term}'.",
+                "suggestions": []
             }
 
     async def _execute_schedule(self, task: ParsedTask) -> Dict[str, Any]:
@@ -658,16 +684,114 @@ class TaskExecutor:
             "requested_by": "user_chat"
         })
 
-    async def _find_similar(self, title: str, limit: int = 5) -> List[Dict]:
-        """Find similar content titles."""
-        if not title:
-            return []
+    async def _find_similar(self, search_term: str, limit: int = 5, search_type: str = "title") -> List[Dict]:
+        """Find similar content or artists."""
+        if not search_term:
+            # Return random artists from library
+            pipeline = [
+                {"$match": {"active": True, "type": "song", "artist": {"$exists": True, "$ne": ""}}},
+                {"$group": {"_id": "$artist", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}},
+                {"$limit": limit}
+            ]
+            artist_results = await self.db.content.aggregate(pipeline).to_list(limit)
+            return [{"artist": r["_id"], "song_count": r["count"]} for r in artist_results]
 
+        if search_type == "artist":
+            # Find artists with similar names
+            pipeline = [
+                {"$match": {"active": True, "type": "song", "artist": {"$exists": True, "$ne": ""}}},
+                {"$group": {"_id": "$artist", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}},
+                {"$limit": limit * 2}
+            ]
+            all_artists = await self.db.content.aggregate(pipeline).to_list(limit * 2)
+            return [{"artist": r["_id"], "song_count": r["count"]} for r in all_artists[:limit]]
+
+        # Default: find by title
         results = await self.db.content.find({
-            "active": True
+            "active": True,
+            "$or": [
+                {"title": {"$regex": search_term, "$options": "i"}},
+                {"artist": {"$regex": search_term, "$options": "i"}}
+            ]
         }).limit(limit).to_list(limit)
 
         return [{"title": r["title"], "artist": r.get("artist")} for r in results]
+
+    async def _get_all_artists(self, limit: int = 20) -> List[Dict]:
+        """Get all unique artists in the library."""
+        pipeline = [
+            {"$match": {"active": True, "type": "song", "artist": {"$exists": True, "$ne": ""}}},
+            {"$group": {"_id": "$artist", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": limit}
+        ]
+        results = await self.db.content.aggregate(pipeline).to_list(limit)
+        return [{"artist": r["_id"], "song_count": r["count"]} for r in results]
+
+    async def _execute_list_artists(self, task: ParsedTask) -> Dict[str, Any]:
+        """List all artists in the library."""
+        limit = task.parameters.get("limit", 20)
+
+        artists = await self._get_all_artists(limit=limit)
+
+        if not artists:
+            return {
+                "success": True,
+                "message": "📚 אין אמנים בספרייה עדיין.",
+                "message_en": "No artists in the library yet.",
+                "artists": []
+            }
+
+        # Format artist list
+        artist_lines = []
+        for i, a in enumerate(artists, 1):
+            artist_lines.append(f"{i}. {a['artist']} ({a['song_count']} שירים)")
+
+        artist_list_he = "\n".join(artist_lines)
+        artist_list_en = ", ".join([a['artist'] for a in artists])
+
+        return {
+            "success": True,
+            "message": f"🎤 האמנים בספרייה:\n{artist_list_he}",
+            "message_en": f"Artists in library: {artist_list_en}",
+            "artists": artists
+        }
+
+    async def _execute_list_genres(self, task: ParsedTask) -> Dict[str, Any]:
+        """List all genres in the library."""
+        pipeline = [
+            {"$match": {"active": True, "type": "song", "genre": {"$exists": True, "$ne": ""}}},
+            {"$group": {"_id": "$genre", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}}
+        ]
+        results = await self.db.content.aggregate(pipeline).to_list(50)
+
+        if not results:
+            return {
+                "success": True,
+                "message": "📚 אין ז'אנרים מוגדרים בספרייה.",
+                "message_en": "No genres defined in the library.",
+                "genres": []
+            }
+
+        genres = [{"genre": r["_id"], "song_count": r["count"]} for r in results]
+
+        # Format genre list
+        genre_lines = []
+        for i, g in enumerate(genres, 1):
+            genre_lines.append(f"{i}. {g['genre']} ({g['song_count']} שירים)")
+
+        genre_list_he = "\n".join(genre_lines)
+        genre_list_en = ", ".join([g['genre'] for g in genres])
+
+        return {
+            "success": True,
+            "message": f"🎵 הז'אנרים בספרייה:\n{genre_list_he}",
+            "message_en": f"Genres in library: {genre_list_en}",
+            "genres": genres
+        }
 
     # Calendar task execution methods
 
