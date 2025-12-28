@@ -59,6 +59,10 @@ class AudioPlayerService:
         self._on_track_end: Optional[Callable] = None
         self._on_error: Optional[Callable] = None
 
+        # Background task for monitoring playback
+        self._monitor_task: Optional[asyncio.Task] = None
+        self._monitoring = False
+
     def _ensure_vlc(self):
         """Ensure VLC is initialized."""
         if self._vlc_instance is None:
@@ -141,6 +145,10 @@ class AudioPlayerService:
             self._current_track = track
             self._state = PlaybackState.PLAYING
             self._position = 0
+
+            # Start monitoring for track end
+            if not self._monitoring:
+                self._start_monitoring()
 
             logger.info(f"Now playing: {track.title} by {track.artist}")
             return True
@@ -271,8 +279,61 @@ class AudioPlayerService:
             "queue_length": len(self._queue)
         }
 
+    def _start_monitoring(self):
+        """Start background monitoring for track end."""
+        if self._monitor_task is None or self._monitor_task.done():
+            self._monitoring = True
+            self._monitor_task = asyncio.create_task(self._monitor_playback())
+            logger.debug("Started playback monitoring")
+
+    async def _monitor_playback(self):
+        """Monitor playback and auto-play next track when current ends."""
+        while self._monitoring:
+            try:
+                if self._player and self._state == PlaybackState.PLAYING:
+                    # Check if track has ended
+                    import vlc
+                    state = self._player.get_state()
+
+                    if state == vlc.State.Ended:
+                        logger.info(f"Track ended: {self._current_track.title if self._current_track else 'Unknown'}")
+
+                        # Try to play next from queue
+                        if self._queue:
+                            next_item = self._queue.pop(0)
+                            logger.info(f"Auto-playing next from queue: {next_item.track.title}")
+                            await self.play(next_item.track)
+                        else:
+                            # No more tracks in queue
+                            self._state = PlaybackState.STOPPED
+                            self._current_track = None
+
+                            # Trigger callback if set
+                            if self._on_track_end:
+                                try:
+                                    if asyncio.iscoroutinefunction(self._on_track_end):
+                                        await self._on_track_end()
+                                    else:
+                                        self._on_track_end()
+                                except Exception as e:
+                                    logger.error(f"Error in track_end callback: {e}")
+
+                await asyncio.sleep(1)  # Check every second
+
+            except Exception as e:
+                logger.error(f"Error in playback monitoring: {e}")
+                await asyncio.sleep(1)
+
+    def _stop_monitoring(self):
+        """Stop background monitoring."""
+        self._monitoring = False
+        if self._monitor_task:
+            self._monitor_task.cancel()
+        logger.debug("Stopped playback monitoring")
+
     def cleanup(self):
         """Clean up resources."""
+        self._stop_monitoring()
         if self._player:
             self._player.stop()
             self._player.release()

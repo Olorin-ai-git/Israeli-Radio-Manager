@@ -236,8 +236,33 @@ async def add_to_queue(request: Request, item: QueueItem):
     )
 
     audio_player.add_to_queue(track, item.priority)
+
+    # Auto-play if nothing is currently playing
+    if audio_player.state.value == "stopped":
+        success = await audio_player.play(track)
+        if success:
+            # Remove from queue since we're playing it now
+            audio_player.remove_from_queue(0)
+
+            # Log playback
+            await db.playback_logs.insert_one({
+                "content_id": ObjectId(item.content_id),
+                "title": content.get("title"),
+                "type": content.get("type"),
+                "started_at": datetime.utcnow(),
+                "ended_at": None,
+                "source": "queue_auto"
+            })
+
+            return {
+                "message": f"Now playing: {content.get('title')}",
+                "auto_played": True,
+                "queue_length": audio_player.queue_length
+            }
+
     return {
         "message": f"Added '{content.get('title')}' to queue",
+        "auto_played": False,
         "queue_length": audio_player.queue_length
     }
 
