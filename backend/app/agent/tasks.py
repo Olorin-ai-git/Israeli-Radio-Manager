@@ -229,13 +229,16 @@ class TaskExecutor:
         """Play specific content."""
         from app.services.audio_player import TrackInfo
         from app.routers.websocket import broadcast_scheduled_playback
+        import random
 
         title = task.parameters.get("title")
         artist = task.parameters.get("artist")
         content_type = task.parameters.get("content_type", "song")
 
+        logger.info(f"Play request - title: {title}, artist: {artist}")
+
         # Search for content
-        query: Dict[str, Any] = {"active": True}
+        query: Dict[str, Any] = {"active": True, "type": "song"}
         if title:
             query["$or"] = [
                 {"title": {"$regex": title, "$options": "i"}},
@@ -244,8 +247,18 @@ class TaskExecutor:
         if artist:
             query["artist"] = {"$regex": artist, "$options": "i"}
 
-        content = await self.db.content.find_one(query)
-        logger.info(f"Play request - title: {title}, found content: {content.get('title') if content else 'None'}")
+        # For artist-only queries (no title), find all songs and pick randomly
+        if artist and not title:
+            songs = await self.db.content.find(query).to_list(50)
+            if songs:
+                content = random.choice(songs)
+                logger.info(f"Artist-only search: found {len(songs)} songs by '{artist}', randomly selected '{content.get('title')}'")
+            else:
+                content = None
+        else:
+            content = await self.db.content.find_one(query)
+
+        logger.info(f"Play request - title: {title}, artist: {artist}, found content: {content.get('title') if content else 'None'}")
 
         if content:
             # Check if scheduled for later
@@ -308,11 +321,19 @@ class TaskExecutor:
                 }
         else:
             # Search suggestions
-            suggestions = await self._find_similar(title or "")
+            search_term = title or artist or ""
+            suggestions = await self._find_similar(search_term)
+            if artist and not title:
+                return {
+                    "success": False,
+                    "message": f"❌ לא מצאתי שירים של '{artist}'",
+                    "message_en": f"Couldn't find any songs by '{artist}'",
+                    "suggestions": suggestions
+                }
             return {
                 "success": False,
-                "message": f"❌ לא מצאתי את '{title}'. האם התכוונת לאחד מאלה?",
-                "message_en": f"Couldn't find '{title}'. Did you mean one of these?",
+                "message": f"❌ לא מצאתי את '{search_term}'. האם התכוונת לאחד מאלה?",
+                "message_en": f"Couldn't find '{search_term}'. Did you mean one of these?",
                 "suggestions": suggestions
             }
 

@@ -330,8 +330,9 @@ class OrchestratorAgent:
 
                     result = await self._task_executor.execute_task(task)
 
-                    # Add the custom response message if present
-                    if "response_message" in task_data:
+                    # Only use Claude's response_message if the task succeeded
+                    # If task failed, keep the error message from the task executor
+                    if result.get("success") and "response_message" in task_data:
                         result["message"] = task_data["response_message"]
 
                     return result
