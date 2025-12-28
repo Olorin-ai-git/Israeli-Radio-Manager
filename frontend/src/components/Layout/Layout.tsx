@@ -225,6 +225,7 @@ export default function Layout({ children }: LayoutProps) {
         <FlowsPanel
           collapsed={flowsCollapsed}
           onToggle={() => setFlowsCollapsed(!flowsCollapsed)}
+          width={flowsPanelWidth}
         />
         {/* Resize Handle */}
         {!flowsCollapsed && (

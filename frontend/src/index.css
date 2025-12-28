@@ -15,19 +15,23 @@
 }
 
 body {
-  @apply bg-dark-950 text-dark-100 font-sans;
+  @apply bg-dark-950 text-dark-100;
+  font-family: 'Inter', system-ui, sans-serif;
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
   min-height: 100vh;
 }
 
-/* RTL Support */
-[dir="rtl"] {
+/* RTL Support with Heebo font */
+[dir="rtl"],
+[dir="rtl"] * {
   direction: rtl;
   text-align: right;
+  font-family: 'Heebo', 'Arial', sans-serif;
 }
 
-[dir="rtl"] .font-sans {
-  font-family: 'Heebo', 'Arial', sans-serif;
+/* Force consistent font across all elements */
+* {
+  font-family: inherit;
 }
 
 /* Glassmorphism utilities */
