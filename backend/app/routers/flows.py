@@ -771,8 +771,9 @@ PARSING RULES:
 1. If description mentions ALTERNATING patterns (e.g., "every 30 minutes", "on the hour do X, on the half-hour do Y"), create a sequence that can loop
 2. For time-based patterns, create actions in the order they would execute in one cycle
 3. Each commercial batch mention should be a SEPARATE action
-4. After commercials, add a music action to continue playing if the description implies returning to music
-5. If "repeat" or "loop" is mentioned, the flow should loop - still create the action sequence for one cycle
+4. IMPORTANT: After EVERY commercial action, add a music action to continue playing
+5. If the last action is commercials, ALWAYS add a final music action so the loop is complete
+6. If "repeat" or "loop" is mentioned, the flow should loop - still create the action sequence for one cycle
 
 Examples:
 
@@ -790,7 +791,8 @@ Output:
   {{"action_type": "play_genre", "genre": "mixed", "duration_minutes": 30, "description": "Play music"}},
   {{"action_type": "play_commercials", "batch_number": 1, "description": "Play Batch-1 commercials (on the hour)"}},
   {{"action_type": "play_genre", "genre": "mixed", "duration_minutes": 30, "description": "Continue playing music"}},
-  {{"action_type": "play_commercials", "batch_number": 2, "description": "Play Batch-2 commercials (on half-hour)"}}
+  {{"action_type": "play_commercials", "batch_number": 2, "description": "Play Batch-2 commercials (on half-hour)"}},
+  {{"action_type": "play_genre", "genre": "mixed", "duration_minutes": 30, "description": "Continue playing music"}}
 ]
 
 Now parse this description: {text}

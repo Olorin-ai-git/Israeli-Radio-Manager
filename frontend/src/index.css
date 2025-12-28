@@ -34,6 +34,11 @@ body {
   font-family: inherit;
 }
 
+/* Ensure button and input elements also inherit fonts */
+button, input, textarea, select {
+  font-family: inherit;
+}
+
 /* Glassmorphism utilities */
 @layer components {
   .glass {
