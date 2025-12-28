@@ -503,6 +503,8 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
       start_date: recurrenceType === 'none' && startDate ? startDate : undefined,
     } : undefined
 
+    console.log('Creating flow with schedule:', schedule)
+
     createMutation.mutate({
       name,
       description,
@@ -1058,7 +1060,14 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                 <button
                   type="submit"
                   disabled={createMutation.isPending || previewActions.length === 0}
-                  className="flex-1 glass-button-primary py-2 flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="flex-1 glass-button-primary py-2 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={
+                    createMutation.isPending
+                      ? (isRTL ? 'מעבד...' : 'Processing...')
+                      : previewActions.length === 0
+                      ? (isRTL ? 'אנא הזן תיאור זרימה תקף כדי להמשיך' : 'Please enter a valid flow description to continue')
+                      : ''
+                  }
                 >
                   {createMutation.isPending ? (
                     <Loader2 size={16} className="animate-spin" />
@@ -1499,7 +1508,12 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                 <button
                   type="submit"
                   disabled={updateMutation.isPending}
-                  className="flex-1 glass-button-primary py-2 flex items-center justify-center gap-2"
+                  className="flex-1 glass-button-primary py-2 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={
+                    updateMutation.isPending
+                      ? (isRTL ? 'שומר שינויים...' : 'Saving changes...')
+                      : ''
+                  }
                 >
                   {updateMutation.isPending ? (
                     <Loader2 size={16} className="animate-spin" />

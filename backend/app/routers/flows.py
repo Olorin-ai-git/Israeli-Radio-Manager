@@ -312,6 +312,10 @@ async def create_flow(request: Request, flow_data: FlowCreate):
     """Create a new auto flow."""
     db = request.app.state.db
 
+    # Log incoming schedule data
+    if flow_data.schedule:
+        logger.info(f"Creating flow with schedule: start_time={flow_data.schedule.start_time}, end_time={flow_data.schedule.end_time}, recurrence={flow_data.schedule.recurrence}")
+
     # Check for schedule overlaps if this is a scheduled flow
     if flow_data.trigger_type == FlowTriggerType.SCHEDULED and flow_data.schedule:
         schedule_data = flow_data.schedule.model_dump()
