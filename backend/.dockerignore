@@ -1,0 +1,13 @@
+.env
+.env.*
+*.pyc
+__pycache__/
+.pytest_cache/
+cache/
+.DS_Store
+.git
+.gitignore
+poetry.lock
+pyproject.toml
+docs/
+tests/
