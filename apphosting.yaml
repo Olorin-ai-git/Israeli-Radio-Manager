@@ -1,3 +1,5 @@
+rootDirectory: backend
+
 runConfig:
   cpu: 1
   memoryMiB: 512
