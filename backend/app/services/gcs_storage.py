@@ -23,10 +23,24 @@ class GCSStorageService:
 
     def __init__(self):
         """Initialize GCS client."""
-        self.client = storage.Client()
+        self.client = None
+        self.bucket = None
         self.bucket_name = settings.gcs_bucket_name
-        self.bucket = self.client.bucket(self.bucket_name)
         self.signed_url_expiry = timedelta(hours=settings.gcs_signed_url_expiry_hours)
+        self._initialized = False
+
+        try:
+            self.client = storage.Client()
+            self.bucket = self.client.bucket(self.bucket_name)
+            self._initialized = True
+            logger.info(f"GCS service initialized with bucket: {self.bucket_name}")
+        except Exception as e:
+            logger.warning(f"GCS service initialization failed: {e}. GCS features will be unavailable.")
+
+    @property
+    def is_available(self) -> bool:
+        """Check if GCS is available."""
+        return self._initialized and self.client is not None and self.bucket is not None
 
     def _get_blob_path(self, content_type: str, filename: str) -> str:
         """
@@ -61,6 +75,10 @@ class GCSStorageService:
         Returns:
             GCS path (gs://bucket/path) or None if failed
         """
+        if not self.is_available:
+            logger.warning("GCS not available - skipping upload")
+            return None
+
         try:
             blob_path = self._get_blob_path(content_type, filename)
             blob = self.bucket.blob(blob_path)
@@ -101,6 +119,9 @@ class GCSStorageService:
         Returns:
             Signed URL valid for configured expiry time, or None if failed
         """
+        if not self.is_available:
+            return None
+
         try:
             # Extract blob path from gs:// URL if needed
             if gcs_path.startswith('gs://'):
@@ -138,6 +159,9 @@ class GCSStorageService:
         Returns:
             True if deleted, False otherwise
         """
+        if not self.is_available:
+            return False
+
         try:
             if gcs_path.startswith('gs://'):
                 parts = gcs_path.replace('gs://', '').split('/', 1)
@@ -158,6 +182,9 @@ class GCSStorageService:
 
     def file_exists(self, gcs_path: str) -> bool:
         """Check if a file exists in GCS."""
+        if not self.is_available:
+            return False
+
         try:
             if gcs_path.startswith('gs://'):
                 parts = gcs_path.replace('gs://', '').split('/', 1)
@@ -184,6 +211,9 @@ class GCSStorageService:
         Returns:
             List of file info dicts with name, size, updated
         """
+        if not self.is_available:
+            return []
+
         try:
             blobs = self.bucket.list_blobs(prefix=prefix)
             files = []
@@ -211,6 +241,9 @@ class GCSStorageService:
         Returns:
             New GCS path in emergency folder, or None if failed
         """
+        if not self.is_available:
+            return None
+
         try:
             if gcs_path.startswith('gs://'):
                 parts = gcs_path.replace('gs://', '').split('/', 1)

@@ -49,11 +49,11 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
             bg-dark-800/50 border border-white/10
             px-4 py-3 text-sm
             text-dark-100 placeholder-dark-400
-            focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/20 focus:outline-none
+            focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/30 focus:outline-none
             transition-all duration-200
             resize-none
             disabled:opacity-50 disabled:cursor-not-allowed
-            ${error ? 'border-red-500/50 focus:border-red-500/70 focus:ring-red-500/20' : ''}
+            ${error ? 'border-red-500/50 focus:border-red-500/70 focus:ring-red-500/30' : ''}
             ${className}
           `}
           {...props}

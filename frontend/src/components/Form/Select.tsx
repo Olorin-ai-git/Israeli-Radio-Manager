@@ -63,11 +63,11 @@ export default function Select({
             bg-dark-800/50 border border-white/10
             text-dark-100
             hover:border-white/20
-            focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/20 focus:outline-none
+            focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/30 focus:outline-none
             transition-all duration-200
             disabled:opacity-50 disabled:cursor-not-allowed
             ${error ? 'border-red-500/50 focus:border-red-500/70' : ''}
-            ${isOpen ? 'border-primary-500/50 ring-2 ring-primary-500/20' : ''}
+            ${isOpen ? 'border-primary-500/50 ring-2 ring-primary-500/30' : ''}
           `}
         >
           <span className={selectedOption ? 'text-dark-100' : 'text-dark-400'}>

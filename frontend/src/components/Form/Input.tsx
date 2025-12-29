@@ -54,14 +54,15 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
             className={`
               w-full rounded-xl backdrop-blur-sm
               text-dark-100 placeholder-dark-400
-              focus:ring-2 focus:ring-primary-500/20 focus:outline-none
+              focus:ring-2 focus:ring-primary-500/30 focus:outline-none
               transition-all duration-200
               disabled:opacity-50 disabled:cursor-not-allowed
               ${baseClasses}
               ${sizeClasses[size]}
               ${Icon ? 'pl-10' : ''}
               ${IconRight ? 'pr-10' : ''}
-              ${error ? 'border-red-500/50 focus:border-red-500/70 focus:ring-red-500/20' : ''}
+              ${error ? 'border-red-500/50 focus:border-red-500/70 focus:ring-red-500/30' : ''}
+              ${props.type === 'number' ? '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none' : ''}
               ${className}
             `}
             {...props}
