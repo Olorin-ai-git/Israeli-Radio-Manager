@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     cache_dir: str = Field(default="./cache")
     max_cache_size_gb: int = Field(default=10)
 
+    # Google Cloud Storage
+    gcs_bucket_name: str = Field(default="israeli-radio-475c9-audio")
+    gcs_signed_url_expiry_hours: int = Field(default=24)  # Signed URLs valid for 24 hours
+
     # Agent Settings
     agent_mode: Literal["full_automation", "prompt"] = Field(default="prompt")
     auto_categorize_threshold: float = Field(default=0.8)

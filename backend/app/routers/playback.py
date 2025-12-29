@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
 from pydantic import BaseModel
 from bson import ObjectId
 
@@ -625,3 +625,109 @@ async def get_album_cover(request: Request, content_id: str):
 
     # No cover found
     raise HTTPException(status_code=404, detail="No album cover found")
+
+
+# ==================== GCS Streaming Endpoints ====================
+
+@router.get("/stream/gcs/{content_id}")
+async def stream_from_gcs(request: Request, content_id: str):
+    """
+    Stream audio from Google Cloud Storage using signed URL redirect.
+
+    This is the preferred streaming method - faster and more reliable than
+    proxying through the backend.
+    """
+    db = request.app.state.db
+    content_sync = request.app.state.content_sync
+
+    # Find content in database
+    content = await db.content.find_one({"_id": ObjectId(content_id)})
+    if not content:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    # Check if content has GCS path
+    gcs_path = content.get("gcs_path")
+    if gcs_path:
+        # Generate signed URL and redirect
+        signed_url = content_sync.gcs.get_signed_url(gcs_path)
+        if signed_url:
+            return RedirectResponse(url=signed_url, status_code=302)
+
+    # Fallback to traditional streaming if no GCS path
+    return await stream_audio(request, content_id)
+
+
+@router.get("/stream/signed/{content_id}")
+async def get_signed_stream_url(request: Request, content_id: str):
+    """
+    Get a signed URL for streaming content directly from GCS.
+
+    Returns the URL instead of redirecting - useful for preloading or
+    when client needs the URL directly.
+    """
+    db = request.app.state.db
+    content_sync = request.app.state.content_sync
+
+    # Find content in database
+    content = await db.content.find_one({"_id": ObjectId(content_id)})
+    if not content:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    gcs_path = content.get("gcs_path")
+    if not gcs_path:
+        raise HTTPException(status_code=404, detail="Content not available on GCS")
+
+    signed_url = content_sync.gcs.get_signed_url(gcs_path)
+    if not signed_url:
+        raise HTTPException(status_code=500, detail="Failed to generate signed URL")
+
+    return {
+        "content_id": content_id,
+        "title": content.get("title"),
+        "url": signed_url,
+        "expires_in_hours": 24
+    }
+
+
+# ==================== Emergency Playlist Endpoints ====================
+
+@router.get("/emergency-playlist")
+async def get_emergency_playlist(request: Request):
+    """
+    Get the emergency fallback playlist.
+
+    Returns a list of pre-cached songs with signed URLs that can be used
+    when normal playback fails.
+    """
+    content_sync = request.app.state.content_sync
+
+    playlist = await content_sync.get_emergency_playlist()
+
+    if not playlist:
+        raise HTTPException(
+            status_code=404,
+            detail="Emergency playlist not configured. Run /api/playback/emergency-playlist/generate first."
+        )
+
+    return {
+        "count": len(playlist),
+        "songs": playlist
+    }
+
+
+@router.post("/emergency-playlist/generate")
+async def generate_emergency_playlist(request: Request, count: int = 20):
+    """
+    Generate or refresh the emergency playlist.
+
+    Selects random songs from the library and copies them to the
+    emergency GCS folder for fast fallback access.
+    """
+    content_sync = request.app.state.content_sync
+
+    stats = await content_sync.generate_emergency_playlist(count=count)
+
+    return {
+        "message": f"Generated emergency playlist with {stats['songs_copied']} songs",
+        "stats": stats
+    }

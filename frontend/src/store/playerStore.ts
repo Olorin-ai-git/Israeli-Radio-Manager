@@ -32,6 +32,7 @@ interface PlayerState {
   setCurrentTrack: (track: Track | null) => void
   setQueue: (queue: Track[]) => void  // Set queue from backend
   fetchQueue: () => Promise<void>     // Fetch queue from backend
+  validateQueue: (queue: Track[]) => Promise<Track[]>  // Validate queue items exist
   play: (track: Track) => void
   playNow: (track: Track) => void      // Interrupt current and play immediately
   playOrQueue: (track: Track) => void  // Play if nothing playing, else queue next
@@ -62,11 +63,41 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   fetchQueue: async () => {
     try {
       const queue = await api.getQueue()
-      set({ queue: Array.isArray(queue) ? queue : [] })
+      const validatedQueue = await get().validateQueue(Array.isArray(queue) ? queue : [])
+      set({ queue: validatedQueue })
     } catch (error) {
       console.error('Failed to fetch queue:', error)
       set({ queue: [] })
     }
+  },
+
+  // Validate queue items exist and are accessible - removes stale items
+  validateQueue: async (queue: Track[]) => {
+    if (queue.length === 0) return []
+
+    // Validate items in parallel (check if content exists)
+    const validationResults = await Promise.all(
+      queue.map(async (track) => {
+        try {
+          // Try to fetch content info - if it exists, it's valid
+          await api.getContentById(track._id)
+          return { track, valid: true }
+        } catch (error) {
+          // Content doesn't exist or is inaccessible
+          console.warn(`Queue validation: removing stale track "${track.title}" (${track._id})`)
+          return { track, valid: false }
+        }
+      })
+    )
+
+    const validTracks = validationResults.filter(r => r.valid).map(r => r.track)
+    const invalidCount = queue.length - validTracks.length
+
+    if (invalidCount > 0) {
+      console.log(`Queue validation: removed ${invalidCount} stale item(s)`)
+    }
+
+    return validTracks
   },
 
   play: (track) => {
@@ -207,10 +238,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setUserInteracted: () => set({ hasUserInteracted: true })
 }))
 
-// Fetch queue on store initialization (gracefully handle missing backend)
-api.getQueue().then(queue => {
-  if (Array.isArray(queue)) {
-    usePlayerStore.setState({ queue })
+// Fetch and validate queue on store initialization (gracefully handle missing backend)
+api.getQueue().then(async (queue) => {
+  if (Array.isArray(queue) && queue.length > 0) {
+    // Validate queue items exist before setting
+    const validatedQueue = await usePlayerStore.getState().validateQueue(queue)
+    usePlayerStore.setState({ queue: validatedQueue })
+  } else {
+    usePlayerStore.setState({ queue: [] })
   }
 }).catch(error => {
   console.warn('Backend not available, using empty queue:', error.message)

@@ -10,6 +10,7 @@ from mutagen import File as MutagenFile
 from mutagen.easyid3 import EasyID3
 
 from app.services.google_drive import GoogleDriveService
+from app.services.gcs_storage import GCSStorageService
 
 logger = logging.getLogger(__name__)
 
@@ -44,17 +45,26 @@ class ContentSyncService:
     def __init__(
         self,
         db: AsyncIOMotorDatabase,
-        drive_service: GoogleDriveService
+        drive_service: GoogleDriveService,
+        gcs_service: Optional[GCSStorageService] = None
     ):
         self.db = db
         self.drive = drive_service
+        self.gcs = gcs_service or GCSStorageService()
 
-    async def sync_all(self, download_files: bool = False) -> Dict[str, Any]:
+    async def sync_all(
+        self,
+        download_files: bool = False,
+        upload_to_gcs: bool = True,
+        safe_mode: bool = True
+    ) -> Dict[str, Any]:
         """
         Sync all content from Google Drive.
 
         Args:
-            download_files: If True, download all files to cache
+            download_files: If True, download all files to local cache
+            upload_to_gcs: If True, upload files to Google Cloud Storage
+            safe_mode: If True, never delete content - only add/update (recommended for 24/7 radio)
 
         Returns:
             Sync statistics
@@ -65,8 +75,13 @@ class ContentSyncService:
             "files_added": 0,
             "files_updated": 0,
             "files_downloaded": 0,
+            "files_uploaded_gcs": 0,
             "errors": []
         }
+
+        # Store sync parameters for use in _process_file
+        self._upload_to_gcs = upload_to_gcs
+        self._safe_mode = safe_mode
 
         try:
             # Get folder structure
@@ -230,6 +245,7 @@ class ContentSyncService:
             "files_added": 0,
             "files_updated": 0,
             "files_downloaded": 0,
+            "files_uploaded_gcs": 0,
             "errors": []
         }
 
@@ -249,13 +265,17 @@ class ContentSyncService:
                         download=download
                     )
 
-                    if result == "added":
+                    action = result.get("action", "unchanged")
+                    if action == "added":
                         stats["files_added"] += 1
-                    elif result == "updated":
+                    elif action == "updated":
                         stats["files_updated"] += 1
 
-                    if download and result in ("added", "updated"):
+                    if download and action in ("added", "updated"):
                         stats["files_downloaded"] += 1
+
+                    if result.get("gcs_uploaded"):
+                        stats["files_uploaded_gcs"] += 1
 
                 except Exception as e:
                     logger.error(f"Error processing file {file_info['name']}: {e}")
@@ -276,21 +296,28 @@ class ContentSyncService:
         artist_name: Optional[str] = None,
         batch_number: Optional[int] = None,
         download: bool = False
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
         Process a single file from Google Drive.
 
-        Returns: "added", "updated", or "unchanged"
+        Returns: Dict with "action" ("added", "updated", "unchanged") and "gcs_uploaded" bool
         """
+        result = {"action": "unchanged", "gcs_uploaded": False}
         drive_id = file_info["id"]
         filename = file_info["name"]
 
         # Check if already in database
         existing = await self.db.content.find_one({"google_drive_id": drive_id})
 
-        # Download file if requested or if we need metadata
+        # Check if we need to download (for metadata or GCS upload)
+        need_download = download or not existing
+        need_gcs_upload = getattr(self, '_upload_to_gcs', True) and (
+            not existing or not existing.get("gcs_path")
+        )
+
+        # Download file if needed
         local_path = None
-        if download or not existing:
+        if need_download or need_gcs_upload:
             local_path = await self.drive.download_file(drive_id, filename)
 
         # Extract metadata if we have a local file
@@ -298,8 +325,28 @@ class ContentSyncService:
         if local_path and local_path.exists():
             metadata = self._extract_metadata(local_path)
 
+        # Upload to GCS if needed
+        gcs_path = existing.get("gcs_path") if existing else None
+        if need_gcs_upload and local_path and local_path.exists():
+            # Build GCS path based on content type
+            if content_type == "song" and genre:
+                gcs_folder = f"songs/{genre}"
+            elif content_type == "commercial" and batch_number:
+                gcs_folder = f"commercials/batch{batch_number}"
+            else:
+                gcs_folder = content_type + "s"
+
+            gcs_path = await self.gcs.upload_file(
+                local_path=local_path,
+                content_type=gcs_folder,
+                filename=filename,
+                metadata={"google_drive_id": drive_id, "title": metadata.get("title", "")}
+            )
+            if gcs_path:
+                result["gcs_uploaded"] = True
+                logger.info(f"Uploaded {filename} to GCS: {gcs_path}")
+
         # Build content document
-        # Use artist from metadata, or from folder name if provided
         content_doc = {
             "google_drive_id": drive_id,
             "google_drive_path": filename,
@@ -309,6 +356,7 @@ class ContentSyncService:
             "genre": genre or metadata.get("genre"),
             "duration_seconds": metadata.get("duration", 0),
             "local_cache_path": str(local_path) if local_path else None,
+            "gcs_path": gcs_path,  # GCS path for streaming
             "metadata": {
                 "album": metadata.get("album"),
                 "year": metadata.get("year"),
@@ -334,7 +382,7 @@ class ContentSyncService:
                 {"_id": existing["_id"]},
                 update_ops
             )
-            return "updated"
+            result["action"] = "updated"
         else:
             # Insert new record
             content_doc["created_at"] = datetime.utcnow()
@@ -346,7 +394,9 @@ class ContentSyncService:
                 content_doc["batches"] = [batch_number]
 
             await self.db.content.insert_one(content_doc)
-            return "added"
+            result["action"] = "added"
+
+        return result
 
     def _extract_metadata(self, file_path: Path) -> Dict[str, Any]:
         """Extract metadata from audio file using mutagen."""
@@ -399,7 +449,7 @@ class ContentSyncService:
 
     def _merge_stats(self, target: Dict, source: Dict):
         """Merge statistics dictionaries."""
-        for key in ["files_found", "files_added", "files_updated", "files_downloaded"]:
+        for key in ["files_found", "files_added", "files_updated", "files_downloaded", "files_uploaded_gcs"]:
             target[key] = target.get(key, 0) + source.get(key, 0)
         target["errors"].extend(source.get("errors", []))
 
@@ -418,6 +468,129 @@ class ContentSyncService:
             "cached_locally": cached,
             "drive_folder_id": self.drive.root_folder_id
         }
+
+    async def cleanup_stale_content(self, dry_run: bool = True) -> Dict[str, Any]:
+        """
+        Clean up content that no longer exists in Google Drive.
+
+        Should be run during low-traffic hours, NOT during sync.
+
+        Args:
+            dry_run: If True, only report what would be deleted without actually deleting
+
+        Returns:
+            Stats about cleaned up content
+        """
+        stats = {
+            "stale_found": 0,
+            "deleted": 0,
+            "marked_inactive": 0,
+            "errors": []
+        }
+
+        try:
+            # Get all content from database
+            cursor = self.db.content.find({"active": True})
+
+            async for content in cursor:
+                drive_id = content.get("google_drive_id")
+                if not drive_id:
+                    continue
+
+                # Check if file still exists in Google Drive
+                try:
+                    exists = await self.drive.file_exists(drive_id)
+                    if not exists:
+                        stats["stale_found"] += 1
+
+                        if not dry_run:
+                            # Mark as inactive instead of deleting (safer)
+                            await self.db.content.update_one(
+                                {"_id": content["_id"]},
+                                {"$set": {"active": False, "deactivated_at": datetime.utcnow()}}
+                            )
+                            stats["marked_inactive"] += 1
+                            logger.info(f"Marked as inactive: {content.get('title')} ({drive_id})")
+
+                except Exception as e:
+                    stats["errors"].append(f"{content.get('title')}: {str(e)}")
+
+        except Exception as e:
+            stats["errors"].append(str(e))
+
+        return stats
+
+    async def generate_emergency_playlist(self, count: int = 20) -> Dict[str, Any]:
+        """
+        Generate an emergency playlist by copying random songs to GCS emergency folder.
+
+        Args:
+            count: Number of songs to include in emergency playlist
+
+        Returns:
+            Stats about generated playlist
+        """
+        stats = {
+            "songs_selected": 0,
+            "songs_copied": 0,
+            "errors": []
+        }
+
+        try:
+            # Get random active songs that have GCS paths
+            pipeline = [
+                {"$match": {"type": "song", "active": True, "gcs_path": {"$ne": None}}},
+                {"$sample": {"size": count}}
+            ]
+
+            cursor = self.db.content.aggregate(pipeline)
+            songs = await cursor.to_list(length=count)
+            stats["songs_selected"] = len(songs)
+
+            # Copy each song to emergency folder
+            for song in songs:
+                try:
+                    gcs_path = song.get("gcs_path")
+                    if gcs_path:
+                        emergency_path = await self.gcs.copy_to_emergency(gcs_path)
+                        if emergency_path:
+                            stats["songs_copied"] += 1
+                            logger.info(f"Copied to emergency: {song.get('title')}")
+                except Exception as e:
+                    stats["errors"].append(f"{song.get('title')}: {str(e)}")
+
+        except Exception as e:
+            stats["errors"].append(str(e))
+
+        return stats
+
+    async def get_emergency_playlist(self) -> List[Dict[str, Any]]:
+        """
+        Get the emergency playlist from GCS.
+
+        Returns:
+            List of emergency song info with signed URLs
+        """
+        try:
+            files = await self.gcs.list_files(prefix="emergency/")
+
+            playlist = []
+            for file in files:
+                if file.get("name", "").endswith(('.mp3', '.wav', '.m4a', '.ogg')):
+                    signed_url = self.gcs.get_signed_url(file["gcs_path"])
+                    if signed_url:
+                        playlist.append({
+                            "name": file["name"].split("/")[-1],
+                            "gcs_path": file["gcs_path"],
+                            "url": signed_url,
+                            "size": file.get("size", 0)
+                        })
+
+            return playlist
+
+        except Exception as e:
+            logger.error(f"Failed to get emergency playlist: {e}")
+            return []
 
     async def download_for_playback(self, content_id: str) -> Optional[Path]:
         """

@@ -67,8 +67,17 @@ export const api = {
   getPlaybackHistory: (limit?: number) =>
     client.get('/playback/history', { params: { limit } }).then((r) => r.data),
   getPlaybackStats: () => client.get('/playback/stats').then((r) => r.data),
-  getStreamUrl: (contentId: string) => `${API_BASE_URL}/playback/stream/${contentId}`,
+  // Streaming URLs - prefer GCS for reliability
+  getStreamUrl: (contentId: string) => `${API_BASE_URL}/playback/stream/gcs/${contentId}`,
+  getStreamUrlLegacy: (contentId: string) => `${API_BASE_URL}/playback/stream/${contentId}`,
+  getSignedStreamUrl: (contentId: string) =>
+    client.get(`/playback/stream/signed/${contentId}`).then((r) => r.data),
   getCoverUrl: (contentId: string) => `${API_BASE_URL}/playback/cover/${contentId}`,
+
+  // Emergency playlist
+  getEmergencyPlaylist: () => client.get('/playback/emergency-playlist').then((r) => r.data),
+  generateEmergencyPlaylist: (count?: number) =>
+    client.post('/playback/emergency-playlist/generate', null, { params: { count } }).then((r) => r.data),
   logPlayStart: (contentId: string) =>
     client.post(`/playback/log-play/${contentId}`).then((r) => r.data),
 

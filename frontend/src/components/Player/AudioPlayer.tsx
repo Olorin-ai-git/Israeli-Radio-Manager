@@ -188,6 +188,10 @@ export default function AudioPlayer({
   const currentTrackIdRef = useRef<string | null>(null) // Prevent reloading same track
   const consecutiveErrorsRef = useRef(0) // Track consecutive errors to prevent infinite loops
   const MAX_CONSECUTIVE_ERRORS = 5 // Stop auto-skipping after this many consecutive errors
+  const [emergencyMode, setEmergencyMode] = useState(false) // Emergency fallback mode
+  const [emergencyPlaylist, setEmergencyPlaylist] = useState<Array<{name: string, url: string}>>([])
+  const emergencyIndexRef = useRef(0) // Current position in emergency playlist
+  const emergencyRetryIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [hasError, setHasError] = useState(false)
@@ -523,29 +527,125 @@ export default function AudioPlayer({
     }
   }, [track, autoPlay, isRTL])
 
+  // Activate emergency mode - play from fallback playlist
+  const activateEmergencyMode = async () => {
+    if (emergencyMode) return // Already in emergency mode
+
+    const errorMsg = isRTL
+      ? `מעבר למצב חירום - מנגן מרשימת גיבוי...`
+      : `Activating emergency mode - playing from backup playlist...`
+    toast.info(errorMsg)
+
+    setEmergencyMode(true)
+
+    // Fetch emergency playlist
+    try {
+      const response = await api.getEmergencyPlaylist()
+      if (response.songs && response.songs.length > 0) {
+        setEmergencyPlaylist(response.songs)
+        emergencyIndexRef.current = 0
+        playEmergencySong(0, response.songs)
+
+        // Set up retry interval to check if normal playback can resume
+        emergencyRetryIntervalRef.current = setInterval(async () => {
+          // Try to resume normal playback every 5 minutes
+          if (queueRef.current.length > 0) {
+            const testTrack = queueRef.current[0]
+            try {
+              // Test if we can fetch the stream URL
+              const testResponse = await fetch(api.getStreamUrl(testTrack._id), { method: 'HEAD' })
+              if (testResponse.ok) {
+                exitEmergencyMode()
+              }
+            } catch {
+              // Still in emergency mode
+            }
+          }
+        }, 5 * 60 * 1000) // Every 5 minutes
+      } else {
+        toast.error(isRTL ? 'אין רשימת חירום זמינה' : 'No emergency playlist available')
+      }
+    } catch (error) {
+      console.error('Failed to load emergency playlist:', error)
+      toast.error(isRTL ? 'שגיאה בטעינת רשימת חירום' : 'Failed to load emergency playlist')
+    }
+  }
+
+  // Play a song from the emergency playlist
+  const playEmergencySong = (index: number, playlist: Array<{name: string, url: string}>) => {
+    if (!audioRef.current || playlist.length === 0) return
+
+    const song = playlist[index % playlist.length]
+    audioRef.current.src = song.url
+    audioRef.current.volume = isMuted ? 0 : volume / 100
+    audioRef.current.play().catch(console.error)
+    setIsPlaying(true)
+    setHasError(false)
+
+    toast.info(isRTL ? `מצב חירום: ${song.name}` : `Emergency: ${song.name}`)
+  }
+
+  // Exit emergency mode and resume normal playback
+  const exitEmergencyMode = () => {
+    setEmergencyMode(false)
+    consecutiveErrorsRef.current = 0
+
+    if (emergencyRetryIntervalRef.current) {
+      clearInterval(emergencyRetryIntervalRef.current)
+      emergencyRetryIntervalRef.current = null
+    }
+
+    toast.success(isRTL ? 'חוזר לניגון רגיל' : 'Resuming normal playback')
+
+    // Try to play next from queue
+    if (onNext && queueRef.current.length > 0) {
+      onNext()
+    }
+  }
+
+  // Handle emergency track ending - play next in emergency playlist
+  const handleEmergencyTrackEnded = () => {
+    if (!emergencyMode) return
+
+    emergencyIndexRef.current = (emergencyIndexRef.current + 1) % emergencyPlaylist.length
+    playEmergencySong(emergencyIndexRef.current, emergencyPlaylist)
+  }
+
+  // Cleanup emergency mode on unmount
+  useEffect(() => {
+    return () => {
+      if (emergencyRetryIntervalRef.current) {
+        clearInterval(emergencyRetryIntervalRef.current)
+      }
+    }
+  }, [])
+
   // Handle audio errors - auto-skip to next track for continuous playback
   const handleError = () => {
-    if (!track) return
+    if (!track && !emergencyMode) return
     setIsLoading(false)
     setHasError(true)
     setIsPlaying(false)
     needsFadeInRef.current = false // Don't try to fade in on error
 
+    // In emergency mode, skip to next emergency song
+    if (emergencyMode) {
+      handleEmergencyTrackEnded()
+      return
+    }
+
     // Increment consecutive error counter
     consecutiveErrorsRef.current++
 
-    // Check if we've hit too many consecutive errors
+    // Check if we've hit too many consecutive errors - activate emergency mode
     if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
-      const errorMsg = isRTL
-        ? `יותר מדי שגיאות רצופות. בדוק את חיבור הרשת או סנכרן מחדש את הספרייה.`
-        : `Too many consecutive errors. Check network or re-sync library.`
-      toast.error(errorMsg)
-      return // Stop auto-skipping
+      activateEmergencyMode()
+      return
     }
 
     const errorMsg = isRTL
-      ? `שגיאה בניגון: ${track.title}. מדלג לשיר הבא...`
-      : `Playback error: ${track.title}. Skipping to next...`
+      ? `שגיאה בניגון: ${track?.title || 'Unknown'}. מדלג לשיר הבא...`
+      : `Playback error: ${track?.title || 'Unknown'}. Skipping to next...`
     toast.error(errorMsg)
 
     // Auto-skip to next track after a brief delay (radio must keep playing)
@@ -556,6 +656,9 @@ export default function AudioPlayer({
       } else if (onTrackEnd) {
         // Try track end handler as fallback
         onTrackEnd()
+      } else {
+        // No more tracks and no handler - activate emergency mode
+        activateEmergencyMode()
       }
     }, 1000) // 1 second delay before auto-skip
   }
