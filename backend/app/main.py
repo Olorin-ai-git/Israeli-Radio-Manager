@@ -7,6 +7,20 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 
+
+class WebSocketAllowAllMiddleware:
+    """ASGI middleware to allow WebSocket connections from any origin."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "websocket":
+            # Accept WebSocket from any origin by not checking Origin header
+            await self.app(scope, receive, send)
+        else:
+            await self.app(scope, receive, send)
+
 from app.config import settings
 from app.routers import content, schedule, playback, upload, agent, websocket, calendar, flows
 from app.services.audio_player import AudioPlayerService
@@ -214,6 +228,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan
 )
+
+# WebSocket middleware to bypass origin checks (add first so it's outermost)
+app.add_middleware(WebSocketAllowAllMiddleware)
 
 # CORS middleware for frontend
 app.add_middleware(

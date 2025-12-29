@@ -21,4 +21,4 @@ RUN mkdir -p ./cache
 ENV PORT=8080
 
 # Run uvicorn with the PORT from environment
-CMD exec uvicorn app.main:app --host 0.0.0.0 --port $PORT
+CMD exec uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
