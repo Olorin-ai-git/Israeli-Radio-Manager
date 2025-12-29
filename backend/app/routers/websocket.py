@@ -23,6 +23,7 @@ class ConnectionManager:
 
     async def connect(self, websocket: WebSocket):
         """Accept and track a new connection."""
+        # Accept without origin validation - Cloud Run/production environment
         await websocket.accept()
         self.active_connections.append(websocket)
         self.subscriptions[websocket] = set()  # No subscriptions by default

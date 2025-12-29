@@ -216,14 +216,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware for frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins
-    allow_credentials=False,  # Cannot use credentials with wildcard
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS middleware for frontend - DISABLED FOR WEBSOCKET TESTING
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],  # Allow all origins
+#     allow_credentials=False,  # Cannot use credentials with wildcard
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 # Include routers
 app.include_router(content.router, prefix="/api/content", tags=["Content"])
