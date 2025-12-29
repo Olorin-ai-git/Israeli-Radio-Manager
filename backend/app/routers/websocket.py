@@ -86,7 +86,13 @@ manager = ConnectionManager()
 @router.websocket("/")
 async def websocket_endpoint(websocket: WebSocket):
     """Main WebSocket endpoint for real-time updates."""
-    await manager.connect(websocket)
+    logger.info(f"WebSocket connection attempt from: {websocket.client}, headers: {dict(websocket.headers)}")
+    try:
+        await manager.connect(websocket)
+        logger.info("WebSocket connection accepted")
+    except Exception as e:
+        logger.error(f"WebSocket connection failed: {type(e).__name__}: {e}")
+        raise
 
     # Send initial connection confirmation
     await manager.send_personal({
