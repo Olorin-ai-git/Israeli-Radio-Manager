@@ -101,6 +101,8 @@ export default function Layout({ children }: LayoutProps) {
     const wsUrl = isProduction
       ? 'wss://israeli-radio-manager-534446777606.europe-west1.run.app/ws/'
       : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/`
+
+    console.log('WebSocket URL:', wsUrl)
     let reconnectAttempts = 0
     const maxReconnectAttempts = 3
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
