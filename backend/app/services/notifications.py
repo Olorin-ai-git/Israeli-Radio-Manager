@@ -79,7 +79,7 @@ class NotificationService:
             logger.warning("Push subscription missing endpoint")
             return
 
-        if self._db:
+        if self._db is not None:
             from datetime import datetime
             # Upsert subscription (update if exists, insert if not)
             await self._db.push_subscriptions.update_one(
@@ -102,7 +102,7 @@ class NotificationService:
 
     async def remove_push_subscription(self, endpoint: str):
         """Remove a push subscription by endpoint."""
-        if self._db:
+        if self._db is not None:
             result = await self._db.push_subscriptions.delete_one({"endpoint": endpoint})
             if result.deleted_count > 0:
                 logger.info(f"Removed push subscription: {endpoint[:50]}...")
@@ -182,8 +182,8 @@ class NotificationService:
 
             # Get or create Gmail service
             if not hasattr(self, '_gmail_service') or self._gmail_service is None:
-                credentials_path = settings.google_credentials_path
-                token_path = settings.google_token_path
+                credentials_path = settings.google_credentials_file
+                token_path = settings.google_gmail_token_file
 
                 self._gmail_service = GmailService(
                     credentials_path=credentials_path,
@@ -229,7 +229,7 @@ class NotificationService:
 
         # Load subscriptions from MongoDB
         subscriptions = []
-        if self._db:
+        if self._db is not None:
             cursor = self._db.push_subscriptions.find({})
             async for sub in cursor:
                 subscriptions.append({

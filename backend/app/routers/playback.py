@@ -1,10 +1,13 @@
 """Playback control router."""
 
+import logging
 from typing import List, Optional
 from pathlib import Path
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
+
+logger = logging.getLogger(__name__)
 from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
 from pydantic import BaseModel
 from bson import ObjectId
