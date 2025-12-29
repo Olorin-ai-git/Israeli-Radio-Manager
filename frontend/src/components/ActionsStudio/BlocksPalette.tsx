@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { FlowActionType, getActionDisplayName } from '../../store/actionsStudioStore'
 import { Input } from '../Form'
+import { getActionTypeColors } from '../../theme/tokens'
 
 interface BlocksPaletteProps {
   isRTL: boolean
@@ -34,16 +35,6 @@ const ACTION_ICONS: Record<FlowActionType, LucideIcon> = {
   wait: Clock,
   set_volume: Volume2,
   announcement: MessageSquare,
-}
-
-const ACTION_COLORS: Record<FlowActionType, string> = {
-  play_genre: 'bg-sky-500/20 border-sky-500/30 text-sky-400',
-  play_content: 'bg-blue-500/20 border-blue-500/30 text-blue-400',
-  play_commercials: 'bg-orange-500/20 border-orange-500/30 text-orange-400',
-  play_show: 'bg-purple-500/20 border-purple-500/30 text-purple-400',
-  wait: 'bg-gray-500/20 border-gray-500/30 text-gray-400',
-  set_volume: 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400',
-  announcement: 'bg-amber-500/20 border-amber-500/30 text-amber-400',
 }
 
 const CATEGORY_LABELS = {
@@ -68,7 +59,7 @@ function DraggableBlock({ actionType, isRTL }: DraggableBlockProps) {
   })
 
   const Icon = ACTION_ICONS[actionType]
-  const colorClass = ACTION_COLORS[actionType]
+  const colors = getActionTypeColors(actionType)
 
   return (
     <div
@@ -78,7 +69,7 @@ function DraggableBlock({ actionType, isRTL }: DraggableBlockProps) {
       className={`
         flex items-center gap-3 p-3 rounded-xl border cursor-grab active:cursor-grabbing
         transition-all duration-200 select-none
-        ${colorClass}
+        ${colors.bg} ${colors.border} ${colors.text}
         ${isDragging ? 'opacity-50 scale-95' : 'hover:scale-[1.02] hover:shadow-glow-sm'}
       `}
     >

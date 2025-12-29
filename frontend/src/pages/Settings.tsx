@@ -1,8 +1,20 @@
+import { useState, ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Globe, Bell, Cloud, Mail, Smartphone, MessageSquare } from 'lucide-react'
+import Checkbox from '../components/Form/Checkbox'
+import Input from '../components/Form/Input'
 
 export default function Settings() {
   const { t, i18n } = useTranslation()
+
+  // Notification settings state
+  const [emailNotifications, setEmailNotifications] = useState(true)
+  const [pushNotifications, setPushNotifications] = useState(true)
+  const [smsNotifications, setSmsNotifications] = useState(false)
+
+  // Admin contact state
+  const [adminEmail, setAdminEmail] = useState('')
+  const [adminPhone, setAdminPhone] = useState('')
 
   const handleLanguageChange = (lang: string) => {
     i18n.changeLanguage(lang)
@@ -58,46 +70,31 @@ export default function Settings() {
           </div>
 
           <div className="space-y-4">
-            <div className="flex items-center justify-between py-3 border-b border-white/5">
-              <div className="flex items-center gap-3">
-                <Mail size={20} className="text-dark-400" />
-                <div>
-                  <p className="font-medium text-dark-100">{t('settings.email')}</p>
-                  <p className="text-sm text-dark-400">Receive alerts via email</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" defaultChecked className="sr-only peer" />
-                <div className="w-11 h-6 bg-dark-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-500/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-dark-300 after:border-dark-500 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
-              </label>
+            <div className="py-3 border-b border-white/5">
+              <Checkbox
+                label={t('settings.email')}
+                description="Receive alerts via email"
+                checked={emailNotifications}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setEmailNotifications(e.target.checked)}
+              />
             </div>
 
-            <div className="flex items-center justify-between py-3 border-b border-white/5">
-              <div className="flex items-center gap-3">
-                <Bell size={20} className="text-dark-400" />
-                <div>
-                  <p className="font-medium text-dark-100">{t('settings.push')}</p>
-                  <p className="text-sm text-dark-400">Browser push notifications</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" defaultChecked className="sr-only peer" />
-                <div className="w-11 h-6 bg-dark-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-500/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-dark-300 after:border-dark-500 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
-              </label>
+            <div className="py-3 border-b border-white/5">
+              <Checkbox
+                label={t('settings.push')}
+                description="Browser push notifications"
+                checked={pushNotifications}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setPushNotifications(e.target.checked)}
+              />
             </div>
 
-            <div className="flex items-center justify-between py-3">
-              <div className="flex items-center gap-3">
-                <Smartphone size={20} className="text-dark-400" />
-                <div>
-                  <p className="font-medium text-dark-100">{t('settings.sms')}</p>
-                  <p className="text-sm text-dark-400">Critical alerts via SMS</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" />
-                <div className="w-11 h-6 bg-dark-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-500/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-dark-300 after:border-dark-500 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
-              </label>
+            <div className="py-3">
+              <Checkbox
+                label={t('settings.sms')}
+                description="Critical alerts via SMS"
+                checked={smsNotifications}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setSmsNotifications(e.target.checked)}
+              />
             </div>
           </div>
         </div>
@@ -132,22 +129,22 @@ export default function Settings() {
           </div>
 
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-dark-300 mb-1">Admin Email</label>
-              <input
-                type="email"
-                placeholder="admin@example.com"
-                className="w-full px-4 py-2.5 glass-input"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-dark-300 mb-1">Admin Phone (for SMS)</label>
-              <input
-                type="tel"
-                placeholder="+1234567890"
-                className="w-full px-4 py-2.5 glass-input"
-              />
-            </div>
+            <Input
+              type="email"
+              label="Admin Email"
+              placeholder="admin@example.com"
+              value={adminEmail}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setAdminEmail(e.target.value)}
+              icon={Mail}
+            />
+            <Input
+              type="tel"
+              label="Admin Phone (for SMS)"
+              placeholder="+1234567890"
+              value={adminPhone}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setAdminPhone(e.target.value)}
+              icon={Smartphone}
+            />
             <button className="px-4 py-2 glass-button-primary">
               {t('actions.save')}
             </button>

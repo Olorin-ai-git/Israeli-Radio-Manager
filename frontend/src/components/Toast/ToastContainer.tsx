@@ -1,25 +1,12 @@
 import { useToastStore, ToastType } from '../../store/toastStore'
 import { X, CheckCircle, AlertCircle, AlertTriangle, Info } from 'lucide-react'
+import { getStatusColors } from '../../theme/tokens'
 
 const iconMap: Record<ToastType, React.ElementType> = {
   success: CheckCircle,
   error: AlertCircle,
   warning: AlertTriangle,
   info: Info,
-}
-
-const colorMap: Record<ToastType, string> = {
-  success: 'bg-green-500/20 border-green-500/40 text-green-400',
-  error: 'bg-red-500/20 border-red-500/40 text-red-400',
-  warning: 'bg-amber-500/20 border-amber-500/40 text-amber-400',
-  info: 'bg-blue-500/20 border-blue-500/40 text-blue-400',
-}
-
-const iconColorMap: Record<ToastType, string> = {
-  success: 'text-green-400',
-  error: 'text-red-400',
-  warning: 'text-amber-400',
-  info: 'text-blue-400',
 }
 
 export default function ToastContainer() {
@@ -31,13 +18,14 @@ export default function ToastContainer() {
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
       {toasts.map((toast) => {
         const Icon = iconMap[toast.type]
+        const colors = getStatusColors(toast.type)
         return (
           <div
             key={toast.id}
-            className={`flex items-start gap-3 p-4 rounded-xl border backdrop-blur-xl shadow-lg animate-slide-in ${colorMap[toast.type]}`}
+            className={`flex items-start gap-3 p-4 rounded-xl border backdrop-blur-xl shadow-lg animate-slide-in ${colors.bg} ${colors.border}`}
             role="alert"
           >
-            <Icon size={20} className={`flex-shrink-0 mt-0.5 ${iconColorMap[toast.type]}`} />
+            <Icon size={20} className={`flex-shrink-0 mt-0.5 ${colors.text}`} />
             <p className="flex-1 text-sm text-dark-100" dir="auto">
               {toast.message}
             </p>

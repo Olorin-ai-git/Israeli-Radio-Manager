@@ -186,6 +186,8 @@ export default function AudioPlayer({
   const isFadingOutRef = useRef(false)
   const needsFadeInRef = useRef(false) // Track if new track needs fade in
   const currentTrackIdRef = useRef<string | null>(null) // Prevent reloading same track
+  const consecutiveErrorsRef = useRef(0) // Track consecutive errors to prevent infinite loops
+  const MAX_CONSECUTIVE_ERRORS = 5 // Stop auto-skipping after this many consecutive errors
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [hasError, setHasError] = useState(false)
@@ -521,17 +523,41 @@ export default function AudioPlayer({
     }
   }, [track, autoPlay, isRTL])
 
-  // Handle audio errors
+  // Handle audio errors - auto-skip to next track for continuous playback
   const handleError = () => {
     if (!track) return
     setIsLoading(false)
     setHasError(true)
     setIsPlaying(false)
     needsFadeInRef.current = false // Don't try to fade in on error
+
+    // Increment consecutive error counter
+    consecutiveErrorsRef.current++
+
+    // Check if we've hit too many consecutive errors
+    if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
+      const errorMsg = isRTL
+        ? `יותר מדי שגיאות רצופות. בדוק את חיבור הרשת או סנכרן מחדש את הספרייה.`
+        : `Too many consecutive errors. Check network or re-sync library.`
+      toast.error(errorMsg)
+      return // Stop auto-skipping
+    }
+
     const errorMsg = isRTL
-      ? `שגיאה בניגון: ${track.title}. ייתכן שהקובץ לא קיים או שאין הרשאות גישה.`
-      : `Playback error: ${track.title}. File may not exist or access denied.`
+      ? `שגיאה בניגון: ${track.title}. מדלג לשיר הבא...`
+      : `Playback error: ${track.title}. Skipping to next...`
     toast.error(errorMsg)
+
+    // Auto-skip to next track after a brief delay (radio must keep playing)
+    setTimeout(() => {
+      if (onNext && queueRef.current.length > 0) {
+        // Skip to next track
+        onNext()
+      } else if (onTrackEnd) {
+        // Try track end handler as fallback
+        onTrackEnd()
+      }
+    }, 1000) // 1 second delay before auto-skip
   }
 
   // Update volume (but don't override during fades)
@@ -833,6 +859,8 @@ export default function AudioPlayer({
           onCanPlay={() => {
             setIsLoading(false)
             setHasError(false)
+            // Reset consecutive error counter on successful load
+            consecutiveErrorsRef.current = 0
             // Trigger fade in when audio is ready and we need it
             if (needsFadeInRef.current && audioRef.current && !isFadingOutRef.current) {
               needsFadeInRef.current = false

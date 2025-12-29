@@ -93,8 +93,7 @@ export default function ActionBlockCard({
   dragHandleProps,
 }: ActionBlockCardProps) {
   const Icon = ACTION_ICONS[action.action_type]
-  const colorClass = ACTION_COLORS[action.action_type]
-  const iconColorClass = ACTION_ICON_COLORS[action.action_type]
+  const colors = getActionTypeColors(action.action_type)
   const duration = getActionDuration(action)
   const summary = getActionSummary(action, isRTL)
 
@@ -102,7 +101,7 @@ export default function ActionBlockCard({
     <div
       className={`
         relative p-4 rounded-xl border transition-all duration-200
-        ${colorClass}
+        ${colors.bg} ${colors.border}
         ${isDragging ? 'opacity-70 scale-105 shadow-lg rotate-2' : ''}
         ${isSelected ? 'ring-2 ring-primary-500 border-primary-500/50' : ''}
         ${!isDragging && !isSelected ? 'hover:shadow-glass-sm' : ''}
@@ -120,7 +119,7 @@ export default function ActionBlockCard({
         )}
 
         {/* Icon */}
-        <div className={`flex-shrink-0 ${iconColorClass}`}>
+        <div className={`flex-shrink-0 ${colors.icon}`}>
           <Icon size={20} />
         </div>
 
