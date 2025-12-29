@@ -87,30 +87,22 @@ manager = ConnectionManager()
 @router.websocket("/")
 async def websocket_endpoint(websocket: WebSocket):
     """Main WebSocket endpoint for real-time updates."""
-    logger.info(f"WebSocket connection attempt from: {websocket.client}")
-    logger.info(f"Headers: {dict(websocket.headers)}")
-    logger.info(f"Query params: {dict(websocket.query_params)}")
-    logger.info(f"Path params: {websocket.path_params}")
+    logger.info(f"WebSocket connection from: {websocket.client}")
 
-    # Try to accept without validation
-    try:
-        # Accept the WebSocket connection
-        await websocket.accept()
-        logger.info("WebSocket connection accepted successfully!")
+    # Accept the WebSocket connection
+    await websocket.accept()
+    logger.info("WebSocket accepted!")
 
-        # Add to manager manually
-        manager.active_connections.append(websocket)
-        manager.subscriptions[websocket] = set()
-    except Exception as e:
-        logger.error(f"WebSocket accept failed: {type(e).__name__}: {e}")
-        logger.error(f"Full error: {repr(e)}")
-        raise
+    # Add to manager
+    manager.active_connections.append(websocket)
+    manager.subscriptions[websocket] = set()
 
     # Send initial connection confirmation
-    await manager.send_personal({
+    await websocket.send_json({
         "type": "connected",
         "timestamp": datetime.utcnow().isoformat()
-    }, websocket)
+    })
+    logger.info("Sent connection confirmation")
 
     try:
         while True:
