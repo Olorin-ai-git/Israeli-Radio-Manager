@@ -244,9 +244,6 @@ async def init_database(db):
     await db.pending_actions.create_index("status")
     await db.pending_actions.create_index("expires_at")
 
-    # Settings collection (singleton)
-    await db.settings.create_index("_id", unique=True)
-
     # Push subscriptions indexes
     await db.push_subscriptions.create_index("endpoint", unique=True)
     await db.push_subscriptions.create_index("created_at")
