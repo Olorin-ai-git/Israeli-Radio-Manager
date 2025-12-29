@@ -57,17 +57,21 @@ interface AudioPlayerProps {
 function SortableQueueItem({
   item,
   index,
+  uniqueKey,
   isRTL,
   onRemove,
   formatDuration,
-  animationDelay
+  animationDelay,
+  isRemoving
 }: {
   item: Track
   index: number
+  uniqueKey: string
   isRTL: boolean
   onRemove: () => void
   formatDuration: (seconds?: number) => string
   animationDelay?: number
+  isRemoving?: boolean
 }) {
   const {
     attributes,
@@ -76,24 +80,24 @@ function SortableQueueItem({
     transform,
     transition,
     isDragging
-  } = useSortable({ id: item._id })
+  } = useSortable({ id: uniqueKey })
 
   const isAnimating = animationDelay !== undefined && !isDragging
 
   const style: React.CSSProperties = {
     // Always apply transform from dnd-kit for drag to work
-    transform: CSS.Transform.toString(transform),
-    transition,
+    transform: isRemoving ? undefined : CSS.Transform.toString(transform),
+    transition: isRemoving ? undefined : transition,
     // When dragging, always ensure visibility with explicit opacity and z-index
     ...(isDragging ? {
       opacity: 0.85,
       zIndex: 50
-    } : !isAnimating ? {
+    } : !isAnimating && !isRemoving ? {
       opacity: 1
-    } : {
+    } : isAnimating ? {
       // Only set animation delay when actually animating (not dragging)
       animationDelay: `${animationDelay}ms`
-    })
+    } : {})
   }
 
   return (
@@ -101,7 +105,7 @@ function SortableQueueItem({
       ref={setNodeRef}
       style={style}
       className={`w-full flex items-center gap-2 p-2 rounded-lg transition-colors group ${
-        isAnimating ? 'animate-slide-in-fade' : ''
+        isRemoving ? 'animate-slide-out-fade' : isAnimating ? 'animate-slide-in-fade' : ''
       } ${isDragging
         ? 'bg-dark-600 ring-2 ring-primary-500/50 shadow-lg'
         : 'bg-dark-700/50 hover:bg-dark-600/50'
@@ -206,10 +210,19 @@ export default function AudioPlayer({
   const { queue, removeFromQueue, clearQueue, reorderQueue, hasUserInteracted, setUserInteracted } = usePlayerStore()
   const isRTL = i18n.language === 'he'
 
+  // Ref to access current queue in callbacks/timeouts
+  const queueRef = useRef(queue)
+  useEffect(() => {
+    queueRef.current = queue
+  }, [queue])
+
   // Track new items for animation with their order for staggered animation
   const prevQueueLengthRef = useRef<number>(0)
   const prevQueueIdsRef = useRef<Set<string>>(new Set())
   const [newItemsMap, setNewItemsMap] = useState<Map<string, number>>(new Map())
+
+  // Track items being removed for exit animation
+  const [removingItems, setRemovingItems] = useState<Set<string>>(new Set())
 
   // Detect newly added items (only animate when queue grows, not on removal/reorder)
   useEffect(() => {
@@ -263,12 +276,62 @@ export default function AudioPlayer({
     const { active, over } = event
 
     if (over && active.id !== over.id) {
-      const oldIndex = queue.findIndex((item) => item._id === active.id)
-      const newIndex = queue.findIndex((item) => item._id === over.id)
+      // Extract index from uniqueKey format (id-index)
+      const activeKey = String(active.id)
+      const overKey = String(over.id)
+      const oldIndex = parseInt(activeKey.split('-').pop() || '-1')
+      const newIndex = parseInt(overKey.split('-').pop() || '-1')
 
-      if (oldIndex !== -1 && newIndex !== -1) {
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex < queue.length && newIndex < queue.length) {
         reorderQueue(oldIndex, newIndex)
       }
+    }
+  }
+
+  // Animated remove handler - triggers animation then removes
+  const handleAnimatedRemove = (uniqueKey: string, index: number) => {
+    // Add to removing set to trigger animation
+    setRemovingItems(prev => new Set(prev).add(uniqueKey))
+
+    // After animation completes, actually remove the item
+    setTimeout(() => {
+      // Use the stored index directly - it's the correct position at time of click
+      // We need to recalculate based on how many items before this one were also removed
+      const currentQueueLength = queueRef.current.length
+      // If queue shrunk, adjust index accordingly
+      const adjustedIndex = Math.min(index, currentQueueLength - 1)
+      if (adjustedIndex >= 0 && currentQueueLength > 0) {
+        removeFromQueue(adjustedIndex)
+      }
+      setRemovingItems(prev => {
+        const next = new Set(prev)
+        next.delete(uniqueKey)
+        return next
+      })
+    }, 400) // Match animation duration
+  }
+
+  // Animate first queue item before playing next track
+  const animateQueuePopThenPlay = (callback?: () => void) => {
+    const firstItem = queueRef.current[0]
+    if (firstItem) {
+      // Use uniqueKey format (id-index) for first item (index is always 0)
+      const uniqueKey = `${firstItem._id}-0`
+      // Add to removing set to trigger animation
+      setRemovingItems(prev => new Set(prev).add(uniqueKey))
+
+      // After animation, call the callback (playNext)
+      setTimeout(() => {
+        setRemovingItems(prev => {
+          const next = new Set(prev)
+          next.delete(uniqueKey)
+          return next
+        })
+        callback?.()
+      }, 400) // Match animation duration
+    } else {
+      // No items in queue, just call callback
+      callback?.()
     }
   }
 
@@ -517,19 +580,37 @@ export default function AudioPlayer({
     isFadingOutRef.current = false
     setIsFading(false)
     setIsPlaying(false)
-    onTrackEnd?.()
+    // Animate queue item out before calling playNext
+    animateQueuePopThenPlay(onTrackEnd)
   }
 
   // Handle skip with quick fade out (faster than natural end)
   const handleSkipNext = () => {
     if (!onNext) return
 
+    // Start queue item exit animation immediately
+    const firstItem = queueRef.current[0]
+    const uniqueKey = firstItem ? `${firstItem._id}-0` : null
+    if (uniqueKey) {
+      setRemovingItems(prev => new Set(prev).add(uniqueKey))
+    }
+
     // If already fading out or nearly at end, just skip immediately
     if (isFadingOutRef.current || (audioRef.current && duration - currentTime < 1)) {
       cancelFade()
       isFadingOutRef.current = false
       setIsFading(false)
-      onNext()
+      // Wait for queue animation then call onNext
+      setTimeout(() => {
+        if (uniqueKey) {
+          setRemovingItems(prev => {
+            const next = new Set(prev)
+            next.delete(uniqueKey)
+            return next
+          })
+        }
+        onNext()
+      }, 400)
       return
     }
 
@@ -547,6 +628,14 @@ export default function AudioPlayer({
         if (!audioRef.current) {
           isFadingOutRef.current = false
           setIsFading(false)
+          // Clear animation state and call onNext
+          if (uniqueKey) {
+            setRemovingItems(prev => {
+              const next = new Set(prev)
+              next.delete(uniqueKey)
+              return next
+            })
+          }
           onNext()
           return
         }
@@ -561,13 +650,31 @@ export default function AudioPlayer({
           setIsFading(false)
           isFadingOutRef.current = false
           fadeAnimationRef.current = null
+          // Clear animation state and call onNext
+          if (uniqueKey) {
+            setRemovingItems(prev => {
+              const next = new Set(prev)
+              next.delete(uniqueKey)
+              return next
+            })
+          }
           onNext()
         }
       }
 
       fadeAnimationRef.current = requestAnimationFrame(animate)
     } else {
-      onNext()
+      // Wait for queue animation then call onNext
+      setTimeout(() => {
+        if (uniqueKey) {
+          setRemovingItems(prev => {
+            const next = new Set(prev)
+            next.delete(uniqueKey)
+            return next
+          })
+        }
+        onNext()
+      }, 400)
     }
   }
 
@@ -670,21 +777,27 @@ export default function AudioPlayer({
               onDragEnd={handleDragEnd}
             >
               <SortableContext
-                items={queue.map(item => item._id)}
+                items={queue.map((item, index) => `${item._id}-${index}`)}
                 strategy={verticalListSortingStrategy}
               >
                 <div className="space-y-1 w-full">
-                  {queue.map((item, index) => (
-                    <SortableQueueItem
-                      key={item._id}
-                      item={item}
-                      index={index}
-                      isRTL={isRTL}
-                      onRemove={() => removeFromQueue(index)}
-                      formatDuration={formatDuration}
-                      animationDelay={newItemsMap.has(item._id) ? newItemsMap.get(item._id)! * 150 : undefined}
-                    />
-                  ))}
+                  {queue.map((item, index) => {
+                    // Use compound key to handle potential duplicate IDs
+                    const uniqueKey = `${item._id}-${index}`
+                    return (
+                      <SortableQueueItem
+                        key={uniqueKey}
+                        item={item}
+                        index={index}
+                        uniqueKey={uniqueKey}
+                        isRTL={isRTL}
+                        onRemove={() => handleAnimatedRemove(uniqueKey, index)}
+                        formatDuration={formatDuration}
+                        animationDelay={newItemsMap.has(item._id) ? newItemsMap.get(item._id)! * 150 : undefined}
+                        isRemoving={removingItems.has(uniqueKey)}
+                      />
+                    )
+                  })}
                 </div>
               </SortableContext>
             </DndContext>

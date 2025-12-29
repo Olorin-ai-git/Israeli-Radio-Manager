@@ -17,6 +17,7 @@ export function Radio({ label, description, className = '', ...props }: RadioPro
         {/* Custom radio */}
         <div className="w-5 h-5 rounded-full border-2 border-dark-500 bg-dark-800/50 backdrop-blur-sm
                       peer-checked:border-primary-500 peer-checked:bg-primary-500/20
+                      peer-focus:ring-2 peer-focus:ring-primary-500/30 peer-focus:ring-offset-2 peer-focus:ring-offset-dark-900
                       group-hover:border-dark-400
                       transition-all duration-200">
           {/* Inner dot */}

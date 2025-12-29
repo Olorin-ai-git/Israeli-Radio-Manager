@@ -64,26 +64,48 @@
   }
 
   .glass-sidebar {
-    @apply bg-dark-900/80 backdrop-blur-2xl border-r border-white/5;
+    @apply bg-dark-900/80 backdrop-blur-2xl border-r border-white/5 shadow-glass;
   }
 
   .glass-input {
     @apply bg-dark-800/50 backdrop-blur-sm border border-white/10 rounded-xl
            px-3 py-2 text-sm font-normal
            text-dark-100 placeholder-dark-400
-           focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/20 focus:outline-none
+           focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/30 focus:outline-none
            transition-all duration-200;
   }
 
   .glass-button {
     @apply bg-dark-700/50 backdrop-blur-sm border border-white/10 rounded-xl
-           text-dark-100 hover:bg-dark-600/50 hover:border-white/20
+           text-dark-100 shadow-glass-sm
+           hover:bg-dark-600/50 hover:border-white/20 hover:shadow-glass
            transition-all duration-200;
   }
 
   .glass-button-primary {
     @apply bg-primary-500/80 backdrop-blur-sm border border-primary-400/30 rounded-xl
-           text-white hover:bg-primary-500 hover:shadow-glow
+           text-white shadow-glass-sm hover:bg-primary-500 hover:shadow-glow
+           transition-all duration-200;
+  }
+
+  .glass-button-success {
+    @apply bg-emerald-500/80 backdrop-blur-sm border border-emerald-400/30 rounded-xl
+           text-white shadow-glass-sm
+           hover:bg-emerald-500 hover:shadow-[0_0_20px_rgba(16,185,129,0.3)]
+           transition-all duration-200;
+  }
+
+  .glass-button-danger {
+    @apply bg-red-500/80 backdrop-blur-sm border border-red-400/30 rounded-xl
+           text-white shadow-glass-sm
+           hover:bg-red-500 hover:shadow-[0_0_20px_rgba(239,68,68,0.3)]
+           transition-all duration-200;
+  }
+
+  .glass-button-warning {
+    @apply bg-amber-500/80 backdrop-blur-sm border border-amber-400/30 rounded-xl
+           text-white shadow-glass-sm
+           hover:bg-amber-500 hover:shadow-[0_0_20px_rgba(245,158,11,0.3)]
            transition-all duration-200;
   }
 
@@ -132,7 +154,35 @@
 .animate-slide-in-fade {
   opacity: 0;
   transform: translateX(-30px);
-  animation: slide-in-fade 0.6s ease-out forwards;
+  animation: slide-in-fade 300ms ease-out forwards;
+}
+
+/* Queue item slide-out animation */
+@keyframes slide-out-fade {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+    max-height: 60px;
+  }
+  50% {
+    opacity: 0;
+    transform: translateX(30px);
+    max-height: 60px;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(30px);
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+}
+
+.animate-slide-out-fade {
+  animation: slide-out-fade 300ms ease-in forwards;
+  overflow: hidden;
 }
 
 /* Chat bubble styles - dark glassmorphic */
@@ -212,7 +262,7 @@
 }
 
 .animate-slide-in {
-  animation: toast-fade-in 0.25s ease-out forwards;
+  animation: toast-fade-in 200ms ease-out forwards;
 }
 
 /* Slide up animation for panels */
@@ -228,7 +278,7 @@
 }
 
 .animate-slide-up {
-  animation: slide-up 0.3s ease-out forwards;
+  animation: slide-up 200ms ease-out forwards;
 }
 
 /* Block drop animation */
@@ -244,7 +294,7 @@
 }
 
 .animate-block-drop {
-  animation: block-drop 0.3s ease-out forwards;
+  animation: block-drop 300ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 /* Gradient text */

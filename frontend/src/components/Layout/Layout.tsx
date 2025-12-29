@@ -12,7 +12,6 @@ import {
   MessageCircle,
   Globe,
   Blocks,
-  Workflow,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react'

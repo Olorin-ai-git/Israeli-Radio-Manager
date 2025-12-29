@@ -11,6 +11,7 @@ import {
   GripVertical,
 } from 'lucide-react'
 import { StudioAction, FlowActionType, getActionDisplayName, getActionDuration } from '../../store/actionsStudioStore'
+import { getActionTypeColors } from '../../theme/tokens'
 
 interface ActionBlockCardProps {
   action: StudioAction
@@ -29,26 +30,6 @@ const ACTION_ICONS: Record<FlowActionType, LucideIcon> = {
   wait: Clock,
   set_volume: Volume2,
   announcement: MessageSquare,
-}
-
-const ACTION_COLORS: Record<FlowActionType, string> = {
-  play_genre: 'bg-sky-500/20 border-sky-500/30',
-  play_content: 'bg-blue-500/20 border-blue-500/30',
-  play_commercials: 'bg-orange-500/20 border-orange-500/30',
-  play_show: 'bg-purple-500/20 border-purple-500/30',
-  wait: 'bg-gray-500/20 border-gray-500/30',
-  set_volume: 'bg-emerald-500/20 border-emerald-500/30',
-  announcement: 'bg-amber-500/20 border-amber-500/30',
-}
-
-const ACTION_ICON_COLORS: Record<FlowActionType, string> = {
-  play_genre: 'text-sky-400',
-  play_content: 'text-blue-400',
-  play_commercials: 'text-orange-400',
-  play_show: 'text-purple-400',
-  wait: 'text-gray-400',
-  set_volume: 'text-emerald-400',
-  announcement: 'text-amber-400',
 }
 
 function formatDuration(seconds: number): string {
