@@ -373,17 +373,35 @@ async def chat_with_agent(request: Request, chat: ChatMessage):
     except anthropic.AuthenticationError:
         raise HTTPException(
             status_code=503,
-            detail="AI service unavailable: Invalid API key. Please configure ANTHROPIC_API_KEY in .env"
+            detail="LLM_UNAVAILABLE:AUTH_ERROR"
+        )
+    except anthropic.RateLimitError:
+        raise HTTPException(
+            status_code=503,
+            detail="LLM_UNAVAILABLE:RATE_LIMIT"
+        )
+    except anthropic.APIConnectionError:
+        raise HTTPException(
+            status_code=503,
+            detail="LLM_UNAVAILABLE:CONNECTION_ERROR"
+        )
+    except anthropic.APIStatusError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"LLM_UNAVAILABLE:API_ERROR:{e.status_code}"
         )
     except anthropic.APIError as e:
         raise HTTPException(
             status_code=503,
-            detail=f"AI service error: {str(e)}"
+            detail="LLM_UNAVAILABLE:API_ERROR"
         )
     except Exception as e:
+        # Log the actual error for debugging
+        import logging
+        logging.getLogger(__name__).error(f"Chat error: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Chat error: {str(e)}"
+            detail=f"LLM_UNAVAILABLE:UNKNOWN_ERROR"
         )
 
     return ChatResponse(

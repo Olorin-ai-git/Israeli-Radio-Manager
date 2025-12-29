@@ -8,6 +8,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../services/api'
 import { usePlayerStore } from '../../store/playerStore'
+import { Input } from '../Form'
 
 interface ChatMessage {
   id: string
@@ -39,6 +40,50 @@ const QUICK_COMMANDS = {
     { text: "Switch to Mizrahi genre", icon: "🎶" },
     { text: "Schedule commercial for 2 PM", icon: "📢" },
   ]
+}
+
+// LLM error messages mapping
+const LLM_ERROR_MESSAGES: Record<string, { en: string; he: string }> = {
+  'LLM_UNAVAILABLE:AUTH_ERROR': {
+    en: 'AI Assistant is unavailable: Authentication failed. Please check the API key configuration.',
+    he: 'הסוכן החכם אינו זמין: שגיאת אימות. נא לבדוק את הגדרות מפתח ה-API.'
+  },
+  'LLM_UNAVAILABLE:RATE_LIMIT': {
+    en: 'AI Assistant is temporarily unavailable: Rate limit exceeded. Please try again in a moment.',
+    he: 'הסוכן החכם אינו זמין זמנית: חריגה ממגבלת הבקשות. נא לנסות שוב בעוד רגע.'
+  },
+  'LLM_UNAVAILABLE:CONNECTION_ERROR': {
+    en: 'AI Assistant is unavailable: Unable to connect to the AI service. Please check your internet connection.',
+    he: 'הסוכן החכם אינו זמין: לא ניתן להתחבר לשירות ה-AI. נא לבדוק את חיבור האינטרנט.'
+  },
+  'LLM_UNAVAILABLE:API_ERROR': {
+    en: 'AI Assistant is unavailable: The AI service encountered an error. Please try again later.',
+    he: 'הסוכן החכם אינו זמין: שגיאה בשירות ה-AI. נא לנסות שוב מאוחר יותר.'
+  },
+  'LLM_UNAVAILABLE:UNKNOWN_ERROR': {
+    en: 'AI Assistant is unavailable: An unexpected error occurred. Please try again later.',
+    he: 'הסוכן החכם אינו זמין: אירעה שגיאה בלתי צפויה. נא לנסות שוב מאוחר יותר.'
+  }
+}
+
+// Helper to get user-friendly error message
+function getLLMErrorMessage(errorDetail: string, lang: 'en' | 'he'): string {
+  // Check for exact match first
+  if (LLM_ERROR_MESSAGES[errorDetail]) {
+    return LLM_ERROR_MESSAGES[errorDetail][lang]
+  }
+  // Check for partial match (for errors with additional info like status codes)
+  for (const [key, messages] of Object.entries(LLM_ERROR_MESSAGES)) {
+    if (errorDetail.startsWith(key.replace(':API_ERROR', ''))) {
+      return messages[lang]
+    }
+  }
+  // Check if it's any LLM unavailable error
+  if (errorDetail.startsWith('LLM_UNAVAILABLE')) {
+    return LLM_ERROR_MESSAGES['LLM_UNAVAILABLE:UNKNOWN_ERROR'][lang]
+  }
+  // Return original error if not an LLM error
+  return errorDetail
 }
 
 // Action templates for @ mention popup
@@ -145,7 +190,9 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
     },
     onError: (error: any) => {
       const detail = error.response?.data?.detail || error.message || 'Failed to send message'
-      setErrorMessage(detail)
+      // Get user-friendly error message for LLM errors
+      const userMessage = getLLMErrorMessage(detail, lang)
+      setErrorMessage(userMessage)
     },
   })
 
@@ -319,22 +366,30 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
         </div>
         <div className="flex items-center gap-1">
           {messages.length > 0 && (
-            <button
-              onClick={() => clearMutation.mutate()}
-              disabled={clearMutation.isPending}
-              className="p-2 hover:bg-white/10 rounded-xl transition-colors text-dark-400 hover:text-red-400"
-              title={isRTL ? 'נקה צ\'אט' : 'Clear chat'}
-            >
-              <Trash2 size={18} />
-            </button>
+            <div className="tooltip-trigger">
+              <button
+                onClick={() => clearMutation.mutate()}
+                disabled={clearMutation.isPending}
+                className="p-2 hover:bg-white/10 rounded-xl transition-colors text-dark-400 hover:text-red-400"
+              >
+                <Trash2 size={18} />
+              </button>
+              <div className="tooltip tooltip-bottom">
+                {isRTL ? 'נקה צ\'אט' : 'Clear chat'}
+              </div>
+            </div>
           )}
-          <button
-            onClick={onToggle}
-            className="p-2 hover:bg-white/10 rounded-xl transition-colors text-dark-300 hover:text-dark-100"
-            title={t('chat.collapse')}
-          >
-            <X size={20} />
-          </button>
+          <div className="tooltip-trigger">
+            <button
+              onClick={onToggle}
+              className="p-2 hover:bg-white/10 rounded-xl transition-colors text-dark-300 hover:text-dark-100"
+            >
+              <X size={20} />
+            </button>
+            <div className="tooltip tooltip-bottom">
+              {t('chat.collapse')}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -520,25 +575,29 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
           )}
 
           <div className="flex gap-2">
-            <input
+            <Input
               ref={inputRef}
-              type="text"
               value={message}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder={isRTL ? 'הקלד הודעה או @ לפעולות...' : 'Type a message or @ for actions...'}
               disabled={sendMutation.isPending}
-              className={`flex-1 px-4 py-3 glass-input text-base ${isRTL ? 'text-right' : 'text-left'}`}
+              className="flex-1"
               dir={isRTL ? 'rtl' : 'ltr'}
+              size="lg"
             />
-            <button
-              onClick={handleSend}
-              disabled={!message.trim() || sendMutation.isPending}
-              className="px-4 py-3 glass-button-primary disabled:opacity-50 disabled:cursor-not-allowed"
-              title={t('chat.send')}
-            >
-              <Send size={20} />
-            </button>
+            <div className="tooltip-trigger">
+              <button
+                onClick={handleSend}
+                disabled={!message.trim() || sendMutation.isPending}
+                className="px-4 py-3 glass-button-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Send size={20} />
+              </button>
+              <div className="tooltip tooltip-top">
+                {t('chat.send')}
+              </div>
+            </div>
           </div>
         </div>
         {/* Show examples button if hidden */}

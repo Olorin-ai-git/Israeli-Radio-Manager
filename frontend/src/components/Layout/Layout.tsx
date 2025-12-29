@@ -12,6 +12,7 @@ import {
   MessageCircle,
   Globe,
   Blocks,
+  Workflow,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react'
@@ -34,7 +35,7 @@ export default function Layout({ children }: LayoutProps) {
     const saved = localStorage.getItem('navCollapsed')
     return saved ? saved === 'true' : false
   })
-  const { currentTrack, queue, playNext, playNow, hasUserInteracted, setUserInteracted } = usePlayerStore()
+  const { currentTrack, queue, playNext, playNow, hasUserInteracted, setUserInteracted, fetchQueue } = usePlayerStore()
   const wsRef = useRef<WebSocket | null>(null)
   const lastPlayedIdRef = useRef<string | null>(null) // Prevent duplicate playback
   const isAutoPlayingRef = useRef(false) // Prevent recursive auto-play
@@ -77,6 +78,19 @@ export default function Layout({ children }: LayoutProps) {
       }, 100)
     }
   }, [currentTrack, queue.length, playNext, hasUserInteracted])
+
+  // Periodically refresh queue from server
+  useEffect(() => {
+    // Fetch immediately on mount
+    fetchQueue()
+
+    // Then fetch every 10 seconds
+    const interval = setInterval(() => {
+      fetchQueue()
+    }, 10000)
+
+    return () => clearInterval(interval)
+  }, [fetchQueue])
 
   // Panel width state with localStorage persistence
   const [flowsPanelWidth, setFlowsPanelWidth] = useState(() => {
@@ -299,18 +313,18 @@ export default function Layout({ children }: LayoutProps) {
   }, [flowsPanelWidth, chatPanelWidth])
 
   return (
-    <div className="h-screen bg-dark-950 overflow-hidden">
+    <div className="h-screen bg-dark-950">
       {/* Background gradient overlay */}
-      <div className="fixed inset-0 bg-gradient-dark pointer-events-none" />
+      <div className="fixed inset-0 bg-gradient-dark pointer-events-none z-0" />
 
       {/* Decorative blur circles */}
-      <div className="fixed top-20 left-20 w-96 h-96 bg-primary-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="fixed bottom-20 right-20 w-80 h-80 bg-primary-600/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="fixed top-20 left-20 w-96 h-96 bg-primary-500/10 rounded-full blur-3xl pointer-events-none z-0" />
+      <div className="fixed bottom-20 right-20 w-80 h-80 bg-primary-600/5 rounded-full blur-3xl pointer-events-none z-0" />
 
       {/* Flows Panel - Fixed on left side */}
       <div
-        className="fixed left-0 top-0 h-full z-20 overflow-visible transition-[width] duration-300 ease-in-out"
-        style={{ width: flowsCollapsed ? '48px' : `${flowsPanelWidth}px` }}
+        className="fixed left-0 top-0 h-full z-40 overflow-visible transition-all duration-300 ease-in-out"
+        style={{ width: flowsCollapsed ? '64px' : `${flowsPanelWidth}px` }}
       >
         <FlowsPanel
           collapsed={flowsCollapsed}
@@ -330,8 +344,8 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* Main layout container - offset by flows panel width */}
       <div
-        className="h-full flex transition-[margin] duration-300 ease-in-out"
-        style={{ marginLeft: flowsCollapsed ? '48px' : `${flowsPanelWidth}px` }}
+        className="h-full flex transition-[margin] duration-300 ease-in-out overflow-hidden isolate z-10"
+        style={{ marginLeft: flowsCollapsed ? '64px' : `${flowsPanelWidth}px` }}
       >
         {/* Sidebar Navigation - Right side for English, Left side for Hebrew */}
         <nav className={`relative z-10 glass-sidebar flex flex-col flex-shrink-0 transition-all duration-300 ${navCollapsed ? 'w-16' : 'w-64'} ${isRTL ? '' : 'order-last'}`}>
@@ -373,29 +387,40 @@ export default function Layout({ children }: LayoutProps) {
               const Icon = item.icon
               const isActive = location.pathname === item.path
               return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`nav-item ${isActive ? 'nav-item-active' : ''} ${navCollapsed ? 'justify-center px-2' : ''}`}
-                  title={navCollapsed ? item.label : undefined}
-                >
-                  <Icon size={20} className={isActive ? 'text-primary-400' : ''} />
-                  {!navCollapsed && <span className="font-medium">{item.label}</span>}
-                </Link>
+                <div key={item.path} className={navCollapsed ? 'tooltip-trigger' : ''}>
+                  <Link
+                    to={item.path}
+                    className={`nav-item ${isActive ? 'nav-item-active' : ''} ${navCollapsed ? 'justify-center px-2' : ''}`}
+                  >
+                    <Icon size={20} className={isActive ? 'text-primary-400' : ''} />
+                    {!navCollapsed && <span className="font-medium">{item.label}</span>}
+                  </Link>
+                  {navCollapsed && (
+                    <div className="tooltip tooltip-left">
+                      {item.label}
+                    </div>
+                  )}
+                </div>
               )
             })}
           </div>
 
           {/* Language Toggle */}
           <div className={`border-t border-white/5 ${navCollapsed ? 'p-2' : 'p-4'}`}>
-            <button
-              onClick={toggleLanguage}
-              className={`flex items-center text-dark-400 hover:text-dark-100 transition-colors ${navCollapsed ? 'justify-center w-full p-2' : 'gap-2'}`}
-              title={navCollapsed ? (i18n.language === 'en' ? 'עברית' : 'English') : undefined}
-            >
-              <Globe size={20} />
-              {!navCollapsed && <span>{i18n.language === 'en' ? 'עברית' : 'English'}</span>}
-            </button>
+            <div className={navCollapsed ? 'tooltip-trigger' : ''}>
+              <button
+                onClick={toggleLanguage}
+                className={`flex items-center text-dark-400 hover:text-dark-100 transition-colors ${navCollapsed ? 'justify-center w-full p-2' : 'gap-2'}`}
+              >
+                <Globe size={20} />
+                {!navCollapsed && <span>{i18n.language === 'en' ? 'עברית' : 'English'}</span>}
+              </button>
+              {navCollapsed && (
+                <div className="tooltip tooltip-left">
+                  {i18n.language === 'en' ? 'עברית' : 'English'}
+                </div>
+              )}
+            </div>
           </div>
         </nav>
 
@@ -424,19 +449,20 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Chat Sidebar Toggle Button - Always on right edge */}
-      <button
-        onClick={() => setChatExpanded(!chatExpanded)}
-        className={`fixed right-0 rounded-l-xl top-1/2 -translate-y-1/2 z-40
-          glass-button-primary p-3 shadow-glow
-          ${chatExpanded ? 'opacity-0 pointer-events-none' : 'opacity-100'}
-          flex items-center gap-2 transition-all duration-300`}
-        title={t('chat.expand')}
-      >
-        <MessageCircle size={24} />
-        <span className="text-sm font-medium hidden md:inline">
-          {isRTL ? 'דבר עם הסוכן' : 'Chat'}
-        </span>
-      </button>
+      <div className={`tooltip-trigger fixed right-0 top-1/2 -translate-y-1/2 z-40 ${chatExpanded ? 'opacity-0 pointer-events-none' : 'opacity-100'} transition-all duration-300`}>
+        <button
+          onClick={() => setChatExpanded(!chatExpanded)}
+          className="rounded-l-xl glass-button-primary p-3 shadow-glow flex items-center gap-2"
+        >
+          <MessageCircle size={24} />
+          <span className="text-sm font-medium hidden md:inline">
+            {isRTL ? 'דבר עם הסוכן' : 'Chat'}
+          </span>
+        </button>
+        <div className="tooltip tooltip-left">
+          {t('chat.expand')}
+        </div>
+      </div>
 
       {/* Chat Sidebar Backdrop */}
       <div

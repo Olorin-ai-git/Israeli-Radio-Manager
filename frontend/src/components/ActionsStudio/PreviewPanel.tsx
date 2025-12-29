@@ -164,7 +164,6 @@ export default function PreviewPanel({ isRTL }: PreviewPanelProps) {
                         ${isActive ? 'opacity-100 animate-pulse' : ''}
                       `}
                       style={{ width: `${width}%` }}
-                      title={seg.action.description}
                     >
                       {width > 8 && (
                         <span className="text-[10px] font-medium text-white truncate px-1">
@@ -266,40 +265,52 @@ export default function PreviewPanel({ isRTL }: PreviewPanelProps) {
       <div className="p-4 border-t border-white/5 bg-dark-800/30">
         <div className="flex items-center justify-center gap-2">
           {/* Reset */}
-          <button
-            onClick={resetSimulation}
-            disabled={!hasActions || simulatorState === 'idle'}
-            className="p-2 glass-button disabled:opacity-30"
-            title={isRTL ? 'אפס' : 'Reset'}
-          >
-            <RotateCcw size={18} />
-          </button>
+          <div className="tooltip-trigger">
+            <button
+              onClick={resetSimulation}
+              disabled={!hasActions || simulatorState === 'idle'}
+              className="p-2 glass-button disabled:opacity-30"
+            >
+              <RotateCcw size={18} />
+            </button>
+            <div className="tooltip tooltip-top">
+              {isRTL ? 'אפס' : 'Reset'}
+            </div>
+          </div>
 
           {/* Play/Pause */}
-          <button
-            onClick={() => {
-              if (simulatorState === 'playing') {
-                pauseSimulation()
-              } else {
-                startSimulation()
-              }
-            }}
-            disabled={!hasActions}
-            className="p-3 glass-button-primary disabled:opacity-30"
-            title={simulatorState === 'playing' ? (isRTL ? 'השהה' : 'Pause') : (isRTL ? 'הפעל' : 'Play')}
-          >
-            {simulatorState === 'playing' ? <Pause size={20} /> : <Play size={20} />}
-          </button>
+          <div className="tooltip-trigger">
+            <button
+              onClick={() => {
+                if (simulatorState === 'playing') {
+                  pauseSimulation()
+                } else {
+                  startSimulation()
+                }
+              }}
+              disabled={!hasActions}
+              className="p-3 glass-button-primary disabled:opacity-30"
+            >
+              {simulatorState === 'playing' ? <Pause size={20} /> : <Play size={20} />}
+            </button>
+            <div className="tooltip tooltip-top">
+              {simulatorState === 'playing' ? (isRTL ? 'השהה' : 'Pause') : (isRTL ? 'הפעל' : 'Play')}
+            </div>
+          </div>
 
           {/* Step Forward */}
-          <button
-            onClick={stepSimulation}
-            disabled={!hasActions || currentSimStep >= actions.length - 1}
-            className="p-2 glass-button disabled:opacity-30"
-            title={isRTL ? 'שלב הבא' : 'Next Step'}
-          >
-            <SkipForward size={18} />
-          </button>
+          <div className="tooltip-trigger">
+            <button
+              onClick={stepSimulation}
+              disabled={!hasActions || currentSimStep >= actions.length - 1}
+              className="p-2 glass-button disabled:opacity-30"
+            >
+              <SkipForward size={18} />
+            </button>
+            <div className="tooltip tooltip-top">
+              {isRTL ? 'שלב הבא' : 'Next Step'}
+            </div>
+          </div>
         </div>
 
         {/* Status */}

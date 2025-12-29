@@ -62,26 +62,34 @@ function SortableAction({ action, isSelected, onSelect, onRemove, isRTL }: Sorta
         absolute top-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1
         ${isRTL ? 'left-2' : 'right-2'}
       `}>
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onSelect()
-          }}
-          className="p-1.5 bg-dark-700/80 hover:bg-dark-600 rounded-lg transition-colors"
-          title={isRTL ? 'הגדרות' : 'Settings'}
-        >
-          <Settings size={14} className="text-dark-300" />
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onRemove()
-          }}
-          className="p-1.5 bg-dark-700/80 hover:bg-red-500/50 rounded-lg transition-colors"
-          title={isRTL ? 'מחק' : 'Delete'}
-        >
-          <Trash2 size={14} className="text-dark-300 hover:text-red-400" />
-        </button>
+        <div className="tooltip-trigger">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onSelect()
+            }}
+            className="p-1.5 bg-dark-700/80 hover:bg-dark-600 rounded-lg transition-colors"
+          >
+            <Settings size={14} className="text-dark-300" />
+          </button>
+          <div className="tooltip tooltip-top">
+            {isRTL ? 'הגדרות' : 'Settings'}
+          </div>
+        </div>
+        <div className="tooltip-trigger">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onRemove()
+            }}
+            className="p-1.5 bg-dark-700/80 hover:bg-red-500/50 rounded-lg transition-colors"
+          >
+            <Trash2 size={14} className="text-dark-300 hover:text-red-400" />
+          </button>
+          <div className="tooltip tooltip-top">
+            {isRTL ? 'מחק' : 'Delete'}
+          </div>
+        </div>
       </div>
     </div>
   )

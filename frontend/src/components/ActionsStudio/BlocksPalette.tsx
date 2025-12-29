@@ -15,6 +15,7 @@ import {
   GripVertical,
 } from 'lucide-react'
 import { FlowActionType, getActionDisplayName } from '../../store/actionsStudioStore'
+import { Input } from '../Form'
 
 interface BlocksPaletteProps {
   isRTL: boolean
@@ -125,16 +126,13 @@ export default function BlocksPalette({ isRTL }: BlocksPaletteProps) {
         </h2>
 
         {/* Search */}
-        <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={isRTL ? 'חפש...' : 'Search...'}
-            className="w-full glass-input pl-9 py-2 text-sm"
-          />
-        </div>
+        <Input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder={isRTL ? 'חפש...' : 'Search...'}
+          icon={Search}
+          size="sm"
+        />
       </div>
 
       {/* Categories */}

@@ -6,7 +6,7 @@ import {
   Music,
   FileAudio,
   Megaphone,
-  Radio,
+  Radio as RadioIcon,
   Clock,
   Volume2,
   MessageSquare,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { StudioAction, FlowActionType, useActionsStudioStore } from '../../store/actionsStudioStore'
 import { api } from '../../services/api'
+import { Input, Textarea, Slider, ButtonGroup, Radio, RadioGroup } from '../Form'
 
 interface BlockConfigPanelProps {
   action: StudioAction
@@ -26,7 +27,7 @@ const ACTION_ICONS: Record<FlowActionType, LucideIcon> = {
   play_genre: Music,
   play_content: FileAudio,
   play_commercials: Megaphone,
-  play_show: Radio,
+  play_show: RadioIcon,
   wait: Clock,
   set_volume: Volume2,
   announcement: MessageSquare,
@@ -149,124 +150,71 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
         {/* Config Fields */}
         <div className="space-y-4 max-h-[50vh] overflow-auto">
           {/* Description (common to all) */}
-          <div>
-            <label className="block text-sm text-dark-300 mb-2">
-              {isRTL ? 'תיאור' : 'Description'}
-            </label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={isRTL ? 'תיאור אופציונלי' : 'Optional description'}
-              className="w-full glass-input"
-            />
-          </div>
+          <Input
+            label={isRTL ? 'תיאור' : 'Description'}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder={isRTL ? 'תיאור אופציונלי' : 'Optional description'}
+          />
 
           {/* Play Genre Config */}
           {action.action_type === 'play_genre' && (
             <>
-              <div>
-                <label className="block text-sm text-dark-300 mb-2">
-                  {isRTL ? 'ז\'אנר' : 'Genre'} *
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {GENRES.map((g) => (
-                    <button
-                      key={g}
-                      onClick={() => setGenre(g)}
-                      className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
-                        genre === g
-                          ? 'bg-primary-500 text-white'
-                          : 'glass-button hover:bg-white/10'
-                      }`}
-                    >
-                      {g}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <ButtonGroup
+                label={`${isRTL ? 'ז\'אנר' : 'Genre'} *`}
+                value={genre}
+                onChange={setGenre}
+                options={GENRES.map((g) => ({ value: g, label: g }))}
+              />
 
-              <div>
-                <div className="flex items-center gap-4 mb-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={useDuration}
-                      onChange={() => setUseDuration(true)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm text-dark-300">
-                      {isRTL ? 'לפי משך זמן' : 'By duration'}
-                    </span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={!useDuration}
-                      onChange={() => setUseDuration(false)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm text-dark-300">
-                      {isRTL ? 'לפי מספר שירים' : 'By song count'}
-                    </span>
-                  </label>
-                </div>
+              <RadioGroup>
+                <Radio
+                  label={isRTL ? 'לפי משך זמן' : 'By duration'}
+                  checked={useDuration}
+                  onChange={() => setUseDuration(true)}
+                  name="playback-mode"
+                />
+                <Radio
+                  label={isRTL ? 'לפי מספר שירים' : 'By song count'}
+                  checked={!useDuration}
+                  onChange={() => setUseDuration(false)}
+                  name="playback-mode"
+                />
+              </RadioGroup>
 
-                {useDuration ? (
-                  <div>
-                    <label className="block text-xs text-dark-400 mb-1">
-                      {isRTL ? 'משך בדקות' : 'Duration (minutes)'}
-                    </label>
-                    <input
-                      type="range"
-                      min={5}
-                      max={180}
-                      step={5}
-                      value={durationMinutes}
-                      onChange={(e) => setDurationMinutes(parseInt(e.target.value))}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-xs text-dark-400 mt-1">
-                      <span>5</span>
-                      <span className="text-primary-400 font-medium">{durationMinutes} {isRTL ? 'דקות' : 'min'}</span>
-                      <span>180</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-xs text-dark-400 mb-1">
-                      {isRTL ? 'מספר שירים' : 'Number of songs'}
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={50}
-                      value={songCount}
-                      onChange={(e) => setSongCount(parseInt(e.target.value) || 1)}
-                      className="w-24 glass-input"
-                    />
-                  </div>
-                )}
-              </div>
+              {useDuration ? (
+                <Slider
+                  label={isRTL ? 'משך בדקות' : 'Duration'}
+                  value={durationMinutes}
+                  onChange={setDurationMinutes}
+                  min={5}
+                  max={180}
+                  step={5}
+                  unit={isRTL ? 'דקות' : 'min'}
+                />
+              ) : (
+                <Input
+                  type="number"
+                  label={isRTL ? 'מספר שירים' : 'Number of songs'}
+                  value={songCount.toString()}
+                  onChange={(e) => setSongCount(parseInt(e.target.value) || 1)}
+                  min={1}
+                  max={50}
+                />
+              )}
             </>
           )}
 
           {/* Play Content / Show Config */}
           {(action.action_type === 'play_content' || action.action_type === 'play_show') && (
             <div>
-              <label className="block text-sm text-dark-300 mb-2">
-                {isRTL ? 'חפש תוכן' : 'Search content'}
-              </label>
-              <div className="relative">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400" />
-                <input
-                  type="text"
-                  value={contentSearch}
-                  onChange={(e) => setContentSearch(e.target.value)}
-                  placeholder={isRTL ? 'חפש לפי שם...' : 'Search by name...'}
-                  className="w-full glass-input pl-9"
-                />
-              </div>
+              <Input
+                label={isRTL ? 'חפש תוכן' : 'Search content'}
+                value={contentSearch}
+                onChange={(e) => setContentSearch(e.target.value)}
+                placeholder={isRTL ? 'חפש לפי שם...' : 'Search by name...'}
+                icon={Search}
+              />
 
               {selectedContentTitle && (
                 <div className="mt-2 p-2 bg-primary-500/20 rounded-lg flex items-center justify-between">
@@ -313,94 +261,57 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
 
           {/* Play Commercials Config */}
           {action.action_type === 'play_commercials' && (
-            <div>
-              <label className="block text-sm text-dark-300 mb-2">
-                {isRTL ? 'מספר פרסומות' : 'Number of commercials'}
-              </label>
-              <div className="flex items-center gap-2">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <button
-                    key={n}
-                    onClick={() => setCommercialCount(n)}
-                    className={`w-10 h-10 rounded-lg transition-all ${
-                      commercialCount === n
-                        ? 'bg-primary-500 text-white'
-                        : 'glass-button'
-                    }`}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
+            <>
+              <ButtonGroup
+                label={isRTL ? 'מספר פרסומות' : 'Number of commercials'}
+                value={commercialCount}
+                onChange={setCommercialCount}
+                options={[1, 2, 3, 4, 5].map((n) => ({ value: n, label: n.toString() }))}
+              />
               {commercials && (
-                <p className="text-xs text-dark-400 mt-2">
+                <p className="text-xs text-dark-400">
                   {commercials.length} {isRTL ? 'פרסומות זמינות' : 'commercials available'}
                 </p>
               )}
-            </div>
+            </>
           )}
 
           {/* Wait Config */}
           {action.action_type === 'wait' && (
-            <div>
-              <label className="block text-sm text-dark-300 mb-2">
-                {isRTL ? 'משך המתנה (דקות)' : 'Wait duration (minutes)'}
-              </label>
-              <input
-                type="range"
-                min={1}
-                max={60}
-                value={durationMinutes}
-                onChange={(e) => setDurationMinutes(parseInt(e.target.value))}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-dark-400 mt-1">
-                <span>1</span>
-                <span className="text-primary-400 font-medium">{durationMinutes} {isRTL ? 'דקות' : 'min'}</span>
-                <span>60</span>
-              </div>
-            </div>
+            <Slider
+              label={isRTL ? 'משך המתנה (דקות)' : 'Wait duration (minutes)'}
+              value={durationMinutes}
+              onChange={setDurationMinutes}
+              min={1}
+              max={60}
+              step={1}
+              unit={isRTL ? 'דקות' : 'min'}
+            />
           )}
 
           {/* Set Volume Config */}
           {action.action_type === 'set_volume' && (
-            <div>
-              <label className="block text-sm text-dark-300 mb-2">
-                {isRTL ? 'עוצמת קול' : 'Volume level'}
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={volumeLevel}
-                onChange={(e) => setVolumeLevel(parseInt(e.target.value))}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-dark-400 mt-1">
-                <span>0%</span>
-                <span className="text-primary-400 font-medium">{volumeLevel}%</span>
-                <span>100%</span>
-              </div>
-            </div>
+            <Slider
+              label={isRTL ? 'עוצמת קול' : 'Volume level'}
+              value={volumeLevel}
+              onChange={setVolumeLevel}
+              min={0}
+              max={100}
+              step={1}
+              unit="%"
+            />
           )}
 
           {/* Announcement Config */}
           {action.action_type === 'announcement' && (
-            <div>
-              <label className="block text-sm text-dark-300 mb-2">
-                {isRTL ? 'טקסט ההכרזה' : 'Announcement text'} *
-              </label>
-              <textarea
-                value={announcementText}
-                onChange={(e) => setAnnouncementText(e.target.value)}
-                placeholder={isRTL ? 'הזן את טקסט ההכרזה...' : 'Enter announcement text...'}
-                rows={4}
-                className="w-full glass-input resize-none"
-              />
-              <p className="text-xs text-dark-400 mt-1">
-                {announcementText.length} {isRTL ? 'תווים' : 'characters'}
-              </p>
-            </div>
+            <Textarea
+              label={`${isRTL ? 'טקסט ההכרזה' : 'Announcement text'} *`}
+              value={announcementText}
+              onChange={(e) => setAnnouncementText(e.target.value)}
+              placeholder={isRTL ? 'הזן את טקסט ההכרזה...' : 'Enter announcement text...'}
+              rows={4}
+              showCount
+            />
           )}
         </div>
 

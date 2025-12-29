@@ -283,21 +283,25 @@ export default function ActionsStudio() {
         {/* Header */}
         <header className="flex-shrink-0 glass-card mx-4 mt-4 p-4 flex items-center gap-4">
           {/* Back Button */}
-          <button
-            onClick={() => {
-              if (isDirty) {
-                if (confirm(isRTL ? 'יש שינויים שלא נשמרו. לצאת בכל זאת?' : 'You have unsaved changes. Leave anyway?')) {
+          <div className="tooltip-trigger">
+            <button
+              onClick={() => {
+                if (isDirty) {
+                  if (confirm(isRTL ? 'יש שינויים שלא נשמרו. לצאת בכל זאת?' : 'You have unsaved changes. Leave anyway?')) {
+                    navigate('/')
+                  }
+                } else {
                   navigate('/')
                 }
-              } else {
-                navigate('/')
-              }
-            }}
-            className="glass-button p-2"
-            title={isRTL ? 'חזור' : 'Back'}
-          >
-            {isRTL ? <ArrowRight size={20} /> : <ArrowLeft size={20} />}
-          </button>
+              }}
+              className="glass-button p-2"
+            >
+              {isRTL ? <ArrowRight size={20} /> : <ArrowLeft size={20} />}
+            </button>
+            <div className="tooltip tooltip-right">
+              {isRTL ? 'חזור' : 'Back'}
+            </div>
+          </div>
 
           {/* Flow Name Input */}
           <div className="flex-1 flex items-center gap-3">

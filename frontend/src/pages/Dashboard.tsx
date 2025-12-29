@@ -178,8 +178,9 @@ export default function Dashboard() {
 
                       {/* File Name */}
                       {displayTrack.google_drive_path && (
-                        <span className="hidden md:inline text-dark-600 truncate max-w-[200px]" title={displayTrack.google_drive_path}>
+                        <span className="hidden md:inline text-dark-600 truncate max-w-[200px] tooltip-trigger">
                           📁 {displayTrack.google_drive_path}
+                          <span className="tooltip tooltip-top">{displayTrack.google_drive_path}</span>
                         </span>
                       )}
                     </div>
@@ -286,14 +287,18 @@ export default function Dashboard() {
               <Calendar size={20} className="text-primary-400" />
               {t('dashboard.upcoming')}
             </h2>
-            <button
-              onClick={() => refetchCalendar()}
-              disabled={isRefetchingCalendar}
-              className="p-2 rounded-lg hover:bg-white/10 transition-colors text-dark-400 hover:text-dark-200 disabled:opacity-50"
-              title={isRTL ? 'רענן' : 'Refresh'}
-            >
-              <RefreshCw size={16} className={isRefetchingCalendar ? 'animate-spin' : ''} />
-            </button>
+            <div className="tooltip-trigger">
+              <button
+                onClick={() => refetchCalendar()}
+                disabled={isRefetchingCalendar}
+                className="p-2 rounded-lg hover:bg-white/10 transition-colors text-dark-400 hover:text-dark-200 disabled:opacity-50"
+              >
+                <RefreshCw size={16} className={isRefetchingCalendar ? 'animate-spin' : ''} />
+              </button>
+              <div className="tooltip tooltip-left">
+                {isRTL ? 'רענן' : 'Refresh'}
+              </div>
+            </div>
           </div>
 
           <div className="space-y-3">

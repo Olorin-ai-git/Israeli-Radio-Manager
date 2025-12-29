@@ -322,13 +322,17 @@ export default function CalendarPlaylist() {
         </div>
 
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => refetch()}
-            className="glass-button p-2"
-            title={isRTL ? 'רענן' : 'Refresh'}
-          >
-            <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
-          </button>
+          <div className="tooltip-trigger">
+            <button
+              onClick={() => refetch()}
+              className="glass-button p-2"
+            >
+              <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
+            </button>
+            <div className="tooltip tooltip-bottom">
+              {isRTL ? 'רענן' : 'Refresh'}
+            </div>
+          </div>
 
           <button
             onClick={() => {
@@ -407,8 +411,7 @@ export default function CalendarPlaylist() {
                 onDoubleClick={() => handleDayDoubleClick(date)}
                 className={`glass-card p-4 min-h-[400px] cursor-pointer hover:bg-white/5 transition-colors ${
                   isToday(date) ? 'ring-2 ring-primary-500' : ''
-                }`}
-                title={isRTL ? 'לחץ פעמיים להוספת אירוע' : 'Double-click to add event'}
+                } group`}
               >
                 {/* Day Header */}
                 <div className="text-center mb-4 pb-2 border-b border-white/10">
@@ -444,8 +447,9 @@ export default function CalendarPlaylist() {
                               {formatTime(event.start.dateTime)}
                             </span>
                             {isRecurring && (
-                              <span title="Recurring event">
+                              <span className="tooltip-trigger">
                                 <Repeat size={12} className="text-primary-400" />
+                                <span className="tooltip tooltip-top">{isRTL ? 'אירוע חוזר' : 'Recurring event'}</span>
                               </span>
                             )}
                           </div>

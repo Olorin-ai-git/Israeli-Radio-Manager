@@ -117,6 +117,24 @@
   @apply bg-dark-500;
 }
 
+/* Queue item slide-in animation */
+@keyframes slide-in-fade {
+  0% {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-fade {
+  opacity: 0;
+  transform: translateX(-30px);
+  animation: slide-in-fade 0.6s ease-out forwards;
+}
+
 /* Chat bubble styles - dark glassmorphic */
 .chat-bubble-user {
   @apply bg-primary-500/90 text-white rounded-2xl rounded-br-sm backdrop-blur-sm;
@@ -275,4 +293,37 @@
 
 .badge-info {
   @apply bg-sky-500/20 text-sky-400 border border-sky-500/30;
+}
+
+/* Tooltip styles */
+.tooltip-trigger {
+  @apply relative;
+}
+
+.tooltip {
+  @apply absolute left-full ml-2 top-1/2 -translate-y-1/2
+         px-2.5 py-1.5 bg-dark-800 text-dark-100 text-xs rounded-lg
+         whitespace-nowrap opacity-0 pointer-events-none
+         transition-opacity duration-200 border border-white/10
+         shadow-lg shadow-black/20 z-[100];
+}
+
+.tooltip-right {
+  @apply left-full ml-2 right-auto mr-0;
+}
+
+.tooltip-left {
+  @apply right-full mr-2 left-auto ml-0;
+}
+
+.tooltip-top {
+  @apply bottom-full mb-2 top-auto left-1/2 -translate-x-1/2 translate-y-0;
+}
+
+.tooltip-bottom {
+  @apply top-full mt-2 bottom-auto left-1/2 -translate-x-1/2 translate-y-0;
+}
+
+.tooltip-trigger:hover .tooltip {
+  @apply opacity-100;
 }

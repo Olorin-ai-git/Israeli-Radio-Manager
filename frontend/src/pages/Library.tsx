@@ -234,31 +234,39 @@ export default function Library() {
           {isRTL ? 'ספריית מדיה' : 'Media Library'}
         </h1>
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => {
-              console.log('Sync button clicked!')
-              syncMutation.mutate()
-            }}
-            disabled={syncMutation.isPending}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title={isRTL ? 'סנכרן עם Google Drive' : 'Sync with Google Drive'}
-          >
-            <FolderSync size={16} className={syncMutation.isPending ? 'animate-spin' : ''} />
-            <span className="hidden sm:inline">
-              {isRTL ? 'סנכרן עם Drive' : 'Sync with Drive'}
-            </span>
-          </button>
-          <button
-            onClick={() => refreshMetadataMutation.mutate()}
-            disabled={refreshMetadataMutation.isPending}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-dark-800 text-dark-100 hover:bg-dark-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title={isRTL ? 'רענן מטה-דאטה מקבצי שמע' : 'Refresh metadata from audio files'}
-          >
-            <RefreshCw size={16} className={refreshMetadataMutation.isPending ? 'animate-spin' : ''} />
-            <span className="hidden sm:inline">
-              {isRTL ? 'רענן מטה-דאטה' : 'Refresh Metadata'}
-            </span>
-          </button>
+          <div className="tooltip-trigger">
+            <button
+              onClick={() => {
+                console.log('Sync button clicked!')
+                syncMutation.mutate()
+              }}
+              disabled={syncMutation.isPending}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <FolderSync size={16} className={syncMutation.isPending ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">
+                {isRTL ? 'סנכרן עם Drive' : 'Sync with Drive'}
+              </span>
+            </button>
+            <div className="tooltip tooltip-bottom">
+              {isRTL ? 'סנכרן עם Google Drive' : 'Sync with Google Drive'}
+            </div>
+          </div>
+          <div className="tooltip-trigger">
+            <button
+              onClick={() => refreshMetadataMutation.mutate()}
+              disabled={refreshMetadataMutation.isPending}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-dark-800 text-dark-100 hover:bg-dark-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw size={16} className={refreshMetadataMutation.isPending ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">
+                {isRTL ? 'רענן מטה-דאטה' : 'Refresh Metadata'}
+              </span>
+            </button>
+            <div className="tooltip tooltip-bottom">
+              {isRTL ? 'רענן מטה-דאטה מקבצי שמע' : 'Refresh metadata from audio files'}
+            </div>
+          </div>
           <div className="text-sm text-dark-400">
             {filteredContent.length} {isRTL ? 'פריטים' : 'items'}
           </div>
@@ -457,13 +465,17 @@ export default function Library() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleAddToQueue(item)}
-                      className="p-2 rounded-lg text-dark-400 hover:text-dark-100 hover:bg-white/10 transition-all"
-                      title={isRTL ? 'הוסף לתור' : 'Add to queue'}
-                    >
-                      <Plus size={18} />
-                    </button>
+                    <div className="tooltip-trigger">
+                      <button
+                        onClick={() => handleAddToQueue(item)}
+                        className="p-2 rounded-lg text-dark-400 hover:text-dark-100 hover:bg-white/10 transition-all"
+                      >
+                        <Plus size={18} />
+                      </button>
+                      <div className="tooltip tooltip-left">
+                        {isRTL ? 'הוסף לתור' : 'Add to queue'}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )

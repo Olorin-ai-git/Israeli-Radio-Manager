@@ -128,29 +128,58 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   removeFromQueue: async (index) => {
-    // Call backend API (backend will broadcast update)
+    const originalQueue = get().queue
+
+    // Optimistic update - remove locally first for instant UI feedback
+    const newQueue = [...originalQueue]
+    newQueue.splice(index, 1)
+    set({ queue: newQueue })
+
+    // Then sync with backend
     try {
       await api.removeFromQueue(index)
+      // Don't fetchQueue after remove - we already have the correct state locally
     } catch (error) {
       console.error('Failed to remove from queue:', error)
+      // Revert to original queue on error
+      set({ queue: originalQueue })
     }
   },
 
   clearQueue: async () => {
-    // Call backend API (backend will broadcast update)
+    const originalQueue = get().queue
+
+    // Optimistic update - clear locally first for instant UI feedback
+    set({ queue: [] })
+
+    // Then sync with backend
     try {
       await api.clearQueue()
     } catch (error) {
       console.error('Failed to clear queue:', error)
+      // Revert to original queue on error
+      set({ queue: originalQueue })
     }
   },
 
   reorderQueue: async (fromIndex: number, toIndex: number) => {
-    // Call backend API (backend will broadcast update)
+    const originalQueue = get().queue
+
+    // Optimistic update - reorder locally first for instant UI feedback
+    const newQueue = [...originalQueue]
+    const [movedItem] = newQueue.splice(fromIndex, 1)
+    newQueue.splice(toIndex, 0, movedItem)
+    set({ queue: newQueue })
+
+    // Then sync with backend
     try {
       await api.reorderQueue(fromIndex, toIndex)
+      // Don't fetchQueue after reorder - we already have the correct order locally
+      // This prevents race conditions and duplicate index issues
     } catch (error) {
       console.error('Failed to reorder queue:', error)
+      // Revert to original queue on error
+      set({ queue: originalQueue })
     }
   },
 

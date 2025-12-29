@@ -21,7 +21,9 @@ import {
   CheckCircle,
   GripVertical,
   RotateCcw,
-  Repeat
+  Repeat,
+  Wand2,
+  Hand
 } from 'lucide-react'
 import {
   DndContext,
@@ -40,6 +42,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { api } from '../../services/api'
+import { Input, Textarea, Select, Checkbox } from '../Form'
 
 // Genre and flow description parsing is now done via Claude API
 // Flow description parsing is now done via API (parseNaturalFlow endpoint)
@@ -119,6 +122,7 @@ interface FlowAction {
   genre?: string
   content_id?: string
   commercial_count?: number
+  batch_number?: number
   duration_minutes?: number
   description?: string
 }
@@ -227,14 +231,18 @@ function SortableActionItem({
       style={style}
       className="flex items-center gap-2 text-xs text-dark-200 p-2 bg-dark-700/50 rounded hover:bg-dark-700 transition-colors group"
     >
-      <button
-        {...attributes}
-        {...listeners}
-        className="cursor-grab active:cursor-grabbing text-dark-500 hover:text-dark-300 transition-colors"
-        title={isRTL ? 'גרור לשינוי סדר' : 'Drag to reorder'}
-      >
-        <GripVertical size={14} />
-      </button>
+      <div className="tooltip-trigger">
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-dark-500 hover:text-dark-300 transition-colors"
+        >
+          <GripVertical size={14} />
+        </button>
+        <div className="tooltip tooltip-top">
+          {isRTL ? 'גרור לשינוי סדר' : 'Drag to reorder'}
+        </div>
+      </div>
       <ActionIcon type={action.action_type} />
       <span className="flex-1">{action.description || action.action_type}</span>
       {action.duration_minutes && (
@@ -246,13 +254,17 @@ function SortableActionItem({
       {action.commercial_count && (
         <span className="text-dark-400 text-xs">({action.commercial_count} ads)</span>
       )}
-      <button
-        onClick={() => onRemove(index)}
-        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-all p-1"
-        title={isRTL ? 'מחק פעולה' : 'Remove action'}
-      >
-        <X size={14} />
-      </button>
+      <div className="tooltip-trigger opacity-0 group-hover:opacity-100 transition-all">
+        <button
+          onClick={() => onRemove(index)}
+          className="text-red-400 hover:text-red-300 p-1"
+        >
+          <X size={14} />
+        </button>
+        <div className="tooltip tooltip-top">
+          {isRTL ? 'מחק פעולה' : 'Remove action'}
+        </div>
+      </div>
     </div>
   )
 }
@@ -275,7 +287,10 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
   const [editParsedActions, setEditParsedActions] = useState<any[]>([])
   const [actionsManuallyModified, setActionsManuallyModified] = useState(false)
   const [previewActions, setPreviewActions] = useState<FlowAction[]>([])
+  const [createBuildMode, setCreateBuildMode] = useState<'manual' | 'ai'>('manual')
+  const [editBuildMode, setEditBuildMode] = useState<'manual' | 'ai'>('manual')
   const [showAddActionModal, setShowAddActionModal] = useState(false)
+  const [addActionContext, setAddActionContext] = useState<'create' | 'edit'>('edit')
   const [selectedActionType, setSelectedActionType] = useState('play_genre')
   const [selectedCommercials, setSelectedCommercials] = useState<Set<string>>(new Set())
   const [flowToPause, setFlowToPause] = useState<Flow | null>(null)
@@ -311,8 +326,13 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     useSensor(KeyboardSensor)
   )
 
-  // Real-time preview of parsed actions using LLM API
+  // Real-time preview of parsed actions using LLM API (only in AI mode)
   useEffect(() => {
+    // Skip auto-parsing in manual mode
+    if (createBuildMode !== 'ai') {
+      return
+    }
+
     if (!flowDescription.trim()) {
       setPreviewActions([])
       return
@@ -331,12 +351,12 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     }, 500) // Debounce 500ms
 
     return () => clearTimeout(timer)
-  }, [flowDescription])
+  }, [flowDescription, createBuildMode])
 
-  // Parse edit flow description using LLM API (only if not manually modified)
+  // Parse edit flow description using LLM API (only in AI mode and if not manually modified)
   useEffect(() => {
-    // Skip auto-parsing if user has manually modified actions
-    if (actionsManuallyModified) {
+    // Skip auto-parsing in manual mode or if user has manually modified actions
+    if (editBuildMode !== 'ai' || actionsManuallyModified) {
       return
     }
 
@@ -357,7 +377,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     }, 500) // Debounce 500ms
 
     return () => clearTimeout(timer)
-  }, [editFlowDescription, actionsManuallyModified])
+  }, [editFlowDescription, actionsManuallyModified, editBuildMode])
 
   // Fetch flows
   const { data: flows, isLoading } = useQuery<Flow[]>({
@@ -446,40 +466,47 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     setEditFlowDescription('')
     setEditParsedActions([])
     setActionsManuallyModified(false)
+    setEditBuildMode('manual')
     setShowAddActionModal(false)
     setOverlapError(null)
     setSelectedActionType('play_genre')
     setSelectedCommercials(new Set())
   }
 
-  // Handle drag end for reordering actions
-  const handleDragEnd = (event: DragEndEvent) => {
+  // Handle drag end for reordering actions (works for both create and edit contexts)
+  const handleDragEnd = (event: DragEndEvent, context: 'create' | 'edit' = 'edit') => {
     const { active, over } = event
     if (over && active.id !== over.id) {
-      setActionsManuallyModified(true)
-      setEditParsedActions((items) => {
-        // Extract indices from the IDs (format: "action-0", "action-1", etc.)
-        const oldIndex = parseInt(String(active.id).split('-')[1])
-        const newIndex = parseInt(String(over.id).split('-')[1])
-        return arrayMove(items, oldIndex, newIndex)
-      })
+      const oldIndex = parseInt(String(active.id).split('-')[1])
+      const newIndex = parseInt(String(over.id).split('-')[1])
+
+      if (context === 'create') {
+        setPreviewActions((items) => arrayMove(items, oldIndex, newIndex))
+      } else {
+        setActionsManuallyModified(true)
+        setEditParsedActions((items) => arrayMove(items, oldIndex, newIndex))
+      }
     }
   }
 
-  // Handle remove action
-  const handleRemoveAction = (index: number) => {
-    setActionsManuallyModified(true)
-    setEditParsedActions((items) => items.filter((_, idx) => idx !== index))
+  // Handle remove action (works for both create and edit contexts)
+  const handleRemoveAction = (index: number, context: 'create' | 'edit' = 'edit') => {
+    if (context === 'create') {
+      setPreviewActions((items) => items.filter((_, idx) => idx !== index))
+    } else {
+      setActionsManuallyModified(true)
+      setEditParsedActions((items) => items.filter((_, idx) => idx !== index))
+    }
   }
 
-  // Handle add action
+  // Handle add action (works for both create and edit contexts)
   const handleAddAction = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
 
     const actionType = formData.get('action_type') as string
     const genre = formData.get('genre') as string
-    const batchNumber = formData.get('batch_number') as string
+    const batchLetter = formData.get('batch_letter') as string
     const durationMinutes = formData.get('duration_minutes') as string
     const description = formData.get('description') as string
 
@@ -490,16 +517,26 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
       genre: genre || undefined,
     }
 
-    // For commercials, add batch number and selected commercial IDs
+    // For commercials, add batch and selected commercial IDs
     if (actionType === 'play_commercials') {
-      newAction.commercial_count = batchNumber ? parseInt(batchNumber) : 1
-      newAction.content_id = selectedCommercials.size === commercials?.length
-        ? undefined // All commercials selected - use undefined to mean "all"
-        : Array.from(selectedCommercials).join(',') // Specific commercials
+      // Convert batch letter (A, B, C...) to number (1, 2, 3...)
+      if (batchLetter && batchLetter !== 'all') {
+        newAction.batch_number = batchLetter.toUpperCase().charCodeAt(0) - 64 // A=1, B=2, etc.
+        newAction.description = `Play commercials from Batch ${batchLetter.toUpperCase()}`
+      }
+      // Only set content_id if specific commercials are selected (not all)
+      if (selectedCommercials.size > 0 && selectedCommercials.size < (commercials?.length || 0)) {
+        newAction.content_id = Array.from(selectedCommercials).join(',')
+      }
+      newAction.commercial_count = 1 // Play the set once
     }
 
-    setActionsManuallyModified(true)
-    setEditParsedActions((items) => [...items, newAction])
+    if (addActionContext === 'create') {
+      setPreviewActions((items) => [...items, newAction])
+    } else {
+      setActionsManuallyModified(true)
+      setEditParsedActions((items) => [...items, newAction])
+    }
     setShowAddActionModal(false)
     setSelectedActionType('play_genre')
     setSelectedCommercials(new Set())
@@ -513,13 +550,8 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
     const description = formData.get('description') as string
     const loop = formData.get('loop') === 'on'
 
-    // Use the pre-parsed preview actions
-    const actions = previewActions.length > 0 ? previewActions : [{
-      action_type: 'play_genre',
-      genre: 'mixed',
-      duration_minutes: 30,
-      description: 'Play mixed music',
-    }]
+    // Use the preview actions (submit button is disabled if empty)
+    const actions = previewActions
 
     // Build schedule object if scheduled (using state, not form data)
     let schedule = undefined
@@ -577,8 +609,10 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
   const handleCloseCreateModal = () => {
     setShowCreateModal(false)
     setFlowDescription('')
+    setPreviewActions([])
     setTriggerType('scheduled')
     setRecurrenceType('weekly')
+    setCreateBuildMode('manual')
     setOverlapError(null)
   }
 
@@ -598,43 +632,82 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
 
   return (
     <div
-      className="h-full glass-sidebar flex flex-col relative transition-all duration-300 ease-in-out"
-      style={{ width: collapsed ? '48px' : `${width}px` }}
+      className={`h-full flex flex-col relative transition-all duration-300 ease-in-out ${collapsed ? 'bg-dark-900/95 border-r border-white/5' : 'glass-sidebar'}`}
+      style={{ width: collapsed ? '64px' : `${width}px` }}
     >
-      {/* Expand button - visible when collapsed, positioned outside container */}
-      <button
-        onClick={onToggle}
-        className={`fixed top-1/2 -translate-y-1/2 z-30 glass-button-primary p-3 rounded-r-xl shadow-glow flex items-center gap-2 transition-all duration-300 ${collapsed ? 'opacity-100 left-12' : 'opacity-0 pointer-events-none left-0'}`}
-        title={isRTL ? 'הצג זרימות' : 'Show Flows'}
-      >
-        <Workflow size={24} />
-        <span className="text-sm font-medium hidden md:inline">
-          {isRTL ? 'זרימות' : 'Flows'}
-        </span>
-      </button>
+      {/* Collapsed view - icons only (no backdrop-blur to allow tooltip overflow) */}
+      <div className={`absolute inset-0 flex flex-col transition-opacity duration-300 overflow-visible ${collapsed ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+        {/* Collapse toggle at top */}
+        <div className="p-3 border-b border-white/5 flex justify-center">
+          <div className="group tooltip-trigger">
+            <button
+              onClick={onToggle}
+              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            >
+              <ChevronRight size={20} className="text-dark-300 transition-transform" />
+            </button>
+            <div className="tooltip tooltip-right">
+              {isRTL ? 'הרחב' : 'Expand'}
+            </div>
+          </div>
+        </div>
 
-      {/* Collapsed view - mini icons */}
-      <div className={`absolute inset-0 flex flex-col items-center py-4 gap-4 transition-opacity duration-300 ${collapsed ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-        <Workflow size={20} className="text-primary-400" />
-        {(Array.isArray(flows) ? flows : []).slice(0, 5).map((flow) => (
-          <button
-            key={flow._id}
-            onClick={() => {
-              onToggle()
-              setExpandedFlow(flow._id)
-            }}
-            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
-              flow.status === 'active'
-                ? 'bg-green-500/20 text-green-400'
-                : flow.status === 'running'
-                ? 'bg-blue-500/20 text-blue-400'
-                : 'bg-dark-700/50 text-dark-400'
-            }`}
-            title={flow.name}
-          >
-            <Workflow size={14} />
-          </button>
-        ))}
+        {/* Flow icons */}
+        <div className="flex-1 flex flex-col items-center py-4 gap-3 overflow-visible">
+          <div className="p-2 bg-primary-500/20 rounded-xl mb-2 group tooltip-trigger">
+            <Workflow size={20} className="text-primary-400" />
+            <div className="tooltip tooltip-right">
+              {isRTL ? 'זרימות' : 'Flows'}
+            </div>
+          </div>
+          {(Array.isArray(flows) ? flows : []).slice(0, 8).map((flow) => (
+            <div key={flow._id} className="group tooltip-trigger">
+              <button
+                onClick={() => {
+                  onToggle()
+                  setExpandedFlow(flow._id)
+                }}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-110 ${
+                  flow.status === 'active'
+                    ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                    : flow.status === 'running'
+                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                    : 'bg-dark-700/50 text-dark-400 border border-white/5 hover:border-white/20'
+                }`}
+              >
+                <Workflow size={16} />
+              </button>
+              <div className="tooltip tooltip-right">
+                <div className="font-medium">{flow.name}</div>
+                {flow.status && (
+                  <div className={`text-[10px] ${
+                    flow.status === 'active' ? 'text-green-400' :
+                    flow.status === 'running' ? 'text-blue-400' : 'text-dark-400'
+                  }`}>
+                    {flow.status === 'active' ? (isRTL ? 'פעיל' : 'Active') :
+                     flow.status === 'running' ? (isRTL ? 'רץ' : 'Running') :
+                     (isRTL ? 'לא פעיל' : 'Inactive')}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+          {/* Add new flow button */}
+          <div className="group tooltip-trigger">
+            <button
+              onClick={() => {
+                onToggle()
+                setShowCreateModal(true)
+              }}
+              className="w-10 h-10 rounded-xl flex items-center justify-center bg-primary-500/20 text-primary-400 border border-primary-500/30 hover:bg-primary-500/30 transition-all hover:scale-110"
+            >
+              <Plus size={18} />
+            </button>
+            <div className="tooltip tooltip-right">
+              {isRTL ? 'זרימה חדשה' : 'New Flow'}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Expanded view - full content */}
@@ -647,12 +720,17 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
             {isRTL ? 'זרימות אוטומטיות' : 'Auto Flows'}
           </h2>
         </div>
-        <button
-          onClick={onToggle}
-          className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
-        >
-          {isRTL ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-        </button>
+        <div className="tooltip-trigger">
+          <button
+            onClick={onToggle}
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+          >
+            <ChevronLeft size={18} className="text-dark-300" />
+          </button>
+          <div className="tooltip tooltip-left">
+            {isRTL ? 'כווץ' : 'Collapse'}
+          </div>
+        </div>
       </div>
 
       {/* Add Flow Button */}
@@ -688,22 +766,22 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
               }`}
             >
               {/* Flow Header */}
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 mb-2">
                 <button
                   onClick={() => setExpandedFlow(expandedFlow === flow._id ? null : flow._id)}
-                  className="flex-1 text-start"
+                  className="flex-1 min-w-0 text-start"
                 >
                   <h3 className="font-medium text-dark-100 text-sm truncate" dir="auto">
                     {isRTL ? flow.name_he || flow.name : flow.name}
                   </h3>
                 </button>
-                <div className="flex items-center gap-1.5">
+                <div className="flex-shrink-0 flex items-center gap-1.5">
                   {flow.loop && (
-                    <span
-                      className="text-primary-400"
-                      title={isRTL ? 'זרימה חוזרת' : 'Looping'}
-                    >
+                    <span className="tooltip-trigger text-primary-400">
                       <Repeat size={14} />
+                      <span className="tooltip tooltip-top">
+                        {isRTL ? 'זרימה חוזרת' : 'Looping'}
+                      </span>
                     </span>
                   )}
                   <StatusBadge status={flow.status} isRunning={runningFlowIds.has(flow._id)} />
@@ -722,10 +800,10 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   return (
                     <div
                       key={idx}
-                      className="w-6 h-6 rounded bg-dark-700/50 flex items-center justify-center hover:bg-dark-700 transition-colors cursor-help"
-                      title={tooltip}
+                      className="w-6 h-6 rounded bg-dark-700/50 flex items-center justify-center hover:bg-dark-700 transition-colors cursor-help tooltip-trigger"
                     >
                       <ActionIcon type={action.action_type} />
+                      <div className="tooltip tooltip-top">{tooltip}</div>
                     </div>
                   )
                 })}
@@ -838,80 +916,100 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
 
               {/* Action Buttons */}
               <div className="flex items-center gap-1 mt-2 pt-2 border-t border-white/5">
-                <button
-                  onClick={() => {
-                    // If pausing an active flow, show confirmation
-                    if (flow.status === 'active') {
-                      setFlowToPause(flow)
-                    } else {
-                      // Resuming - no confirmation needed
-                      toggleMutation.mutate(flow._id)
-                    }
-                  }}
-                  className="flex-1 glass-button py-1.5 text-xs flex items-center justify-center gap-1"
-                  title={flow.status === 'active' ? (isRTL ? 'השהה' : 'Pause') : (isRTL ? 'הפעל' : 'Enable')}
-                >
-                  {flow.status === 'active' ? <Pause size={12} /> : <Play size={12} />}
-                </button>
+                <div className="tooltip-trigger flex-1">
+                  <button
+                    onClick={() => {
+                      // If pausing an active flow, show confirmation
+                      if (flow.status === 'active') {
+                        setFlowToPause(flow)
+                      } else {
+                        // Resuming - no confirmation needed
+                        toggleMutation.mutate(flow._id)
+                      }
+                    }}
+                    className="w-full glass-button py-1.5 text-xs flex items-center justify-center gap-1"
+                  >
+                    {flow.status === 'active' ? <Pause size={12} /> : <Play size={12} />}
+                  </button>
+                  <div className="tooltip tooltip-top">
+                    {flow.status === 'active' ? (isRTL ? 'השהה' : 'Pause') : (isRTL ? 'הפעל' : 'Enable')}
+                  </div>
+                </div>
                 {flow.status === 'running' ? (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      resetMutation.mutate(flow._id)
-                    }}
-                    disabled={resetMutation.isPending && resetMutation.variables === flow._id}
-                    className="flex-1 glass-button py-1.5 text-xs flex items-center justify-center gap-1 text-yellow-400 hover:bg-yellow-500/20"
-                    title={isRTL ? 'אפס סטטוס' : 'Reset Status'}
-                  >
-                    {resetMutation.isPending && resetMutation.variables === flow._id ? (
-                      <Loader2 size={12} className="animate-spin" />
-                    ) : (
-                      <RotateCcw size={12} />
-                    )}
-                  </button>
+                  <div className="tooltip-trigger flex-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        resetMutation.mutate(flow._id)
+                      }}
+                      disabled={resetMutation.isPending && resetMutation.variables === flow._id}
+                      className="w-full glass-button py-1.5 text-xs flex items-center justify-center gap-1 text-yellow-400 hover:bg-yellow-500/20"
+                    >
+                      {resetMutation.isPending && resetMutation.variables === flow._id ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <RotateCcw size={12} />
+                      )}
+                    </button>
+                    <div className="tooltip tooltip-top">
+                      {isRTL ? 'אפס סטטוס' : 'Reset Status'}
+                    </div>
+                  </div>
                 ) : (
+                  <div className="tooltip-trigger flex-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        runMutation.mutate(flow._id)
+                      }}
+                      disabled={runningFlowIds.has(flow._id)}
+                      className="w-full glass-button py-1.5 text-xs flex items-center justify-center gap-1 text-green-400 hover:bg-green-500/20"
+                    >
+                      {runningFlowIds.has(flow._id) ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Play size={12} />
+                      )}
+                    </button>
+                    <div className="tooltip tooltip-top">
+                      {isRTL ? 'הפעל עכשיו' : 'Run Now'}
+                    </div>
+                  </div>
+                )}
+                <div className="tooltip-trigger">
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      runMutation.mutate(flow._id)
+                    onClick={() => {
+                      setEditingFlow(flow)
+                      setEditTriggerType(flow.trigger_type === 'scheduled' ? 'scheduled' : 'manual')
+                      setEditRecurrenceType(flow.schedule?.recurrence || 'weekly')
+                      setEditFlowDescription(flow.description || '')
+                      setEditParsedActions(flow.actions || [])
+                      setOverlapError(null)
                     }}
-                    disabled={runningFlowIds.has(flow._id)}
-                    className="flex-1 glass-button py-1.5 text-xs flex items-center justify-center gap-1 text-green-400 hover:bg-green-500/20"
-                    title={isRTL ? 'הפעל עכשיו' : 'Run Now'}
+                    className="glass-button py-1.5 px-2 text-xs text-blue-400 hover:bg-blue-500/20"
                   >
-                    {runningFlowIds.has(flow._id) ? (
+                    <Edit size={12} />
+                  </button>
+                  <div className="tooltip tooltip-top">
+                    {isRTL ? 'ערוך' : 'Edit'}
+                  </div>
+                </div>
+                <div className="tooltip-trigger">
+                  <button
+                    onClick={() => deleteMutation.mutate(flow._id)}
+                    disabled={deleteMutation.isPending && deleteMutation.variables === flow._id}
+                    className="glass-button py-1.5 px-2 text-xs text-red-400 hover:bg-red-500/20"
+                  >
+                    {deleteMutation.isPending && deleteMutation.variables === flow._id ? (
                       <Loader2 size={12} className="animate-spin" />
                     ) : (
-                      <Play size={12} />
+                      <Trash2 size={12} />
                     )}
                   </button>
-                )}
-                <button
-                  onClick={() => {
-                    setEditingFlow(flow)
-                    setEditTriggerType(flow.trigger_type === 'scheduled' ? 'scheduled' : 'manual')
-                    setEditRecurrenceType(flow.schedule?.recurrence || 'weekly')
-                    setEditFlowDescription(flow.description || '')
-                    setEditParsedActions(flow.actions || [])
-                    setOverlapError(null)
-                  }}
-                  className="glass-button py-1.5 px-2 text-xs text-blue-400 hover:bg-blue-500/20"
-                  title={isRTL ? 'ערוך' : 'Edit'}
-                >
-                  <Edit size={12} />
-                </button>
-                <button
-                  onClick={() => deleteMutation.mutate(flow._id)}
-                  disabled={deleteMutation.isPending && deleteMutation.variables === flow._id}
-                  className="glass-button py-1.5 px-2 text-xs text-red-400 hover:bg-red-500/20"
-                  title={isRTL ? 'מחק' : 'Delete'}
-                >
-                  {deleteMutation.isPending && deleteMutation.variables === flow._id ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={12} />
-                  )}
-                </button>
+                  <div className="tooltip tooltip-top">
+                    {isRTL ? 'מחק' : 'Delete'}
+                  </div>
+                </div>
               </div>
             </div>
           ))
@@ -944,70 +1042,140 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
             </div>
 
             <form onSubmit={handleCreateFlow} className="space-y-4">
-              <div>
-                <label className="block text-dark-300 text-sm mb-2">
-                  {isRTL ? 'שם' : 'Name'}
-                </label>
-                <input
-                  type="text"
-                  name="name"
-                  className="w-full glass-input"
-                  placeholder={isRTL ? 'לדוגמה: תוכנית בוקר' : 'e.g., Morning Show'}
-                  required
-                />
-              </div>
+              <Input
+                name="name"
+                label={isRTL ? 'שם' : 'Name'}
+                placeholder={isRTL ? 'לדוגמה: תוכנית בוקר' : 'e.g., Morning Show'}
+                required
+              />
 
-              <div>
+              {/* Build Mode Toggle */}
+              <div className="p-3 bg-dark-800/30 rounded-lg">
                 <label className="block text-dark-300 text-sm mb-2">
-                  {isRTL ? 'תיאור הזרימה' : 'Flow Description'}
+                  {isRTL ? 'מצב בנייה' : 'Build Mode'}
                 </label>
-                <textarea
-                  name="description"
-                  rows={6}
-                  value={flowDescription}
-                  onChange={(e) => setFlowDescription(e.target.value)}
-                  className="w-full glass-input resize-none"
-                  placeholder={
-                    isRTL
-                      ? 'תאר את הזרימה: נגן מזרחי שמח, אז שתי פרסומות, אז חסידי'
-                      : 'Describe the flow: play happy mizrahi, then 2 commercials, then hasidi'
-                  }
-                  required
-                />
-                <p className="text-xs text-dark-500 mt-1">
-                  {isRTL
-                    ? 'השתמש ב"אז" או "then" להפרדה בין פעולות'
-                    : 'Use "then" to separate actions'}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCreateBuildMode('manual')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg transition-all ${
+                      createBuildMode === 'manual'
+                        ? 'bg-primary-500 text-white'
+                        : 'bg-dark-700/50 text-dark-300 hover:bg-dark-700'
+                    }`}
+                  >
+                    <Hand size={16} />
+                    <span className="text-sm">{isRTL ? 'ידני' : 'Manual'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCreateBuildMode('ai')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg transition-all ${
+                      createBuildMode === 'ai'
+                        ? 'bg-purple-500 text-white'
+                        : 'bg-dark-700/50 text-dark-300 hover:bg-dark-700'
+                    }`}
+                  >
+                    <Wand2 size={16} />
+                    <span className="text-sm">{isRTL ? 'AI' : 'AI'}</span>
+                  </button>
+                </div>
+                <p className="text-xs text-dark-500 mt-2">
+                  {createBuildMode === 'manual'
+                    ? (isRTL ? 'הוסף פעולות ידנית אחת אחת' : 'Add actions manually one by one')
+                    : (isRTL ? 'תאר את הזרימה ו-AI יפרש אותה לפעולות' : 'Describe the flow and AI will parse it into actions')}
                 </p>
               </div>
 
-              {/* Live Preview of Parsed Actions */}
+              {/* Description field - only required in AI mode */}
+              <Textarea
+                name="description"
+                label={`${isRTL ? 'תיאור' : 'Description'}${createBuildMode === 'ai' ? ' *' : ''}`}
+                rows={createBuildMode === 'ai' ? 6 : 2}
+                value={flowDescription}
+                onChange={(e) => setFlowDescription(e.target.value)}
+                placeholder={
+                  createBuildMode === 'ai'
+                    ? (isRTL
+                      ? 'תאר את הזרימה: נגן מזרחי שמח, אז שתי פרסומות, אז חסידי'
+                      : 'Describe the flow: play happy mizrahi, then 2 commercials, then hasidi')
+                    : (isRTL ? 'תיאור אופציונלי...' : 'Optional description...')
+                }
+                hint={createBuildMode === 'ai' ? (isRTL ? 'השתמש ב"אז" או "then" להפרדה בין פעולות' : 'Use "then" to separate actions') : undefined}
+                required={createBuildMode === 'ai'}
+              />
+
+              {/* Actions Section */}
               <div className="p-3 bg-dark-800/50 rounded-lg border border-primary-500/30">
-                <div className="flex items-center gap-2 mb-2">
-                  <Eye size={14} className="text-primary-400" />
-                  <span className="text-xs font-medium text-primary-400">
-                    {isRTL ? 'תצוגה מקדימה - מה המערכת הבינה:' : 'Preview - What the system understood:'}
-                  </span>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Eye size={14} className="text-primary-400" />
+                    <span className="text-xs font-medium text-primary-400">
+                      {createBuildMode === 'ai'
+                        ? (isRTL ? 'תצוגה מקדימה - מה המערכת הבינה:' : 'Preview - What the system understood:')
+                        : (isRTL ? 'פעולות:' : 'Actions:')}
+                    </span>
+                  </div>
+                  {createBuildMode === 'manual' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddActionContext('create')
+                        setShowAddActionModal(true)
+                      }}
+                      className="flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300 transition-colors"
+                    >
+                      <Plus size={14} />
+                      <span>{isRTL ? 'הוסף פעולה' : 'Add Action'}</span>
+                    </button>
+                  )}
                 </div>
                 {previewActions.length > 0 ? (
-                  <div className="space-y-1">
-                    {previewActions.map((action, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center gap-2 text-xs text-dark-200 p-2 bg-dark-700/50 rounded"
+                  createBuildMode === 'manual' ? (
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={(event) => handleDragEnd(event, 'create')}
+                    >
+                      <SortableContext
+                        items={previewActions.map((_, idx) => `action-${idx}`)}
+                        strategy={verticalListSortingStrategy}
                       >
-                        <CheckCircle size={12} className="text-green-400" />
-                        <ActionIcon type={action.action_type} />
-                        <span>{action.description}</span>
-                        {action.duration_minutes && (
-                          <span className="text-dark-400">({action.duration_minutes} min)</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                        <div className="space-y-1 max-h-48 overflow-auto">
+                          {previewActions.map((action, idx) => (
+                            <SortableActionItem
+                              key={`action-${idx}`}
+                              action={{ ...action, id: `action-${idx}` }}
+                              index={idx}
+                              isRTL={isRTL}
+                              onRemove={(index) => handleRemoveAction(index, 'create')}
+                            />
+                          ))}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
+                  ) : (
+                    <div className="space-y-1">
+                      {previewActions.map((action, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center gap-2 text-xs text-dark-200 p-2 bg-dark-700/50 rounded"
+                        >
+                          <CheckCircle size={12} className="text-green-400" />
+                          <ActionIcon type={action.action_type} />
+                          <span>{action.description}</span>
+                          {action.duration_minutes && (
+                            <span className="text-dark-400">({action.duration_minutes} min)</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )
                 ) : (
                   <p className="text-xs text-dark-400 italic">
-                    {isRTL ? 'הקלד תיאור לראות פעולות...' : 'Type a description to see actions...'}
+                    {createBuildMode === 'ai'
+                      ? (isRTL ? 'הקלד תיאור לראות פעולות...' : 'Type a description to see actions...')
+                      : (isRTL ? 'לחץ "הוסף פעולה" כדי להתחיל' : 'Click "Add Action" to get started')}
                   </p>
                 )}
               </div>
@@ -1040,7 +1208,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                     {isRTL ? 'חזרה' : 'Repeat'}
                   </label>
                   <select
-                    name="recurrence"
+                    
                     value={recurrenceType}
                     onChange={(e) => setRecurrenceType(e.target.value as RecurrenceType)}
                     className="w-full glass-input text-sm"
@@ -1245,25 +1413,31 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                 >
                   {isRTL ? 'ביטול' : 'Cancel'}
                 </button>
-                <button
-                  type="submit"
-                  disabled={createMutation.isPending || previewActions.length === 0}
-                  className="flex-1 glass-button-primary py-2 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={
-                    createMutation.isPending
-                      ? (isRTL ? 'מעבד...' : 'Processing...')
-                      : previewActions.length === 0
-                      ? (isRTL ? 'אנא הזן תיאור זרימה תקף כדי להמשיך' : 'Please enter a valid flow description to continue')
-                      : ''
-                  }
-                >
-                  {createMutation.isPending ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <Plus size={16} />
+                <div className="tooltip-trigger flex-1">
+                  <button
+                    type="submit"
+                    disabled={createMutation.isPending || previewActions.length === 0}
+                    className="w-full glass-button-primary py-2 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {createMutation.isPending ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Plus size={16} />
+                    )}
+                    <span>{isRTL ? 'צור' : 'Create'}</span>
+                  </button>
+                  {(createMutation.isPending || previewActions.length === 0) && (
+                    <div className="tooltip tooltip-top">
+                      {createMutation.isPending
+                        ? (isRTL ? 'מעבד...' : 'Processing...')
+                        : previewActions.length === 0
+                        ? (createBuildMode === 'ai'
+                          ? (isRTL ? 'אנא הזן תיאור זרימה תקף כדי להמשיך' : 'Please enter a valid flow description to continue')
+                          : (isRTL ? 'אנא הוסף לפחות פעולה אחת' : 'Please add at least one action'))
+                        : ''}
+                    </div>
                   )}
-                  <span>{isRTL ? 'צור' : 'Create'}</span>
-                </button>
+                </div>
               </div>
             </form>
           </div>
@@ -1416,47 +1590,75 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
               }}
               className="space-y-4"
             >
-              <div>
+              <Input
+                name="name"
+                label={isRTL ? 'שם' : 'Name'}
+                defaultValue={editingFlow.name}
+                required
+              />
+
+              {/* Build Mode Toggle */}
+              <div className="p-3 bg-dark-800/30 rounded-lg">
                 <label className="block text-dark-300 text-sm mb-2">
-                  {isRTL ? 'שם' : 'Name'}
+                  {isRTL ? 'מצב בנייה' : 'Build Mode'}
                 </label>
-                <input
-                  type="text"
-                  name="name"
-                  defaultValue={editingFlow.name}
-                  className="w-full glass-input"
-                  required
-                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditBuildMode('manual')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg transition-all ${
+                      editBuildMode === 'manual'
+                        ? 'bg-primary-500 text-white'
+                        : 'bg-dark-700/50 text-dark-300 hover:bg-dark-700'
+                    }`}
+                  >
+                    <Hand size={16} />
+                    <span className="text-sm">{isRTL ? 'ידני' : 'Manual'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditBuildMode('ai')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg transition-all ${
+                      editBuildMode === 'ai'
+                        ? 'bg-purple-500 text-white'
+                        : 'bg-dark-700/50 text-dark-300 hover:bg-dark-700'
+                    }`}
+                  >
+                    <Wand2 size={16} />
+                    <span className="text-sm">{isRTL ? 'AI' : 'AI'}</span>
+                  </button>
+                </div>
+                <p className="text-xs text-dark-500 mt-2">
+                  {editBuildMode === 'manual'
+                    ? (isRTL ? 'ערוך פעולות ידנית' : 'Edit actions manually')
+                    : (isRTL ? 'עדכן את התיאור ו-AI יפרש אותו לפעולות' : 'Update the description and AI will parse it into actions')}
+                </p>
               </div>
 
-              <div>
-                <label className="block text-dark-300 text-sm mb-2">
-                  {isRTL ? 'תיאור' : 'Description'}
-                </label>
-                <textarea
-                  name="description"
-                  rows={8}
-                  value={editFlowDescription}
-                  onChange={(e) => setEditFlowDescription(e.target.value)}
-                  className="w-full glass-input"
-                  placeholder={isRTL ? 'תאר את הזרימה...' : 'Describe the flow...'}
-                />
-              </div>
+              <Textarea
+                name="description"
+                label={`${isRTL ? 'תיאור' : 'Description'}${editBuildMode === 'ai' ? ' *' : ''}`}
+                rows={editBuildMode === 'ai' ? 8 : 2}
+                value={editFlowDescription}
+                onChange={(e) => setEditFlowDescription(e.target.value)}
+                placeholder={
+                  editBuildMode === 'ai'
+                    ? (isRTL ? 'תאר את הזרימה...' : 'Describe the flow...')
+                    : (isRTL ? 'תיאור אופציונלי...' : 'Optional description...')
+                }
+                hint={editBuildMode === 'ai' ? (isRTL ? 'השתמש ב"אז" או "then" להפרדה בין פעולות' : 'Use "then" to separate actions') : undefined}
+              />
 
               {/* Trigger Type */}
-              <div>
-                <label className="block text-dark-300 text-sm mb-2">
-                  {isRTL ? 'סוג הפעלה' : 'Trigger Type'}
-                </label>
-                <select
-                  value={editTriggerType}
-                  onChange={(e) => setEditTriggerType(e.target.value as 'scheduled' | 'manual')}
-                  className="w-full glass-input"
-                >
-                  <option value="scheduled">{isRTL ? 'מתוזמן' : 'Scheduled'}</option>
-                  <option value="manual">{isRTL ? 'ידני' : 'Manual'}</option>
-                </select>
-              </div>
+              <Select
+                label={isRTL ? 'סוג הפעלה' : 'Trigger Type'}
+                value={editTriggerType}
+                onChange={(val) => setEditTriggerType(val as 'scheduled' | 'manual')}
+                options={[
+                  { value: 'scheduled', label: isRTL ? 'מתוזמן' : 'Scheduled' },
+                  { value: 'manual', label: isRTL ? 'ידני' : 'Manual' },
+                ]}
+              />
 
               {/* Schedule Fields - Only show if scheduled */}
               {editTriggerType === 'scheduled' && (
@@ -1466,23 +1668,19 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                 </p>
 
                 {/* Recurrence Type */}
-                <div>
-                  <label className="block text-dark-300 text-xs mb-1">
-                    {isRTL ? 'חזרה' : 'Repeat'}
-                  </label>
-                  <select
-                    name="recurrence"
-                    value={editRecurrenceType}
-                    onChange={(e) => setEditRecurrenceType(e.target.value as RecurrenceType)}
-                    className="w-full glass-input text-sm"
-                  >
-                    <option value="none">{isRTL ? 'פעם אחת / מרובה ימים' : 'Once / Multi-day'}</option>
-                    <option value="daily">{isRTL ? 'יומי' : 'Daily'}</option>
-                    <option value="weekly">{isRTL ? 'שבועי' : 'Weekly'}</option>
-                    <option value="monthly">{isRTL ? 'חודשי' : 'Monthly'}</option>
-                    <option value="yearly">{isRTL ? 'שנתי' : 'Yearly'}</option>
-                  </select>
-                </div>
+                <Select
+                  
+                  label={isRTL ? 'חזרה' : 'Repeat'}
+                  value={editRecurrenceType}
+                  onChange={(val) => setEditRecurrenceType(val as RecurrenceType)}
+                  options={[
+                    { value: 'none', label: isRTL ? 'פעם אחת / מרובה ימים' : 'Once / Multi-day' },
+                    { value: 'daily', label: isRTL ? 'יומי' : 'Daily' },
+                    { value: 'weekly', label: isRTL ? 'שבועי' : 'Weekly' },
+                    { value: 'monthly', label: isRTL ? 'חודשי' : 'Monthly' },
+                    { value: 'yearly', label: isRTL ? 'שנתי' : 'Yearly' },
+                  ]}
+                />
 
                 {/* One-time/Multi-day: Datetime pickers */}
                 {editRecurrenceType === 'none' && (
@@ -1633,18 +1831,23 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
               </div>
               )}
 
-              {/* Live Preview of Parsed Actions */}
+              {/* Actions Section */}
               <div className="p-3 bg-dark-800/50 rounded-lg border border-primary-500/30">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <Eye size={14} className="text-primary-400" />
                     <span className="text-xs font-medium text-primary-400">
-                      {isRTL ? 'תצוגה מקדימה - פעולות שזוהו:' : 'Preview - Detected Actions:'}
+                      {editBuildMode === 'ai'
+                        ? (isRTL ? 'תצוגה מקדימה - פעולות שזוהו:' : 'Preview - Detected Actions:')
+                        : (isRTL ? 'פעולות:' : 'Actions:')}
                     </span>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setShowAddActionModal(true)}
+                    onClick={() => {
+                      setAddActionContext('edit')
+                      setShowAddActionModal(true)
+                    }}
                     className="flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300 transition-colors"
                   >
                     <Plus size={14} />
@@ -1655,7 +1858,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   <DndContext
                     sensors={sensors}
                     collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
+                    onDragEnd={(event) => handleDragEnd(event, 'edit')}
                   >
                     <SortableContext
                       items={editParsedActions.map((_, idx) => `action-${idx}`)}
@@ -1668,7 +1871,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                             action={{ ...action, id: `action-${idx}` }}
                             index={idx}
                             isRTL={isRTL}
-                            onRemove={handleRemoveAction}
+                            onRemove={(index) => handleRemoveAction(index, 'edit')}
                           />
                         ))}
                       </div>
@@ -1676,7 +1879,9 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   </DndContext>
                 ) : (
                   <p className="text-xs text-dark-400 italic">
-                    {isRTL ? 'הקלד תיאור לראות פעולות...' : 'Type a description to see actions...'}
+                    {editBuildMode === 'ai'
+                      ? (isRTL ? 'הקלד תיאור לראות פעולות...' : 'Type a description to see actions...')
+                      : (isRTL ? 'לחץ "הוסף פעולה" כדי להתחיל' : 'Click "Add Action" to get started')}
                   </p>
                 )}
               </div>
@@ -1740,23 +1945,29 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                 >
                   {isRTL ? 'ביטול' : 'Cancel'}
                 </button>
-                <button
-                  type="submit"
-                  disabled={updateMutation.isPending}
-                  className="flex-1 glass-button-primary py-2 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={
-                    updateMutation.isPending
-                      ? (isRTL ? 'שומר שינויים...' : 'Saving changes...')
-                      : ''
-                  }
-                >
-                  {updateMutation.isPending ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <Edit size={16} />
+                <div className="tooltip-trigger flex-1">
+                  <button
+                    type="submit"
+                    disabled={updateMutation.isPending || editParsedActions.length === 0}
+                    className="w-full glass-button-primary py-2 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {updateMutation.isPending ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Edit size={16} />
+                    )}
+                    <span>{isRTL ? 'שמור' : 'Save'}</span>
+                  </button>
+                  {(updateMutation.isPending || editParsedActions.length === 0) && (
+                    <div className="tooltip tooltip-top">
+                      {updateMutation.isPending
+                        ? (isRTL ? 'שומר שינויים...' : 'Saving changes...')
+                        : editParsedActions.length === 0
+                        ? (isRTL ? 'אנא הוסף לפחות פעולה אחת' : 'Please add at least one action')
+                        : ''}
+                    </div>
                   )}
-                  <span>{isRTL ? 'שמור' : 'Save'}</span>
-                </button>
+                </div>
               </div>
             </form>
           </div>
@@ -1784,139 +1995,108 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
             </div>
 
             <form onSubmit={handleAddAction} className="space-y-3">
-              <div>
-                <label className="block text-dark-300 text-sm mb-1">
-                  {isRTL ? 'סוג פעולה' : 'Action Type'}
-                </label>
-                <select
-                  name="action_type"
-                  className="w-full glass-input"
-                  required
-                  value={selectedActionType}
-                  onChange={(e) => setSelectedActionType(e.target.value)}
-                >
-                  <option value="play_genre">{isRTL ? 'נגן ז\'אנר' : 'Play Genre'}</option>
-                  <option value="play_commercials">{isRTL ? 'נגן פרסומות' : 'Play Commercials'}</option>
-                  <option value="wait">{isRTL ? 'המתן' : 'Wait'}</option>
-                  <option value="set_volume">{isRTL ? 'קבע עוצמת קול' : 'Set Volume'}</option>
-                </select>
-              </div>
+              <Select
+                
+                label={isRTL ? 'סוג פעולה' : 'Action Type'}
+                value={selectedActionType}
+                onChange={(val) => setSelectedActionType(val)}
+                options={[
+                  { value: 'play_genre', label: isRTL ? 'נגן ז\'אנר' : 'Play Genre' },
+                  { value: 'play_commercials', label: isRTL ? 'נגן פרסומות' : 'Play Commercials' },
+                  { value: 'wait', label: isRTL ? 'המתן' : 'Wait' },
+                  { value: 'set_volume', label: isRTL ? 'קבע עוצמת קול' : 'Set Volume' },
+                ]}
+              />
 
-              <div>
-                <label className="block text-dark-300 text-sm mb-1">
-                  {isRTL ? 'תיאור' : 'Description'}
-                </label>
-                <input
-                  type="text"
-                  name="description"
-                  className="w-full glass-input"
-                  placeholder={isRTL ? 'תיאור הפעולה' : 'Action description'}
-                />
-              </div>
+              <Input
+                name="description"
+                label={isRTL ? 'תיאור' : 'Description'}
+                placeholder={isRTL ? 'תיאור הפעולה' : 'Action description'}
+              />
 
               {selectedActionType !== 'play_commercials' && (
-                <div>
-                  <label className="block text-dark-300 text-sm mb-1">
-                    {isRTL ? 'משך זמן (דקות)' : 'Duration (minutes)'}
-                  </label>
-                  <input
-                    type="number"
-                    name="duration_minutes"
-                    className="w-full glass-input"
-                    placeholder="30"
-                    min="1"
-                  />
-                </div>
+                <Input
+                  type="number"
+                  name="duration_minutes"
+                  label={isRTL ? 'משך זמן (דקות)' : 'Duration (minutes)'}
+                  placeholder="30"
+                  min={1}
+                />
               )}
 
               {selectedActionType === 'play_genre' && (
-                <div>
-                  <label className="block text-dark-300 text-sm mb-1">
-                    {isRTL ? 'ז\'אנר' : 'Genre'}
-                  </label>
-                  <select name="genre" className="w-full glass-input">
-                    <option value="">{isRTL ? 'בחר ז\'אנר' : 'Select genre'}</option>
-                    <option value="hasidi">Hasidi</option>
-                    <option value="mizrahi">Mizrahi</option>
-                    <option value="happy">Happy</option>
-                    <option value="israeli">Israeli</option>
-                    <option value="pop">Pop</option>
-                    <option value="rock">Rock</option>
-                    <option value="mediterranean">Mediterranean</option>
-                    <option value="classic">Classic</option>
-                    <option value="hebrew">Hebrew</option>
-                    <option value="mixed">Mixed</option>
-                    <option value="all">All</option>
-                  </select>
-                </div>
+                <Select
+                  
+                  label={isRTL ? 'ז\'אנר' : 'Genre'}
+                  value=""
+                  onChange={() => {}}
+                  options={[
+                    { value: '', label: isRTL ? 'בחר ז\'אנר' : 'Select genre' },
+                    { value: 'hasidi', label: 'Hasidi' },
+                    { value: 'mizrahi', label: 'Mizrahi' },
+                    { value: 'happy', label: 'Happy' },
+                    { value: 'israeli', label: 'Israeli' },
+                    { value: 'pop', label: 'Pop' },
+                    { value: 'rock', label: 'Rock' },
+                    { value: 'mediterranean', label: 'Mediterranean' },
+                    { value: 'classic', label: 'Classic' },
+                    { value: 'hebrew', label: 'Hebrew' },
+                    { value: 'mixed', label: 'Mixed' },
+                    { value: 'all', label: 'All' },
+                  ]}
+                />
               )}
 
               {selectedActionType === 'play_commercials' && (
                 <>
-                  <div>
-                    <label className="block text-dark-300 text-sm mb-1">
-                      {isRTL ? 'מספר אצווה' : 'Batch Number'}
-                    </label>
-                    <input
-                      type="number"
-                      name="batch_number"
-                      className="w-full glass-input"
-                      placeholder="1"
-                      min="1"
-                      defaultValue="1"
-                    />
-                  </div>
+                  <Select
+                    
+                    label={isRTL ? 'אצווה' : 'Batch'}
+                    value="all"
+                    onChange={() => {}}
+                    options={[
+                      { value: 'all', label: isRTL ? 'הכל' : 'All Batches' },
+                      { value: 'A', label: 'Batch A' },
+                      { value: 'B', label: 'Batch B' },
+                      { value: 'C', label: 'Batch C' },
+                      { value: 'D', label: 'Batch D' },
+                      { value: 'E', label: 'Batch E' },
+                    ]}
+                  />
 
                   <div className="p-3 bg-dark-800/30 rounded-lg max-h-64 overflow-auto">
-                    <div className="flex items-center gap-2 mb-2 pb-2 border-b border-white/10">
-                      <input
-                        type="checkbox"
-                        checked={selectAllState === 'all'}
-                        ref={(el) => {
-                          if (el) el.indeterminate = selectAllState === 'partial'
-                        }}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedCommercials(new Set(commercials?.map((c: any) => c._id) || []))
-                          } else {
-                            setSelectedCommercials(new Set())
-                          }
-                        }}
-                        className="w-4 h-4 rounded border-2 border-dark-600 bg-dark-800 checked:bg-primary-500 checked:border-primary-500"
-                      />
-                      <label className="text-sm font-medium text-dark-200">
-                        {isRTL ? 'בחר הכל' : 'Select All'} ({selectedCommercials.size}/{commercials?.length || 0})
-                      </label>
-                    </div>
+                    <Checkbox
+                      label={`${isRTL ? 'בחר הכל' : 'Select All'} (${selectedCommercials.size}/${commercials?.length || 0})`}
+                      checked={selectAllState === 'all'}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedCommercials(new Set(commercials?.map((c: any) => c._id) || []))
+                        } else {
+                          setSelectedCommercials(new Set())
+                        }
+                      }}
+                      className="mb-2 pb-2 border-b border-white/10"
+                    />
 
                     {Array.isArray(commercials) && commercials.length > 0 ? (
                       <div className="space-y-1">
                         {commercials.map((commercial: any) => (
-                          <label
+                          <Checkbox
                             key={commercial._id}
-                            className="flex items-center gap-2 p-2 hover:bg-dark-700/30 rounded cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedCommercials.has(commercial._id)}
-                              onChange={(e) => {
-                                const newSet = new Set(selectedCommercials)
-                                if (e.target.checked) {
-                                  newSet.add(commercial._id)
-                                } else {
-                                  newSet.delete(commercial._id)
-                                }
-                                setSelectedCommercials(newSet)
-                              }}
-                              className="w-4 h-4 rounded border-2 border-dark-600 bg-dark-800 checked:bg-primary-500 checked:border-primary-500"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm text-dark-200 truncate">{commercial.title}</p>
-                              {commercial.artist && (
-                                <p className="text-xs text-dark-500 truncate">{commercial.artist}</p>
-                              )}
-                            </div>
-                          </label>
+                            label={commercial.title}
+                            description={commercial.artist}
+                            checked={selectedCommercials.has(commercial._id)}
+                            onChange={(e) => {
+                              const newSet = new Set(selectedCommercials)
+                              if (e.target.checked) {
+                                newSet.add(commercial._id)
+                              } else {
+                                newSet.delete(commercial._id)
+                              }
+                              setSelectedCommercials(newSet)
+                            }}
+                            className="p-2 hover:bg-dark-700/30 rounded"
+                          />
                         ))}
                       </div>
                     ) : (

@@ -259,16 +259,18 @@ class OrchestratorAgent:
         task_result = await self._try_execute_task(assistant_message, user_message)
         play_track = None
 
-        if task_result:
-            # Detect user's language and use appropriate response
-            user_lang = detect_language(user_message)
-            if user_lang == 'en' and task_result.get("message_en"):
-                final_response = task_result.get("message_en")
-            else:
-                final_response = task_result.get("message", assistant_message)
+        # Detect user's language
+        user_lang = detect_language(user_message)
 
-            # If task was executed, add action confirmation
+        if task_result:
+            # Task was parsed - check if it succeeded or failed
             if task_result.get("success"):
+                # Task succeeded
+                if user_lang == 'en' and task_result.get("message_en"):
+                    final_response = task_result.get("message_en")
+                else:
+                    final_response = task_result.get("message", assistant_message)
+
                 # Execute any actions
                 action = task_result.get("action")
                 if action:
@@ -285,8 +287,33 @@ class OrchestratorAgent:
                         "type": content.get("type"),
                         "duration_seconds": content.get("duration_seconds", 0)
                     }
+            else:
+                # Task was parsed but FAILED - show clear error message
+                if user_lang == 'en':
+                    error_msg = task_result.get("message_en", task_result.get("message", "Action failed"))
+                    final_response = f"⚠️ Could not complete the action: {error_msg}"
+                else:
+                    error_msg = task_result.get("message", task_result.get("message_en", "הפעולה נכשלה"))
+                    final_response = f"⚠️ לא הצלחתי לבצע את הפעולה: {error_msg}"
         else:
-            final_response = assistant_message
+            # No task was parsed from the response
+            # Check if the user was expecting an action (action-like keywords)
+            action_keywords_he = ['תנגן', 'נגן', 'הפעל', 'עצור', 'דלג', 'תזמן', 'הוסף', 'מחק', 'עדכן', 'חפש', 'שנה']
+            action_keywords_en = ['play', 'start', 'stop', 'skip', 'schedule', 'add', 'delete', 'update', 'search', 'change', 'set']
+
+            user_msg_lower = user_message.lower()
+            expects_action = any(kw in user_message for kw in action_keywords_he) or \
+                           any(kw in user_msg_lower for kw in action_keywords_en)
+
+            if expects_action:
+                # User expected an action but LLM couldn't produce one
+                if user_lang == 'en':
+                    final_response = f"⚠️ I understood your request but couldn't execute it. The action could not be translated into a command.\n\nLLM response: {assistant_message}"
+                else:
+                    final_response = f"⚠️ הבנתי את הבקשה אך לא הצלחתי לבצע אותה. הפעולה לא תורגמה לפקודה.\n\nתשובת המערכת: {assistant_message}"
+            else:
+                # Regular conversation, no action expected
+                final_response = assistant_message
 
         # Add response to history
         self._chat_history.append({
@@ -504,13 +531,98 @@ class OrchestratorAgent:
         # Get pending actions
         pending = await self.db.pending_actions.count_documents({"status": "pending"})
 
+        # Get all content metadata from library
+        library_metadata = await self._get_library_metadata()
+
         context = f"""
 Current time: {now.strftime("%H:%M")} ({now.strftime("%A")})
 Playback status: {playback_state}{current_track_info}
 Pending confirmations: {pending}
 Agent mode: {(await self.get_config()).mode.value}
+
+=== LIBRARY CONTENT ===
+{library_metadata}
 """
         return context
+
+    async def _get_library_metadata(self) -> str:
+        """Retrieve and format metadata for all content in the library."""
+        # Get all active content grouped by type
+        songs = []
+        shows = []
+        commercials = []
+
+        cursor = self.db.content.find({"active": True})
+        async for item in cursor:
+            content_info = {
+                "id": str(item.get("_id")),
+                "title": item.get("title", "Unknown"),
+                "title_he": item.get("title_he"),
+                "artist": item.get("artist"),
+                "genre": item.get("genre"),
+                "duration_seconds": item.get("duration_seconds", 0),
+                "play_count": item.get("play_count", 0),
+            }
+            # Include nested metadata if available
+            metadata = item.get("metadata", {})
+            if metadata.get("album"):
+                content_info["album"] = metadata["album"]
+            if metadata.get("year"):
+                content_info["year"] = metadata["year"]
+            if metadata.get("language"):
+                content_info["language"] = metadata["language"]
+            if metadata.get("tags"):
+                content_info["tags"] = metadata["tags"]
+
+            content_type = item.get("type", "song")
+            if content_type == "song":
+                songs.append(content_info)
+            elif content_type == "show":
+                shows.append(content_info)
+            elif content_type == "commercial":
+                commercials.append(content_info)
+
+        # Format output
+        lines = []
+
+        if songs:
+            lines.append(f"Songs ({len(songs)} items):")
+            for song in songs:
+                song_line = f"  - {song['title']}"
+                if song.get('artist'):
+                    song_line += f" by {song['artist']}"
+                if song.get('genre'):
+                    song_line += f" [{song['genre']}]"
+                if song.get('duration_seconds'):
+                    mins = song['duration_seconds'] // 60
+                    secs = song['duration_seconds'] % 60
+                    song_line += f" ({mins}:{secs:02d})"
+                lines.append(song_line)
+
+        if shows:
+            lines.append(f"\nShows ({len(shows)} items):")
+            for show in shows:
+                show_line = f"  - {show['title']}"
+                if show.get('duration_seconds'):
+                    mins = show['duration_seconds'] // 60
+                    secs = show['duration_seconds'] % 60
+                    show_line += f" ({mins}:{secs:02d})"
+                lines.append(show_line)
+
+        if commercials:
+            lines.append(f"\nCommercials ({len(commercials)} items):")
+            for commercial in commercials:
+                commercial_line = f"  - {commercial['title']}"
+                if commercial.get('duration_seconds'):
+                    mins = commercial['duration_seconds'] // 60
+                    secs = commercial['duration_seconds'] % 60
+                    commercial_line += f" ({mins}:{secs:02d})"
+                lines.append(commercial_line)
+
+        if not lines:
+            return "No content in library."
+
+        return "\n".join(lines)
 
     async def _call_claude(self, prompt: str) -> Dict[str, Any]:
         """Call Claude API and parse response."""
