@@ -1,7 +1,13 @@
 import axios from 'axios'
 
+// Use Cloud Run backend in production (Firebase Hosting), local proxy in development
+const isProduction = window.location.hostname.includes('web.app') || window.location.hostname.includes('firebaseapp.com')
+const API_BASE_URL = isProduction
+  ? 'https://israeli-radio-manager-534446777606.europe-west1.run.app/api'
+  : '/api'
+
 const client = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },

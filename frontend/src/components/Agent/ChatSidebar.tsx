@@ -116,7 +116,7 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
   })
 
   // Transform history to messages
-  const messages: ChatMessage[] = (history || []).flatMap((entry: any, index: number) => [
+  const messages: ChatMessage[] = (Array.isArray(history) ? history : []).flatMap((entry: any, index: number) => [
     {
       id: `user-${index}`,
       role: 'user' as const,

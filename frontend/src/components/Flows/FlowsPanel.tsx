@@ -616,7 +616,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
       {/* Collapsed view - mini icons */}
       <div className={`absolute inset-0 flex flex-col items-center py-4 gap-4 transition-opacity duration-300 ${collapsed ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <Workflow size={20} className="text-primary-400" />
-        {flows?.slice(0, 5).map((flow) => (
+        {(Array.isArray(flows) ? flows : []).slice(0, 5).map((flow) => (
           <button
             key={flow._id}
             onClick={() => {
@@ -679,7 +679,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
           <div className="flex items-center justify-center py-8">
             <Loader2 size={24} className="animate-spin text-primary-400" />
           </div>
-        ) : flows && flows.length > 0 ? (
+        ) : Array.isArray(flows) && flows.length > 0 ? (
           flows.map((flow) => (
             <div
               key={flow._id}
@@ -712,7 +712,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
 
               {/* Actions Preview */}
               <div className="flex items-center gap-1 mb-2">
-                {flow.actions.slice(0, 4).map((action, idx) => {
+                {(flow.actions || []).slice(0, 4).map((action, idx) => {
                   // Build detailed tooltip
                   let tooltip = action.description || action.action_type
                   if (action.genre) tooltip += ` (${action.genre})`
@@ -729,8 +729,8 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                     </div>
                   )
                 })}
-                {flow.actions.length > 4 && (
-                  <span className="text-xs text-dark-400">+{flow.actions.length - 4}</span>
+                {(flow.actions || []).length > 4 && (
+                  <span className="text-xs text-dark-400">+{(flow.actions || []).length - 4}</span>
                 )}
               </div>
 
@@ -813,7 +813,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                   {/* Actions List */}
                   <div className="space-y-1">
                     <p className="text-xs text-dark-500 mb-1">{isRTL ? 'פעולות:' : 'Actions:'}</p>
-                    {flow.actions.map((action, idx) => (
+                    {(flow.actions || []).map((action, idx) => (
                       <div
                         key={idx}
                         className="flex items-center gap-2 text-xs text-dark-300 p-1.5 bg-dark-800/50 rounded"
@@ -1889,7 +1889,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                       </label>
                     </div>
 
-                    {commercials && commercials.length > 0 ? (
+                    {Array.isArray(commercials) && commercials.length > 0 ? (
                       <div className="space-y-1">
                         {commercials.map((commercial: any) => (
                           <label

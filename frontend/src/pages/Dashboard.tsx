@@ -50,10 +50,10 @@ export default function Dashboard() {
   })
 
   // Filter to only show upcoming events (not past)
-  const upcomingEvents = calendarEvents?.filter((event: any) => {
+  const upcomingEvents = (Array.isArray(calendarEvents) ? calendarEvents : []).filter((event: any) => {
     const startTime = new Date(event.start?.dateTime || event.start?.date)
     return startTime > new Date()
-  }) || []
+  })
 
   // Use browser player state, fallback to backend VLC status
   const isPlaying = browserIsPlaying || playbackStatus?.state === 'playing'
@@ -348,7 +348,7 @@ export default function Dashboard() {
         <div className="glass-card p-6 flex flex-col max-h-[600px]">
           <h2 className="text-lg font-semibold text-dark-100 mb-4">{t('dashboard.recentActivity')}</h2>
           <div className="space-y-2 flex-1 overflow-y-auto pr-2">
-            {playbackHistory && playbackHistory.length > 0 ? (
+            {Array.isArray(playbackHistory) && playbackHistory.length > 0 ? (
               playbackHistory.map((item: any) => {
                 const playedAt = new Date(item.started_at)
                 const typeColors: Record<string, string> = {

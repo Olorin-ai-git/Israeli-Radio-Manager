@@ -367,6 +367,9 @@ export const useActionsStudioStore = create<ActionsStudioState>((set, get) => ({
 
     try {
       const flows = await api.getFlows()
+      if (!Array.isArray(flows)) {
+        throw new Error('Failed to load flows')
+      }
       const flow = flows.find((f: any) => f._id === flowId)
 
       if (!flow) {
@@ -374,7 +377,8 @@ export const useActionsStudioStore = create<ActionsStudioState>((set, get) => ({
       }
 
       // Convert backend actions to studio format
-      const studioActions: StudioAction[] = flow.actions.map((action: any, index: number) => {
+      const flowActions = Array.isArray(flow.actions) ? flow.actions : []
+      const studioActions: StudioAction[] = flowActions.map((action: any, index: number) => {
         const validation = validateAction({ ...action, id: '', isValid: true, validationErrors: [] } as StudioAction)
         return {
           ...action,

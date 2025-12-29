@@ -159,14 +159,14 @@ export default function AgentControl() {
         <div className="lg:col-span-2 glass-card overflow-hidden">
           <div className="p-4 border-b border-white/5 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-dark-100">{t('agent.pendingActions')}</h2>
-            {pendingActions && pendingActions.length > 0 && (
+            {Array.isArray(pendingActions) && pendingActions.length > 0 && (
               <span className="badge badge-warning">
                 {pendingActions.length} pending
               </span>
             )}
           </div>
 
-          {pendingActions && pendingActions.length > 0 ? (
+          {Array.isArray(pendingActions) && pendingActions.length > 0 ? (
             <div className="divide-y divide-white/5">
               {pendingActions.map((action: any) => (
                 <div key={action._id} className="p-4">
@@ -220,7 +220,7 @@ export default function AgentControl() {
             <h2 className="text-lg font-semibold text-dark-100">{t('agent.decisionLog')}</h2>
           </div>
 
-          {decisions && decisions.length > 0 ? (
+          {Array.isArray(decisions) && decisions.length > 0 ? (
             <div className="divide-y divide-white/5 max-h-96 overflow-y-auto">
               {decisions.map((decision: any) => (
                 <div key={decision._id} className="p-3 hover:bg-white/5 transition-colors">

@@ -134,14 +134,16 @@ export default function Library() {
     queryFn: api.getGenres,
   })
 
-  const getContent = () => {
+  const getContent = (): any[] => {
     switch (activeTab) {
       case 'songs':
-        return songs || []
+        return Array.isArray(songs) ? songs : []
       case 'shows':
-        return shows || []
+        return Array.isArray(shows) ? shows : []
       case 'commercials':
-        return commercials || []
+        return Array.isArray(commercials) ? commercials : []
+      default:
+        return []
     }
   }
 
@@ -303,7 +305,7 @@ export default function Library() {
           />
         </div>
 
-        {activeTab === 'songs' && genres && genres.length > 0 && (
+        {activeTab === 'songs' && Array.isArray(genres) && genres.length > 0 && (
           <select
             value={selectedGenre}
             onChange={(e) => setSelectedGenre(e.target.value)}

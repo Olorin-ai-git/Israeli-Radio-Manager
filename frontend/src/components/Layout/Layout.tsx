@@ -94,87 +94,117 @@ export default function Layout({ children }: LayoutProps) {
   const isRTL = i18n.language === 'he'
 
   // WebSocket connection for real-time updates (scheduled playback)
+  // Only connect if backend is available
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/api/ws/`
+    // Use Cloud Run backend in production (Firebase Hosting)
+    const isProduction = window.location.hostname.includes('web.app') || window.location.hostname.includes('firebaseapp.com')
+    const wsUrl = isProduction
+      ? 'wss://israeli-radio-manager-534446777606.europe-west1.run.app/api/ws/'
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/ws/`
+    let reconnectAttempts = 0
+    const maxReconnectAttempts = 3
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
 
     const connect = () => {
-      const ws = new WebSocket(wsUrl)
-
-      ws.onopen = () => {
-        console.log('WebSocket connected')
-        // Subscribe to playback channel
-        ws.send(JSON.stringify({ type: 'subscribe', channels: ['playback', 'all'] }))
+      // Don't try to connect if we've exceeded max attempts
+      if (reconnectAttempts >= maxReconnectAttempts) {
+        console.log('WebSocket: Backend not available, running in offline mode')
+        return
       }
 
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data)
+      try {
+        const ws = new WebSocket(wsUrl)
 
-          if (message.type === 'scheduled_playback') {
-            // Chat-requested content should play immediately
-            const content = message.data
-
-            // Prevent duplicate playback (multiple WS connections or re-renders)
-            if (lastPlayedIdRef.current === content._id) {
-              console.log('Skipping duplicate playback for:', content.title)
-              return
-            }
-            lastPlayedIdRef.current = content._id
-
-            // Clear the duplicate check after 2 seconds to allow replaying same song
-            setTimeout(() => {
-              if (lastPlayedIdRef.current === content._id) {
-                lastPlayedIdRef.current = null
-              }
-            }, 2000)
-
-            console.log('Chat playback triggered:', content)
-
-            const track = {
-              _id: content._id,
-              title: content.title,
-              artist: content.artist,
-              type: content.type,
-              duration_seconds: content.duration_seconds,
-              genre: content.genre,
-              metadata: content.metadata,
-            }
-
-            // Play immediately, interrupting current track if needed
-            playNow(track)
-          } else if (message.type === 'queue_update') {
-            // Full queue update from backend
-            const queue = message.data
-            console.log('Queue update received:', queue.length, 'items')
-
-            const { setQueue } = usePlayerStore.getState()
-            setQueue(queue)
-          } else if (message.type === 'calendar_update') {
-            // Calendar was updated (event added/modified/deleted)
-            console.log('Calendar update received, refreshing...')
-            queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
-          }
-        } catch (e) {
-          console.error('WebSocket message error:', e)
+        ws.onopen = () => {
+          console.log('WebSocket connected')
+          reconnectAttempts = 0 // Reset on successful connection
+          // Subscribe to playback channel
+          ws.send(JSON.stringify({ type: 'subscribe', channels: ['playback', 'all'] }))
         }
-      }
 
-      ws.onclose = () => {
-        console.log('WebSocket disconnected, reconnecting in 5s...')
-        setTimeout(connect, 5000)
-      }
+        ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data)
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
-      }
+            if (message.type === 'scheduled_playback') {
+              // Chat-requested content should play immediately
+              const content = message.data
 
-      wsRef.current = ws
+              // Prevent duplicate playback (multiple WS connections or re-renders)
+              if (lastPlayedIdRef.current === content._id) {
+                console.log('Skipping duplicate playback for:', content.title)
+                return
+              }
+              lastPlayedIdRef.current = content._id
+
+              // Clear the duplicate check after 2 seconds to allow replaying same song
+              setTimeout(() => {
+                if (lastPlayedIdRef.current === content._id) {
+                  lastPlayedIdRef.current = null
+                }
+              }, 2000)
+
+              console.log('Chat playback triggered:', content)
+
+              const track = {
+                _id: content._id,
+                title: content.title,
+                artist: content.artist,
+                type: content.type,
+                duration_seconds: content.duration_seconds,
+                genre: content.genre,
+                metadata: content.metadata,
+              }
+
+              // Play immediately, interrupting current track if needed
+              playNow(track)
+            } else if (message.type === 'queue_update') {
+              // Full queue update from backend
+              const queue = message.data
+              console.log('Queue update received:', queue.length, 'items')
+
+              const { setQueue } = usePlayerStore.getState()
+              setQueue(Array.isArray(queue) ? queue : [])
+            } else if (message.type === 'calendar_update') {
+              // Calendar was updated (event added/modified/deleted)
+              console.log('Calendar update received, refreshing...')
+              queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
+            }
+          } catch (e) {
+            console.error('WebSocket message error:', e)
+          }
+        }
+
+        ws.onclose = () => {
+          reconnectAttempts++
+          if (reconnectAttempts < maxReconnectAttempts) {
+            console.log(`WebSocket disconnected, reconnecting in 5s... (attempt ${reconnectAttempts}/${maxReconnectAttempts})`)
+            reconnectTimeout = setTimeout(connect, 5000)
+          } else {
+            console.log('WebSocket: Max reconnect attempts reached, running in offline mode')
+          }
+        }
+
+        ws.onerror = () => {
+          // Suppress error logging after first attempt to avoid console spam
+          if (reconnectAttempts === 0) {
+            console.warn('WebSocket: Unable to connect to backend')
+          }
+        }
+
+        wsRef.current = ws
+      } catch {
+        // WebSocket constructor can throw if URL is invalid
+        console.warn('WebSocket: Failed to initialize connection')
+      }
     }
 
     connect()
 
     return () => {
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout)
+      }
       if (wsRef.current) {
         wsRef.current.close()
       }

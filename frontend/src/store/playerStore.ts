@@ -56,15 +56,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setCurrentTrack: (track) => set({ currentTrack: track }),
 
   // Set queue from backend (used by WebSocket)
-  setQueue: (queue) => set({ queue }),
+  setQueue: (queue) => set({ queue: Array.isArray(queue) ? queue : [] }),
 
   // Fetch queue from backend
   fetchQueue: async () => {
     try {
       const queue = await api.getQueue()
-      set({ queue })
+      set({ queue: Array.isArray(queue) ? queue : [] })
     } catch (error) {
       console.error('Failed to fetch queue:', error)
+      set({ queue: [] })
     }
   },
 
@@ -177,9 +178,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setUserInteracted: () => set({ hasUserInteracted: true })
 }))
 
-// Fetch queue on store initialization
+// Fetch queue on store initialization (gracefully handle missing backend)
 api.getQueue().then(queue => {
-  usePlayerStore.setState({ queue })
+  if (Array.isArray(queue)) {
+    usePlayerStore.setState({ queue })
+  }
 }).catch(error => {
-  console.error('Failed to fetch initial queue:', error)
+  console.warn('Backend not available, using empty queue:', error.message)
+  usePlayerStore.setState({ queue: [] })
 })

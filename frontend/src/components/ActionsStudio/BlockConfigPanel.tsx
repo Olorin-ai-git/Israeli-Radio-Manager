@@ -64,7 +64,7 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
   })
 
   // Filter content locally by search
-  const filteredContent = contentItems?.filter((item: any) => {
+  const filteredContent = (Array.isArray(contentItems) ? contentItems : []).filter((item: any) => {
     if (!contentSearch) return true
     const searchLower = contentSearch.toLowerCase()
     return (
@@ -283,7 +283,7 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
                 </div>
               )}
 
-              {filteredContent && filteredContent.length > 0 && (
+              {Array.isArray(filteredContent) && filteredContent.length > 0 && (
                 <div className="mt-2 max-h-48 overflow-auto space-y-1">
                   {filteredContent.slice(0, 10).map((item: any) => (
                     <button

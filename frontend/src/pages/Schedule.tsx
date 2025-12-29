@@ -53,7 +53,7 @@ export default function Schedule() {
       <div className="glass-card overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-dark-400">Loading...</div>
-        ) : slots && slots.length > 0 ? (
+        ) : Array.isArray(slots) && slots.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="glass-table">
               <thead>

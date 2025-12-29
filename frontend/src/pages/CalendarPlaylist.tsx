@@ -117,7 +117,7 @@ export default function CalendarPlaylist() {
   })
 
   // Filter content based on type and genre
-  const filteredContent = allContent?.filter((content: any) => {
+  const filteredContent = (Array.isArray(allContent) ? allContent : []).filter((content: any) => {
     if (contentTypeFilter !== 'all' && content.type !== contentTypeFilter) {
       return false
     }
@@ -128,10 +128,10 @@ export default function CalendarPlaylist() {
   })
 
   // Get unique genres from content
-  const genres = [...new Set(allContent?.map((c: any) => c.genre).filter(Boolean))] as string[]
+  const genres = [...new Set((Array.isArray(allContent) ? allContent : []).map((c: any) => c.genre).filter(Boolean))] as string[]
 
   // Get commercial batches
-  const commercialBatches = [...new Set(commercials?.map((c: any) => c.batch_number).filter((b: number) => b))] as number[]
+  const commercialBatches = [...new Set((Array.isArray(commercials) ? commercials : []).map((c: any) => c.batch_number).filter((b: number) => b))] as number[]
 
   // Delete event mutation
   const deleteMutation = useMutation({

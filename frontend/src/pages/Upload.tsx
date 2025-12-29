@@ -176,7 +176,7 @@ export default function Upload() {
       )}
 
       {/* Pending Categorization */}
-      {pendingUploads && pendingUploads.length > 0 && (
+      {Array.isArray(pendingUploads) && pendingUploads.length > 0 && (
         <div className="mt-6 glass-card overflow-hidden">
           <div className="p-4 border-b border-white/5 bg-amber-500/10">
             <h2 className="font-medium text-amber-400">Pending Categorization</h2>
