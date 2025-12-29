@@ -1,9 +1,10 @@
 """Google Cloud Storage service for audio file storage and streaming."""
 
+import io
 import logging
 from datetime import timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Optional, BinaryIO
 from urllib.parse import quote
 
 from google.cloud import storage
@@ -107,6 +108,62 @@ class GCSStorageService:
 
         except Exception as e:
             logger.error(f"Failed to upload {filename} to GCS: {e}")
+            return None
+
+    def upload_from_stream(
+        self,
+        stream: BinaryIO,
+        folder: str,
+        filename: str,
+        file_extension: str = ".mp3",
+        metadata: Optional[dict] = None
+    ) -> Optional[str]:
+        """
+        Upload directly from a stream (no local file needed).
+
+        This enables direct Drive→GCS transfer without local download.
+
+        Args:
+            stream: File-like object with read() method
+            folder: GCS folder (e.g., "songs/Mizrahi", "commercials/batch1")
+            filename: Original filename
+            file_extension: File extension for content-type detection
+            metadata: Optional metadata to attach
+
+        Returns:
+            GCS path (gs://bucket/path) or None if failed
+        """
+        if not self.is_available:
+            logger.warning("GCS not available - skipping upload")
+            return None
+
+        try:
+            blob_path = self._get_blob_path(folder, filename)
+            blob = self.bucket.blob(blob_path)
+
+            # Set content type for proper streaming
+            content_type_map = {
+                '.mp3': 'audio/mpeg',
+                '.wav': 'audio/wav',
+                '.ogg': 'audio/ogg',
+                '.m4a': 'audio/mp4',
+                '.aac': 'audio/aac',
+            }
+            blob.content_type = content_type_map.get(file_extension.lower(), 'audio/mpeg')
+
+            # Add custom metadata
+            if metadata:
+                blob.metadata = metadata
+
+            # Upload from stream
+            blob.upload_from_file(stream, rewind=True)
+
+            gcs_path = f"gs://{self.bucket_name}/{blob_path}"
+            logger.info(f"Uploaded {filename} to {gcs_path} (streamed)")
+            return gcs_path
+
+        except Exception as e:
+            logger.error(f"Failed to stream upload {filename} to GCS: {e}")
             return None
 
     def get_signed_url(self, gcs_path: str) -> Optional[str]:

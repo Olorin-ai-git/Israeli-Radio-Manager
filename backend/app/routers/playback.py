@@ -731,3 +731,35 @@ async def generate_emergency_playlist(request: Request, count: int = 20):
         "message": f"Generated emergency playlist with {stats['songs_copied']} songs",
         "stats": stats
     }
+
+
+@router.post("/emergency-mode-activated")
+async def report_emergency_mode(request: Request):
+    """
+    Report that emergency mode was activated due to playback failures.
+
+    Called by the frontend when 5+ consecutive playback errors occur.
+    Sends a CRITICAL notification to all channels.
+    """
+    from datetime import datetime
+    from app.services.notifications import NotificationLevel
+
+    notification_service = getattr(request.app.state, 'notification_service', None)
+
+    if notification_service:
+        await notification_service.send_notification(
+            message=(
+                "Emergency mode activated due to 5+ consecutive playback failures. "
+                "The system is now playing from the backup playlist. "
+                "Please check the streaming infrastructure immediately."
+            ),
+            title="CRITICAL: Emergency Mode Activated",
+            level=NotificationLevel.CRITICAL,
+            data={
+                "event": "emergency_mode_activated",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+        logger.warning("Emergency mode activated - notification sent")
+
+    return {"status": "reported", "timestamp": datetime.utcnow().isoformat()}

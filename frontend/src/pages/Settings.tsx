@@ -1,23 +1,160 @@
-import { useState, ChangeEvent } from 'react'
+import { useState, useEffect, ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Globe, Bell, Cloud, Mail, Smartphone, MessageSquare } from 'lucide-react'
+import { Globe, Bell, Cloud, Mail, Smartphone, MessageSquare, Send, Loader2, Check, X } from 'lucide-react'
 import Checkbox from '../components/Form/Checkbox'
 import Input from '../components/Form/Input'
+import api from '../services/api'
+import { useToastStore } from '../store/toastStore'
+
+interface Settings {
+  notifications: {
+    email_enabled: boolean
+    push_enabled: boolean
+    sms_enabled: boolean
+  }
+  admin_contact: {
+    email: string | null
+    phone: string | null
+  }
+  vapid_public_key: string | null
+}
 
 export default function Settings() {
   const { t, i18n } = useTranslation()
+  const { addToast } = useToastStore()
 
-  // Notification settings state
-  const [emailNotifications, setEmailNotifications] = useState(true)
-  const [pushNotifications, setPushNotifications] = useState(true)
-  const [smsNotifications, setSmsNotifications] = useState(false)
+  // Loading states
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [testingChannel, setTestingChannel] = useState<string | null>(null)
 
-  // Admin contact state
-  const [adminEmail, setAdminEmail] = useState('')
-  const [adminPhone, setAdminPhone] = useState('')
+  // Settings state
+  const [settings, setSettings] = useState<Settings | null>(null)
+
+  // Push subscription state
+  const [pushSupported, setPushSupported] = useState(false)
+  const [pushSubscribed, setPushSubscribed] = useState(false)
+  const [subscribingPush, setSubscribingPush] = useState(false)
+
+  // Load settings on mount
+  useEffect(() => {
+    loadSettings()
+    checkPushSupport()
+  }, [])
+
+  const loadSettings = async () => {
+    try {
+      const data = await api.getSettings()
+      setSettings(data)
+    } catch (error) {
+      addToast('Failed to load settings', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const checkPushSupport = async () => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      setPushSupported(true)
+      try {
+        const registration = await navigator.serviceWorker.ready
+        const subscription = await registration.pushManager.getSubscription()
+        setPushSubscribed(!!subscription)
+      } catch {
+        // Service worker not ready yet
+      }
+    }
+  }
+
+  const saveSettings = async () => {
+    if (!settings) return
+
+    setSaving(true)
+    try {
+      await api.updateSettings({
+        notifications: settings.notifications,
+        admin_contact: settings.admin_contact
+      })
+      addToast(t('settings.saved') || 'Settings saved', 'success')
+    } catch (error) {
+      addToast('Failed to save settings', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const subscribeToPush = async () => {
+    if (!settings?.vapid_public_key) {
+      addToast('Push notifications not configured on server', 'error')
+      return
+    }
+
+    setSubscribingPush(true)
+    try {
+      const registration = await navigator.serviceWorker.ready
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(settings.vapid_public_key)
+      })
+
+      await api.subscribeToPush(subscription.toJSON())
+      setPushSubscribed(true)
+      addToast('Push notifications enabled', 'success')
+    } catch (error) {
+      addToast('Failed to enable push notifications', 'error')
+    } finally {
+      setSubscribingPush(false)
+    }
+  }
+
+  const testNotification = async (channel: 'email' | 'push' | 'sms') => {
+    setTestingChannel(channel)
+    try {
+      const result = await api.testNotification(channel)
+      if (result.success) {
+        addToast(`Test ${channel} notification sent`, 'success')
+      } else {
+        addToast(`Test ${channel} notification failed`, 'error')
+      }
+    } catch (error) {
+      addToast(`Failed to send test notification`, 'error')
+    } finally {
+      setTestingChannel(null)
+    }
+  }
 
   const handleLanguageChange = (lang: string) => {
     i18n.changeLanguage(lang)
+  }
+
+  const updateNotificationSetting = (key: keyof Settings['notifications'], value: boolean) => {
+    if (!settings) return
+    setSettings({
+      ...settings,
+      notifications: {
+        ...settings.notifications,
+        [key]: value
+      }
+    })
+  }
+
+  const updateAdminContact = (key: keyof Settings['admin_contact'], value: string) => {
+    if (!settings) return
+    setSettings({
+      ...settings,
+      admin_contact: {
+        ...settings.admin_contact,
+        [key]: value || null
+      }
+    })
+  }
+
+  if (loading) {
+    return (
+      <div className="p-6 max-w-3xl flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-400" />
+      </div>
+    )
   }
 
   return (
@@ -43,7 +180,7 @@ export default function Settings() {
                   : 'border-white/10 hover:border-white/20 bg-dark-700/30'
               }`}
             >
-              <span className="text-2xl mb-2 block">🇺🇸</span>
+              <span className="text-2xl mb-2 block">US</span>
               <span className="font-medium text-dark-100">{t('settings.english')}</span>
             </button>
             <button
@@ -54,7 +191,7 @@ export default function Settings() {
                   : 'border-white/10 hover:border-white/20 bg-dark-700/30'
               }`}
             >
-              <span className="text-2xl mb-2 block">🇮🇱</span>
+              <span className="text-2xl mb-2 block">IL</span>
               <span className="font-medium text-dark-100">{t('settings.hebrew')}</span>
             </button>
           </div>
@@ -70,31 +207,101 @@ export default function Settings() {
           </div>
 
           <div className="space-y-4">
-            <div className="py-3 border-b border-white/5">
-              <Checkbox
-                label={t('settings.email')}
-                description="Receive alerts via email"
-                checked={emailNotifications}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => setEmailNotifications(e.target.checked)}
-              />
+            <div className="py-3 border-b border-white/5 flex items-center justify-between">
+              <div className="flex-1">
+                <Checkbox
+                  label={t('settings.email')}
+                  description="Receive alerts via email"
+                  checked={settings?.notifications.email_enabled ?? true}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    updateNotificationSetting('email_enabled', e.target.checked)
+                  }
+                />
+              </div>
+              <button
+                onClick={() => testNotification('email')}
+                disabled={testingChannel !== null}
+                className="ml-4 px-3 py-1.5 text-sm glass-button flex items-center gap-2"
+              >
+                {testingChannel === 'email' ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Send size={14} />
+                )}
+                Test
+              </button>
             </div>
 
-            <div className="py-3 border-b border-white/5">
-              <Checkbox
-                label={t('settings.push')}
-                description="Browser push notifications"
-                checked={pushNotifications}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => setPushNotifications(e.target.checked)}
-              />
+            <div className="py-3 border-b border-white/5 flex items-center justify-between">
+              <div className="flex-1">
+                <Checkbox
+                  label={t('settings.push')}
+                  description="Browser push notifications"
+                  checked={settings?.notifications.push_enabled ?? true}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    updateNotificationSetting('push_enabled', e.target.checked)
+                  }
+                />
+              </div>
+              <div className="ml-4 flex gap-2">
+                {pushSupported && !pushSubscribed && (
+                  <button
+                    onClick={subscribeToPush}
+                    disabled={subscribingPush}
+                    className="px-3 py-1.5 text-sm glass-button-primary flex items-center gap-2"
+                  >
+                    {subscribingPush ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Bell size={14} />
+                    )}
+                    Enable
+                  </button>
+                )}
+                {pushSubscribed && (
+                  <span className="px-3 py-1.5 text-sm text-green-400 flex items-center gap-2">
+                    <Check size={14} />
+                    Enabled
+                  </span>
+                )}
+                <button
+                  onClick={() => testNotification('push')}
+                  disabled={testingChannel !== null || !pushSubscribed}
+                  className="px-3 py-1.5 text-sm glass-button flex items-center gap-2"
+                >
+                  {testingChannel === 'push' ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Send size={14} />
+                  )}
+                  Test
+                </button>
+              </div>
             </div>
 
-            <div className="py-3">
-              <Checkbox
-                label={t('settings.sms')}
-                description="Critical alerts via SMS"
-                checked={smsNotifications}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => setSmsNotifications(e.target.checked)}
-              />
+            <div className="py-3 flex items-center justify-between">
+              <div className="flex-1">
+                <Checkbox
+                  label={t('settings.sms')}
+                  description="Critical alerts via SMS (requires Twilio)"
+                  checked={settings?.notifications.sms_enabled ?? false}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    updateNotificationSetting('sms_enabled', e.target.checked)
+                  }
+                />
+              </div>
+              <button
+                onClick={() => testNotification('sms')}
+                disabled={testingChannel !== null}
+                className="ml-4 px-3 py-1.5 text-sm glass-button flex items-center gap-2"
+              >
+                {testingChannel === 'sms' ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Send size={14} />
+                )}
+                Test
+              </button>
             </div>
           </div>
         </div>
@@ -133,19 +340,32 @@ export default function Settings() {
               type="email"
               label="Admin Email"
               placeholder="admin@example.com"
-              value={adminEmail}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setAdminEmail(e.target.value)}
+              value={settings?.admin_contact.email || ''}
+              onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                updateAdminContact('email', e.target.value)
+              }
               icon={Mail}
             />
             <Input
               type="tel"
               label="Admin Phone (for SMS)"
               placeholder="+1234567890"
-              value={adminPhone}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setAdminPhone(e.target.value)}
+              value={settings?.admin_contact.phone || ''}
+              onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                updateAdminContact('phone', e.target.value)
+              }
               icon={Smartphone}
             />
-            <button className="px-4 py-2 glass-button-primary">
+            <button
+              onClick={saveSettings}
+              disabled={saving}
+              className="px-4 py-2 glass-button-primary flex items-center gap-2"
+            >
+              {saving ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Check size={16} />
+              )}
               {t('actions.save')}
             </button>
           </div>
@@ -153,4 +373,16 @@ export default function Settings() {
       </div>
     </div>
   )
+}
+
+// Helper function for VAPID key conversion
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = window.atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i)
+  }
+  return outputArray
 }

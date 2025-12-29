@@ -300,51 +300,58 @@ class ContentSyncService:
         """
         Process a single file from Google Drive.
 
+        Uses direct Drive→GCS streaming (no local file needed for GCS upload).
+
         Returns: Dict with "action" ("added", "updated", "unchanged") and "gcs_uploaded" bool
         """
         result = {"action": "unchanged", "gcs_uploaded": False}
         drive_id = file_info["id"]
         filename = file_info["name"]
+        file_ext = Path(filename).suffix.lower()
 
         # Check if already in database
         existing = await self.db.content.find_one({"google_drive_id": drive_id})
 
-        # Check if we need to download (for metadata or GCS upload)
-        need_download = download or not existing
+        # Check if we need GCS upload
         need_gcs_upload = getattr(self, '_upload_to_gcs', True) and (
             not existing or not existing.get("gcs_path")
         )
 
-        # Download file if needed
-        local_path = None
-        if need_download or need_gcs_upload:
-            local_path = await self.drive.download_file(drive_id, filename)
+        # Build GCS folder path
+        if content_type == "song" and genre:
+            gcs_folder = f"songs/{genre}"
+        elif content_type == "commercial" and batch_number:
+            gcs_folder = f"commercials/batch{batch_number}"
+        else:
+            gcs_folder = content_type + "s"
 
-        # Extract metadata if we have a local file
-        metadata = {}
-        if local_path and local_path.exists():
-            metadata = self._extract_metadata(local_path)
-
-        # Upload to GCS if needed
+        # Upload to GCS using direct streaming (no local file)
         gcs_path = existing.get("gcs_path") if existing else None
-        if need_gcs_upload and local_path and local_path.exists():
-            # Build GCS path based on content type
-            if content_type == "song" and genre:
-                gcs_folder = f"songs/{genre}"
-            elif content_type == "commercial" and batch_number:
-                gcs_folder = f"commercials/batch{batch_number}"
-            else:
-                gcs_folder = content_type + "s"
+        metadata = {}
+        local_path = None
 
-            gcs_path = await self.gcs.upload_file(
-                local_path=local_path,
-                content_type=gcs_folder,
-                filename=filename,
-                metadata={"google_drive_id": drive_id, "title": metadata.get("title", "")}
-            )
-            if gcs_path:
-                result["gcs_uploaded"] = True
-                logger.info(f"Uploaded {filename} to GCS: {gcs_path}")
+        if need_gcs_upload and self.gcs.is_available:
+            try:
+                # Stream directly from Drive to GCS
+                stream = self.drive.download_to_stream(drive_id)
+                gcs_path = self.gcs.upload_from_stream(
+                    stream=stream,
+                    folder=gcs_folder,
+                    filename=filename,
+                    file_extension=file_ext,
+                    metadata={"google_drive_id": drive_id}
+                )
+                if gcs_path:
+                    result["gcs_uploaded"] = True
+                    logger.info(f"Streamed {filename} to GCS: {gcs_path}")
+            except Exception as e:
+                logger.error(f"Failed to stream {filename} to GCS: {e}")
+
+        # Only download locally if explicitly requested (for metadata extraction)
+        if download and not existing:
+            local_path = await self.drive.download_file(drive_id, filename)
+            if local_path and local_path.exists():
+                metadata = self._extract_metadata(local_path)
 
         # Build content document
         content_doc = {

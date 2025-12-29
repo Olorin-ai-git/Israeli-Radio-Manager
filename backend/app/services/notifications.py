@@ -35,6 +35,8 @@ class NotificationService:
 
     def __init__(
         self,
+        # MongoDB database for persistent storage
+        db=None,
         # Twilio config
         twilio_sid: Optional[str] = None,
         twilio_token: Optional[str] = None,
@@ -47,6 +49,9 @@ class NotificationService:
         admin_email: Optional[str] = None,
         admin_phone: Optional[str] = None
     ):
+        # MongoDB for persistent push subscriptions
+        self._db = db
+
         # Twilio client
         self._twilio_client = None
         if twilio_sid and twilio_token:
@@ -62,26 +67,47 @@ class NotificationService:
         self._admin_email = admin_email
         self._admin_phone = admin_phone
 
-        # Push subscriptions (in production, store in DB)
-        self._push_subscriptions: List[Dict[str, Any]] = []
-
-    def add_push_subscription(self, subscription: Dict[str, Any]):
+    async def add_push_subscription(self, subscription: Dict[str, Any]):
         """
-        Register a web push subscription.
+        Register a web push subscription (persisted to MongoDB).
 
         Args:
             subscription: Push subscription object from browser
         """
-        if subscription not in self._push_subscriptions:
-            self._push_subscriptions.append(subscription)
-            logger.info("Added push subscription")
+        endpoint = subscription.get('endpoint')
+        if not endpoint:
+            logger.warning("Push subscription missing endpoint")
+            return
 
-    def remove_push_subscription(self, endpoint: str):
+        if self._db:
+            from datetime import datetime
+            # Upsert subscription (update if exists, insert if not)
+            await self._db.push_subscriptions.update_one(
+                {"endpoint": endpoint},
+                {
+                    "$set": {
+                        "endpoint": endpoint,
+                        "keys": subscription.get('keys', {}),
+                        "last_used": datetime.utcnow()
+                    },
+                    "$setOnInsert": {
+                        "created_at": datetime.utcnow()
+                    }
+                },
+                upsert=True
+            )
+            logger.info(f"Added/updated push subscription: {endpoint[:50]}...")
+        else:
+            logger.warning("No database configured for push subscriptions")
+
+    async def remove_push_subscription(self, endpoint: str):
         """Remove a push subscription by endpoint."""
-        self._push_subscriptions = [
-            s for s in self._push_subscriptions
-            if s.get('endpoint') != endpoint
-        ]
+        if self._db:
+            result = await self._db.push_subscriptions.delete_one({"endpoint": endpoint})
+            if result.deleted_count > 0:
+                logger.info(f"Removed push subscription: {endpoint[:50]}...")
+        else:
+            logger.warning("No database configured for push subscriptions")
 
     async def send_notification(
         self,
@@ -201,7 +227,17 @@ class NotificationService:
             logger.warning("VAPID keys not configured for push notifications")
             return False
 
-        if not self._push_subscriptions:
+        # Load subscriptions from MongoDB
+        subscriptions = []
+        if self._db:
+            cursor = self._db.push_subscriptions.find({})
+            async for sub in cursor:
+                subscriptions.append({
+                    "endpoint": sub["endpoint"],
+                    "keys": sub.get("keys", {})
+                })
+
+        if not subscriptions:
             logger.debug("No push subscriptions registered")
             return True  # Not an error, just no subscribers
 
@@ -216,7 +252,7 @@ class NotificationService:
         success_count = 0
         failed_endpoints = []
 
-        for subscription in self._push_subscriptions:
+        for subscription in subscriptions:
             try:
                 webpush(
                     subscription_info=subscription,
@@ -231,12 +267,12 @@ class NotificationService:
                     # Subscription expired
                     failed_endpoints.append(subscription.get('endpoint'))
 
-        # Clean up expired subscriptions
+        # Clean up expired subscriptions from database
         for endpoint in failed_endpoints:
-            self.remove_push_subscription(endpoint)
+            await self.remove_push_subscription(endpoint)
 
-        logger.info(f"Sent push to {success_count}/{len(self._push_subscriptions)} subscribers")
-        return success_count > 0
+        logger.info(f"Sent push to {success_count}/{len(subscriptions)} subscribers")
+        return success_count > 0 or len(subscriptions) == 0
 
     async def _send_sms(self, message: str) -> bool:
         """Send SMS notification via Twilio."""

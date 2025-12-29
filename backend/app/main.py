@@ -9,8 +9,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 
 from app.config import settings
-from app.routers import content, schedule, playback, upload, agent, websocket, calendar, flows
+from app.routers import content, schedule, playback, upload, agent, websocket, calendar, flows, settings as settings_router
 from app.services.audio_player import AudioPlayerService
+from app.services.notifications import NotificationService
 from app.services.google_drive import GoogleDriveService
 from app.services.content_sync import ContentSyncService
 from app.services.google_calendar import GoogleCalendarService
@@ -19,6 +20,7 @@ from app.services.gmail import GmailService
 from app.services.email_watcher import EmailWatcherService
 from app.services.metadata_refresher import MetadataRefresherService
 from app.services.flow_monitor import FlowMonitorService
+from app.services.playback_monitor import PlaybackMonitorService
 
 # Configure logging
 logging.basicConfig(
@@ -41,6 +43,30 @@ async def lifespan(app: FastAPI):
 
     # Initialize collections with indexes
     await init_database(app.state.db)
+
+    # Initialize notification service
+    app.state.notification_service = NotificationService(
+        db=app.state.db,
+        twilio_sid=settings.twilio_account_sid,
+        twilio_token=settings.twilio_auth_token,
+        twilio_phone=settings.twilio_phone_number,
+        vapid_public_key=settings.vapid_public_key,
+        vapid_private_key=settings.vapid_private_key,
+        vapid_email=settings.vapid_claims_email,
+        admin_email=settings.admin_email,
+        admin_phone=settings.admin_phone
+    )
+    logger.info("Notification service initialized")
+
+    # Load saved admin contacts from database (override defaults)
+    saved_settings = await app.state.db.settings.find_one({"_id": "app_settings"})
+    if saved_settings and saved_settings.get("admin_contact"):
+        contact = saved_settings["admin_contact"]
+        if contact.get("email"):
+            app.state.notification_service._admin_email = contact["email"]
+        if contact.get("phone"):
+            app.state.notification_service._admin_phone = contact["phone"]
+        logger.info("Loaded admin contacts from database")
 
     # Initialize audio player
     app.state.audio_player = AudioPlayerService(cache_dir=settings.cache_dir)
@@ -168,10 +194,23 @@ async def lifespan(app: FastAPI):
     await app.state.flow_monitor.start()
     logger.info("Flow monitor started - intelligent real-time flow scheduling")
 
+    # Initialize and start playback monitor (background task for outage detection)
+    app.state.playback_monitor = PlaybackMonitorService(
+        db=app.state.db,
+        notification_service=app.state.notification_service,
+        check_interval=60,  # Check every 60 seconds
+        outage_threshold_minutes=5,  # Alert if no playback for 5 minutes
+        alert_cooldown_minutes=30  # Don't spam alerts
+    )
+    await app.state.playback_monitor.start()
+    logger.info("Playback monitor started - detecting playback outages")
+
     yield
 
     # Shutdown
     logger.info("Shutting down Israeli Radio Manager...")
+    if hasattr(app.state, 'playback_monitor'):
+        await app.state.playback_monitor.stop()
     if hasattr(app.state, 'flow_monitor'):
         await app.state.flow_monitor.stop()
     if hasattr(app.state, 'metadata_refresher'):
@@ -205,6 +244,13 @@ async def init_database(db):
     await db.pending_actions.create_index("status")
     await db.pending_actions.create_index("expires_at")
 
+    # Settings collection (singleton)
+    await db.settings.create_index("_id", unique=True)
+
+    # Push subscriptions indexes
+    await db.push_subscriptions.create_index("endpoint", unique=True)
+    await db.push_subscriptions.create_index("created_at")
+
     logger.info("Database indexes created")
 
 
@@ -234,6 +280,7 @@ app.include_router(agent.router, prefix="/api/agent", tags=["AI Agent"])
 app.include_router(websocket.router, prefix="/ws", tags=["WebSocket"])
 app.include_router(calendar.router, prefix="/api/calendar", tags=["Calendar"])
 app.include_router(flows.router, prefix="/api/flows", tags=["Auto Flows"])
+app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
 
 
 @app.get("/")

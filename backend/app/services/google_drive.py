@@ -231,6 +231,34 @@ class GoogleDriveService:
 
         return local_path
 
+    def download_to_stream(self, file_id: str) -> io.BytesIO:
+        """
+        Download a file directly to memory (no local file).
+
+        This is used for direct Drive→GCS streaming without local storage.
+
+        Args:
+            file_id: Google Drive file ID
+
+        Returns:
+            BytesIO stream containing file content
+        """
+        self._ensure_service()
+
+        request = self._service.files().get_media(fileId=file_id)
+        stream = io.BytesIO()
+        downloader = MediaIoBaseDownload(stream, request)
+
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+            if status:
+                logger.debug(f"Stream download progress: {int(status.progress() * 100)}%")
+
+        stream.seek(0)  # Reset to beginning for reading
+        logger.info(f"Downloaded {file_id} to memory stream ({stream.getbuffer().nbytes} bytes)")
+        return stream
+
     async def upload_file(
         self,
         local_path: str,

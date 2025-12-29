@@ -198,6 +198,30 @@ export const api = {
     client.get(`/flows/${flowId}/executions`, { params: { limit } }).then((r) => r.data),
   parseNaturalFlow: (text: string) =>
     client.post('/flows/parse-natural', null, { params: { text } }).then((r) => r.data),
+
+  // Settings & Notifications
+  getSettings: () => client.get('/settings/').then((r) => r.data),
+  updateSettings: (data: {
+    notifications?: {
+      email_enabled: boolean
+      push_enabled: boolean
+      sms_enabled: boolean
+    }
+    admin_contact?: {
+      email: string | null
+      phone: string | null
+    }
+  }) => client.put('/settings/', data).then((r) => r.data),
+  testNotification: (channel: 'email' | 'push' | 'sms') =>
+    client.post('/settings/test-notification', null, { params: { channel } }).then((r) => r.data),
+  subscribeToPush: (subscription: PushSubscriptionJSON) =>
+    client.post('/settings/push-subscription', subscription).then((r) => r.data),
+  unsubscribeFromPush: (endpoint: string) =>
+    client.delete('/settings/push-subscription', { params: { endpoint } }).then((r) => r.data),
+
+  // Emergency mode reporting
+  reportEmergencyMode: () =>
+    client.post('/playback/emergency-mode-activated').then((r) => r.data),
 }
 
 export default api

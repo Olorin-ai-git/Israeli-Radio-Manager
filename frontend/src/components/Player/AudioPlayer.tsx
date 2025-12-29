@@ -538,6 +538,11 @@ export default function AudioPlayer({
 
     setEmergencyMode(true)
 
+    // Report emergency mode to backend for notifications
+    api.reportEmergencyMode().catch(err => {
+      console.error('Failed to report emergency mode:', err)
+    })
+
     // Fetch emergency playlist
     try {
       const response = await api.getEmergencyPlaylist()
