@@ -99,8 +99,8 @@ export default function Layout({ children }: LayoutProps) {
     // Use Cloud Run backend in production (Firebase Hosting)
     const isProduction = window.location.hostname.includes('web.app') || window.location.hostname.includes('firebaseapp.com')
     const wsUrl = isProduction
-      ? 'wss://israeli-radio-manager-534446777606.europe-west1.run.app/api/ws/'
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/ws/`
+      ? 'wss://israeli-radio-manager-534446777606.europe-west1.run.app/ws/'
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/`
     let reconnectAttempts = 0
     const maxReconnectAttempts = 3
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null

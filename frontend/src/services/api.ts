@@ -67,8 +67,8 @@ export const api = {
   getPlaybackHistory: (limit?: number) =>
     client.get('/playback/history', { params: { limit } }).then((r) => r.data),
   getPlaybackStats: () => client.get('/playback/stats').then((r) => r.data),
-  getStreamUrl: (contentId: string) => `/api/playback/stream/${contentId}`,
-  getCoverUrl: (contentId: string) => `/api/playback/cover/${contentId}`,
+  getStreamUrl: (contentId: string) => `${API_BASE_URL}/playback/stream/${contentId}`,
+  getCoverUrl: (contentId: string) => `${API_BASE_URL}/playback/cover/${contentId}`,
   logPlayStart: (contentId: string) =>
     client.post(`/playback/log-play/${contentId}`).then((r) => r.data),
 
