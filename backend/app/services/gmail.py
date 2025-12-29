@@ -69,8 +69,12 @@ class GmailService:
                 )
                 creds = flow.run_local_server(port=0)
 
-            with open(self.token_path, 'w') as token:
-                token.write(creds.to_json())
+            # Save token for next run (may fail if file is read-only, e.g., in Cloud Run)
+            try:
+                with open(self.token_path, 'w') as token:
+                    token.write(creds.to_json())
+            except (OSError, IOError) as e:
+                logger.warning(f"Could not save token file (read-only?): {e}")
 
         return creds
 

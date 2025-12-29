@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     google_credentials_file: str = Field(default="credentials.json")
     google_token_file: str = Field(default="token.json")  # Calendar token
     google_drive_token_file: str = Field(default="drive-token.json")  # Drive token
+    google_gmail_token_file: str = Field(default="gmail_token.json")  # Gmail token
     google_calendar_id: str = Field(default="primary")  # Calendar ID or "primary"
 
     # Claude AI

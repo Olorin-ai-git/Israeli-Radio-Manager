@@ -101,7 +101,7 @@ async def lifespan(app: FastAPI):
     try:
         app.state.gmail_service = GmailService(
             credentials_path=settings.google_credentials_file,
-            token_path="gmail_token.json",
+            token_path=settings.google_gmail_token_file,
             download_dir=settings.cache_dir
         )
         logger.info("Gmail service initialized")

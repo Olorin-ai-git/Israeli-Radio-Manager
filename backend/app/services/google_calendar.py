@@ -136,9 +136,12 @@ class GoogleCalendarService:
                     )
                     self._creds = flow.run_local_server(port=0)
 
-                # Save token for next run
-                with open(self._token_file, 'w') as token:
-                    token.write(self._creds.to_json())
+                # Save token for next run (may fail if file is read-only, e.g., in Cloud Run)
+                try:
+                    with open(self._token_file, 'w') as token:
+                        token.write(self._creds.to_json())
+                except (OSError, IOError) as e:
+                    logger.warning(f"Could not save token file (read-only?): {e}")
 
             # Build service
             self._service = build('calendar', 'v3', credentials=self._creds)
