@@ -203,25 +203,27 @@ async def start_sync(request: Request, download_files: bool = False):
 
     Args:
         download_files: If True, download all audio files to local cache
+
+    Returns immediately while sync runs in background.
     """
+    import asyncio
     content_sync = request.app.state.content_sync
 
-    try:
-        stats = await content_sync.sync_all(download_files=download_files)
-        return {
-            "message": "Sync completed",
-            "stats": stats
-        }
-    except FileNotFoundError as e:
-        raise HTTPException(
-            status_code=503,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Sync failed: {str(e)}"
-        )
+    # Run sync in background
+    async def run_sync():
+        try:
+            await content_sync.sync_all(download_files=download_files)
+        except Exception as e:
+            print(f"Background sync error: {e}")
+
+    asyncio.create_task(run_sync())
+
+    # Return immediately
+    return {
+        "message": "Sync started in background",
+        "download_files": download_files,
+        "status": "running"
+    }
 
 
 @router.post("/sync/download/{content_id}")
