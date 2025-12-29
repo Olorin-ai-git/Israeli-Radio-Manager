@@ -19,12 +19,14 @@ import {
   FlowActionType,
   StudioAction,
 } from '../../store/actionsStudioStore'
+import { getActionTypeColors } from '../../theme/tokens'
 
 interface PreviewPanelProps {
   isRTL: boolean
 }
 
-const ACTION_COLORS: Record<FlowActionType, string> = {
+// Solid colors for timeline visualization (matching token colors but without opacity)
+const ACTION_SOLID_COLORS: Record<FlowActionType, string> = {
   play_genre: 'bg-sky-500',
   play_content: 'bg-blue-500',
   play_commercials: 'bg-orange-500',
@@ -150,7 +152,7 @@ export default function PreviewPanel({ isRTL }: PreviewPanelProps) {
               <div className="absolute inset-0 flex">
                 {segments.map((seg, idx) => {
                   const width = (seg.duration / totalDuration) * 100
-                  const colorClass = ACTION_COLORS[seg.action.action_type]
+                  const colorClass = ACTION_SOLID_COLORS[seg.action.action_type]
                   const isActive = idx === currentSimStep && simulatorState === 'playing'
                   const isPast = idx < currentSimStep
 
@@ -201,12 +203,13 @@ export default function PreviewPanel({ isRTL }: PreviewPanelProps) {
             </div>
 
             {/* Current Action Card */}
-            <div className={`p-4 rounded-xl ${ACTION_COLORS[currentAction.action_type]}/20 border border-white/10`}>
-              {(() => {
-                const Icon = ACTION_ICONS[currentAction.action_type]
-                return (
+            {(() => {
+              const colors = getActionTypeColors(currentAction.action_type)
+              const Icon = ACTION_ICONS[currentAction.action_type]
+              return (
+                <div className={`p-4 rounded-xl ${colors.bg} ${colors.border}`}>
                   <div className="flex items-center gap-3 mb-3">
-                    <div className={`p-2 rounded-lg ${ACTION_COLORS[currentAction.action_type]}/30`}>
+                    <div className={`p-2 rounded-lg ${ACTION_SOLID_COLORS[currentAction.action_type]}/30`}>
                       <Icon size={20} className="text-white" />
                     </div>
                     <div>
@@ -218,13 +221,13 @@ export default function PreviewPanel({ isRTL }: PreviewPanelProps) {
                       </p>
                     </div>
                   </div>
-                )
-              })()}
 
-              <p className="text-sm text-dark-200">
-                {getActionPreviewText(currentAction, isRTL)}
-              </p>
-            </div>
+                  <p className="text-sm text-dark-200">
+                    {getActionPreviewText(currentAction, isRTL)}
+                  </p>
+                </div>
+              )
+            })()}
 
             {/* Next Up */}
             {currentSimStep < actions.length - 1 && (

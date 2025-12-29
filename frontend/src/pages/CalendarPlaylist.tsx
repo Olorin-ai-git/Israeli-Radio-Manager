@@ -17,6 +17,7 @@ import {
   Repeat
 } from 'lucide-react'
 import { api } from '../services/api'
+import Checkbox from '../components/Form/Checkbox'
 
 interface CalendarEvent {
   id: string
@@ -782,21 +783,19 @@ export default function CalendarPlaylist() {
                         ? ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
                         : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
                       ).map((day, idx) => (
-                        <label key={idx} className="flex items-center gap-1">
-                          <input
-                            type="checkbox"
-                            checked={scheduleDaysOfWeek.includes(idx)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setScheduleDaysOfWeek([...scheduleDaysOfWeek, idx].sort())
-                              } else {
-                                setScheduleDaysOfWeek(scheduleDaysOfWeek.filter(d => d !== idx))
-                              }
-                            }}
-                            className="rounded bg-dark-700 border-dark-500"
-                          />
-                          <span className="text-xs text-dark-300">{day}</span>
-                        </label>
+                        <Checkbox
+                          key={idx}
+                          label={day}
+                          checked={scheduleDaysOfWeek.includes(idx)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setScheduleDaysOfWeek([...scheduleDaysOfWeek, idx].sort())
+                            } else {
+                              setScheduleDaysOfWeek(scheduleDaysOfWeek.filter(d => d !== idx))
+                            }
+                          }}
+                          className="text-xs"
+                        />
                       ))}
                     </div>
                   </div>

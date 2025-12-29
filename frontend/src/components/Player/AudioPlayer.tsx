@@ -1072,10 +1072,20 @@ export default function AudioPlayer({
             value={currentTime}
             onChange={handleSeek}
             disabled={!track}
-            className="flex-1 h-1 bg-dark-700 rounded-full appearance-none cursor-pointer
+            className="flex-1 h-1 bg-dark-700/50 backdrop-blur-sm rounded-full appearance-none cursor-pointer
+              border border-white/5 transition-all duration-200
+              hover:bg-dark-700/70
+              focus:outline-none focus:ring-2 focus:ring-primary-500/30
+              disabled:opacity-50 disabled:cursor-not-allowed
               [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3
               [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-primary-500
-              [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer"
+              [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer
+              [&::-webkit-slider-thumb]:shadow-glow-sm [&::-webkit-slider-thumb]:transition-all
+              [&::-webkit-slider-thumb]:hover:scale-110 [&::-webkit-slider-thumb]:hover:shadow-glow
+              [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-3
+              [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:bg-primary-500
+              [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0
+              [&::-moz-range-thumb]:cursor-pointer"
           />
           <span className="text-xs text-dark-400 w-10">
             {formatTime(duration)}
@@ -1100,10 +1110,20 @@ export default function AudioPlayer({
             max={100}
             value={isMuted ? 0 : volume}
             onChange={handleVolumeChange}
-            className="w-20 h-1 bg-dark-700 rounded-full appearance-none cursor-pointer
+            className="w-20 h-1 bg-dark-700/50 backdrop-blur-sm rounded-full appearance-none cursor-pointer
+              border border-white/5 transition-all duration-200
+              hover:bg-dark-700/70
+              focus:outline-none focus:ring-2 focus:ring-primary-500/30
               [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3
-              [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-dark-400
-              [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer"
+              [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-dark-300
+              [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer
+              [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-white/10
+              [&::-webkit-slider-thumb]:transition-all [&::-webkit-slider-thumb]:hover:scale-110
+              [&::-webkit-slider-thumb]:hover:bg-dark-200
+              [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-3
+              [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:bg-dark-300
+              [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0
+              [&::-moz-range-thumb]:cursor-pointer"
           />
         </div>
 

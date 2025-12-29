@@ -1296,15 +1296,13 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                         ? ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש']
                         : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
                       ).map((day, idx) => (
-                        <label key={idx} className="flex items-center gap-1">
-                          <input
-                            type="checkbox"
-                            name={`day_${idx}`}
-                            defaultChecked
-                            className="rounded bg-dark-700 border-dark-500"
-                          />
-                          <span className="text-xs text-dark-300">{day}</span>
-                        </label>
+                        <Checkbox
+                          key={idx}
+                          name={`day_${idx}`}
+                          label={day}
+                          defaultChecked
+                          className="text-xs"
+                        />
                       ))}
                     </div>
                   </div>
@@ -1358,23 +1356,13 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
               {/* Loop Option - Only show for scheduled flows */}
               {triggerType === 'scheduled' && (
               <div className="p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="loop"
-                    className="w-4 h-4 rounded border-2 border-primary-500 bg-dark-800 checked:bg-primary-500 checked:border-primary-500"
-                  />
-                  <div className="flex-1">
-                    <span className="text-sm font-medium text-dark-100">
-                      {isRTL ? 'חזור על הפעולות עד סוף הזמן' : 'Repeat actions until end time'}
-                    </span>
-                    <p className="text-xs text-dark-400 mt-0.5">
-                      {isRTL
-                        ? 'אם מוגדר זמן סיום, הזרימה תחזור על כל הפעולות עד שהזמן יגמר'
-                        : 'If an end time is set, the flow will repeat all actions until that time'}
-                    </p>
-                  </div>
-                </label>
+                <Checkbox
+                  name="loop"
+                  label={isRTL ? 'חזור על הפעולות עד סוף הזמן' : 'Repeat actions until end time'}
+                  description={isRTL
+                    ? 'אם מוגדר זמן סיום, הזרימה תחזור על כל הפעולות עד שהזמן יגמר'
+                    : 'If an end time is set, the flow will repeat all actions until that time'}
+                />
               </div>
               )}
 
@@ -1760,15 +1748,13 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
                         ? ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש']
                         : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
                       ).map((day, idx) => (
-                        <label key={idx} className="flex items-center gap-1">
-                          <input
-                            type="checkbox"
-                            name={`day_${idx}`}
-                            defaultChecked={editingFlow.schedule?.days_of_week?.includes(idx) ?? true}
-                            className="rounded bg-dark-700 border-dark-500"
-                          />
-                          <span className="text-xs text-dark-300">{day}</span>
-                        </label>
+                        <Checkbox
+                          key={idx}
+                          name={`day_${idx}`}
+                          label={day}
+                          defaultChecked={editingFlow.schedule?.days_of_week?.includes(idx) ?? true}
+                          className="text-xs"
+                        />
                       ))}
                     </div>
                   </div>
@@ -1889,24 +1875,14 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
               {/* Loop Option - Only show for scheduled flows */}
               {editTriggerType === 'scheduled' && (
               <div className="p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="loop"
-                    defaultChecked={editingFlow.loop}
-                    className="w-4 h-4 rounded border-2 border-primary-500 bg-dark-800 checked:bg-primary-500 checked:border-primary-500"
-                  />
-                  <div className="flex-1">
-                    <span className="text-sm font-medium text-dark-100">
-                      {isRTL ? 'חזור על הפעולות עד סוף הזמן' : 'Repeat actions until end time'}
-                    </span>
-                    <p className="text-xs text-dark-400 mt-0.5">
-                      {isRTL
-                        ? 'אם מוגדר זמן סיום, הזרימה תחזור על כל הפעולות עד שהזמן יגמר'
-                        : 'If an end time is set, the flow will repeat all actions until that time'}
-                    </p>
-                  </div>
-                </label>
+                <Checkbox
+                  name="loop"
+                  defaultChecked={editingFlow.loop}
+                  label={isRTL ? 'חזור על הפעולות עד סוף הזמן' : 'Repeat actions until end time'}
+                  description={isRTL
+                    ? 'אם מוגדר זמן סיום, הזרימה תחזור על כל הפעולות עד שהזמן יגמר'
+                    : 'If an end time is set, the flow will repeat all actions until that time'}
+                />
               </div>
               )}
 
