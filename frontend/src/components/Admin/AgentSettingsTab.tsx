@@ -1,0 +1,228 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Bot, Settings as SettingsIcon, Bell } from 'lucide-react'
+import api from '../../services/api'
+import { toast } from '../../store/toastStore'
+
+interface AgentSettingsTabProps {
+  isRTL: boolean
+}
+
+export default function AgentSettingsTab({ isRTL }: AgentSettingsTabProps) {
+  const queryClient = useQueryClient()
+
+  const { data: agentConfig, isLoading, error } = useQuery({
+    queryKey: ['agent', 'config'],
+    queryFn: api.getAgentConfig,
+    retry: false
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: api.updateAgentConfig,
+    onSuccess: () => {
+      toast.success(isRTL ? 'הגדרות AI עודכנו' : 'Agent settings updated')
+      queryClient.invalidateQueries({ queryKey: ['agent', 'config'] })
+    },
+    onError: (error: any) => {
+      toast.error(isRTL ? 'שגיאה בעדכון הגדרות' : `Error: ${error.response?.data?.detail || error.message}`)
+    }
+  })
+
+  const handleModeChange = (mode: 'full_automation' | 'prompt') => {
+    updateMutation.mutate({ ...agentConfig, mode })
+  }
+
+  const handleAutomationRuleChange = (key: string, value: number) => {
+    updateMutation.mutate({
+      ...agentConfig,
+      automation_rules: {
+        ...agentConfig?.automation_rules,
+        [key]: value
+      }
+    })
+  }
+
+  const handleNotificationLevelChange = (level: string) => {
+    updateMutation.mutate({ ...agentConfig, notification_level: level })
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-400"></div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-center">
+          <Bot className="mx-auto mb-4 text-amber-400" size={48} />
+          <h3 className="text-lg font-semibold text-dark-100 mb-2">
+            {isRTL ? 'נדרשת הרשאת מנהל' : 'Admin Authorization Required'}
+          </h3>
+          <p className="text-sm text-dark-400">
+            {isRTL ? 'עליך להתחבר עם חשבון מנהל כדי לצפות בדף זה' : 'Please sign in with an admin account to view this page'}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Agent Mode */}
+      <div className="glass-card p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Bot size={20} className="text-primary-400" />
+          <h3 className="font-semibold text-dark-100">
+            {isRTL ? 'מצב AI' : 'Agent Mode'}
+          </h3>
+        </div>
+        <div className="space-y-3">
+          <label className="flex items-start gap-3 p-3 rounded-lg border border-dark-700 cursor-pointer hover:bg-white/5">
+            <input
+              type="radio"
+              name="mode"
+              value="full_automation"
+              checked={agentConfig?.mode === 'full_automation'}
+              onChange={(e) => handleModeChange(e.target.value as 'full_automation')}
+              className="mt-1"
+            />
+            <div>
+              <div className="font-medium text-dark-100">
+                {isRTL ? 'אוטומציה מלאה' : 'Full Automation'}
+              </div>
+              <div className="text-sm text-dark-400">
+                {isRTL ? 'ה-AI מקבל את כל ההחלטות באופן אוטומטי' : 'AI makes all decisions automatically'}
+              </div>
+            </div>
+          </label>
+          <label className="flex items-start gap-3 p-3 rounded-lg border border-dark-700 cursor-pointer hover:bg-white/5">
+            <input
+              type="radio"
+              name="mode"
+              value="prompt"
+              checked={agentConfig?.mode === 'prompt'}
+              onChange={(e) => handleModeChange(e.target.value as 'prompt')}
+              className="mt-1"
+            />
+            <div>
+              <div className="font-medium text-dark-100">
+                {isRTL ? 'מצב בקשה' : 'Prompt Mode'}
+              </div>
+              <div className="text-sm text-dark-400">
+                {isRTL ? 'ה-AI מבקש אישור לפעולות' : 'AI requests approval for actions'}
+              </div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* Automation Rules */}
+      <div className="glass-card p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <SettingsIcon size={20} className="text-primary-400" />
+          <h3 className="font-semibold text-dark-100">
+            {isRTL ? 'כללי אוטומציה' : 'Automation Rules'}
+          </h3>
+        </div>
+        <div className="space-y-6">
+          {/* Commercial Interval */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-dark-200">
+                {isRTL ? 'מרווח פרסומות (דקות)' : 'Commercial Interval (minutes)'}
+              </label>
+              <span className="text-sm text-primary-400 font-semibold">
+                {agentConfig?.automation_rules?.commercial_interval_minutes || 15} {isRTL ? 'דקות' : 'min'}
+              </span>
+            </div>
+            <input
+              type="range"
+              min="5"
+              max="60"
+              step="5"
+              value={agentConfig?.automation_rules?.commercial_interval_minutes || 15}
+              onChange={(e) => handleAutomationRuleChange('commercial_interval_minutes', parseInt(e.target.value))}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-dark-400 mt-1">
+              <span>5</span>
+              <span>60</span>
+            </div>
+          </div>
+
+          {/* Max Song Repeat Hours */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-dark-200">
+                {isRTL ? 'מקסימום שעות לשיר חוזר' : 'Max Song Repeat Hours'}
+              </label>
+              <span className="text-sm text-primary-400 font-semibold">
+                {agentConfig?.automation_rules?.max_song_repeat_hours || 4} {isRTL ? 'שעות' : 'hrs'}
+              </span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="24"
+              step="1"
+              value={agentConfig?.automation_rules?.max_song_repeat_hours || 4}
+              onChange={(e) => handleAutomationRuleChange('max_song_repeat_hours', parseInt(e.target.value))}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-dark-400 mt-1">
+              <span>1</span>
+              <span>24</span>
+            </div>
+          </div>
+
+          {/* Auto-Categorize Threshold */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-dark-200">
+                {isRTL ? 'סף קטגוריזציה אוטומטית' : 'Auto-Categorize Threshold'}
+              </label>
+              <span className="text-sm text-primary-400 font-semibold">
+                {((agentConfig?.automation_rules?.auto_categorize_threshold || 0.8) * 100).toFixed(0)}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min="0.5"
+              max="1.0"
+              step="0.05"
+              value={agentConfig?.automation_rules?.auto_categorize_threshold || 0.8}
+              onChange={(e) => handleAutomationRuleChange('auto_categorize_threshold', parseFloat(e.target.value))}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-dark-400 mt-1">
+              <span>50%</span>
+              <span>100%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Notification Level */}
+      <div className="glass-card p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Bell size={20} className="text-primary-400" />
+          <h3 className="font-semibold text-dark-100">
+            {isRTL ? 'רמת התראות' : 'Notification Level'}
+          </h3>
+        </div>
+        <select
+          value={agentConfig?.notification_level || 'all'}
+          onChange={(e) => handleNotificationLevelChange(e.target.value)}
+          className="w-full px-4 py-3 rounded-lg bg-dark-800 border border-dark-700 text-dark-100 focus:border-primary-500 focus:outline-none"
+        >
+          <option value="all">{isRTL ? 'כל ההתראות' : 'All Notifications'}</option>
+          <option value="critical_only">{isRTL ? 'קריטי בלבד' : 'Critical Only'}</option>
+          <option value="summary_only">{isRTL ? 'סיכום בלבד' : 'Summary Only'}</option>
+        </select>
+      </div>
+    </div>
+  )
+}

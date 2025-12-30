@@ -9,7 +9,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 
 from app.config import settings
-from app.routers import content, schedule, playback, upload, agent, websocket, calendar, flows, settings as settings_router
+from app.routers import content, schedule, playback, upload, agent, websocket, calendar, flows, settings as settings_router, admin
 from app.services.audio_player import AudioPlayerService
 from app.services.notifications import NotificationService
 from app.services.google_drive import GoogleDriveService
@@ -21,6 +21,7 @@ from app.services.email_watcher import EmailWatcherService
 from app.services.metadata_refresher import MetadataRefresherService
 from app.services.flow_monitor import FlowMonitorService
 from app.services.playback_monitor import PlaybackMonitorService
+from app.services.health_monitor import HealthMonitorService
 
 # Configure logging
 logging.basicConfig(
@@ -205,10 +206,24 @@ async def lifespan(app: FastAPI):
     await app.state.playback_monitor.start()
     logger.info("Playback monitor started - detecting playback outages")
 
+    # Initialize and start health monitor (background task for server health monitoring)
+    app.state.health_monitor = HealthMonitorService(
+        notification_service=app.state.notification_service,
+        check_interval=60,  # Check every 60 seconds
+        cpu_threshold=80.0,  # Alert at 80% CPU
+        memory_threshold=85.0,  # Alert at 85% memory
+        disk_threshold=90.0,  # Alert at 90% disk
+        alert_cooldown_minutes=30  # Don't spam alerts
+    )
+    await app.state.health_monitor.start()
+    logger.info("Health monitor started - monitoring server metrics")
+
     yield
 
     # Shutdown
     logger.info("Shutting down Israeli Radio Manager...")
+    if hasattr(app.state, 'health_monitor'):
+        await app.state.health_monitor.stop()
     if hasattr(app.state, 'playback_monitor'):
         await app.state.playback_monitor.stop()
     if hasattr(app.state, 'flow_monitor'):
@@ -278,6 +293,7 @@ app.include_router(websocket.router, prefix="/ws", tags=["WebSocket"])
 app.include_router(calendar.router, prefix="/api/calendar", tags=["Calendar"])
 app.include_router(flows.router, prefix="/api/flows", tags=["Auto Flows"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
+app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 
 
 @app.get("/")

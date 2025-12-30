@@ -336,9 +336,54 @@ async def check_schedule_overlap(db, new_schedule: dict, exclude_flow_id: str = 
             else:
                 # Existing is recurring, new is one-time
                 # Check if the one-time event falls within recurring event times
-                # For simplicity, we'll check if any day in the one-time range matches
-                # This is a conservative check
-                pass  # TODO: Implement cross-type overlap detection if needed
+                existing_days = set(schedule.get("days_of_week", []))
+                existing_start_time = schedule.get("start_time")
+                existing_end_time = schedule.get("end_time")
+
+                if existing_days and existing_start_time:
+                    # Check each day in the one-time event's range
+                    current_date = new_start_dt.date()
+                    end_date = new_end_dt.date()
+                    from datetime import timedelta
+
+                    while current_date <= end_date:
+                        # Check if this day of week matches recurring schedule
+                        if current_date.weekday() in existing_days:
+                            # Combine date with recurring times to check overlap
+                            from datetime import time as dt_time
+
+                            existing_start_parts = existing_start_time.split(":")
+                            existing_start_combined = dt.combine(
+                                current_date,
+                                dt_time(int(existing_start_parts[0]), int(existing_start_parts[1]))
+                            )
+
+                            if existing_end_time:
+                                existing_end_parts = existing_end_time.split(":")
+                                existing_end_combined = dt.combine(
+                                    current_date,
+                                    dt_time(int(existing_end_parts[0]), int(existing_end_parts[1]))
+                                )
+                            else:
+                                # If no end time, assume it runs until end of day
+                                existing_end_combined = dt.combine(current_date, dt_time(23, 59, 59))
+
+                            # Make timezone aware if needed
+                            if new_start_dt.tzinfo:
+                                from datetime import timezone
+                                existing_start_combined = existing_start_combined.replace(tzinfo=new_start_dt.tzinfo)
+                                existing_end_combined = existing_end_combined.replace(tzinfo=new_end_dt.tzinfo)
+
+                            # Check if there's overlap on this day
+                            if not (new_end_dt <= existing_start_combined or new_start_dt >= existing_end_combined):
+                                conflicting_flows.append({
+                                    "_id": str(flow["_id"]),
+                                    "name": flow.get("name"),
+                                    "schedule": schedule
+                                })
+                                break  # Found conflict, no need to check more days
+
+                        current_date += timedelta(days=1)
 
         return conflicting_flows
 
@@ -371,8 +416,56 @@ async def check_schedule_overlap(db, new_schedule: dict, exclude_flow_id: str = 
             schedule = flow.get("schedule", {})
             existing_recurrence = schedule.get("recurrence", "none")
 
-            # Skip one-time events when checking recurring
+            # Check against one-time events
             if existing_recurrence == "none":
+                # Existing is one-time, new is recurring
+                # Check if recurring event would conflict with the one-time event
+                existing_start_dt_str = schedule.get("start_datetime")
+                existing_end_dt_str = schedule.get("end_datetime")
+
+                if existing_start_dt_str and existing_end_dt_str:
+                    from datetime import datetime as dt_import
+                    existing_start_dt = dt_import.fromisoformat(existing_start_dt_str.replace('Z', '+00:00'))
+                    existing_end_dt = dt_import.fromisoformat(existing_end_dt_str.replace('Z', '+00:00'))
+
+                    # Check if any day in the one-time event matches our recurring days
+                    current_date = existing_start_dt.date()
+                    end_date = existing_end_dt.date()
+                    from datetime import timedelta, time as dt_time
+
+                    while current_date <= end_date:
+                        if current_date.weekday() in new_days_of_week:
+                            # This day matches - check if times overlap
+                            new_start_parts = new_start.split(":")
+                            new_start_combined = dt_import.combine(
+                                current_date,
+                                dt_time(int(new_start_parts[0]), int(new_start_parts[1]))
+                            )
+
+                            if new_end:
+                                new_end_parts = new_end.split(":")
+                                new_end_combined = dt_import.combine(
+                                    current_date,
+                                    dt_time(int(new_end_parts[0]), int(new_end_parts[1]))
+                                )
+                            else:
+                                new_end_combined = dt_import.combine(current_date, dt_time(23, 59, 59))
+
+                            # Make timezone aware if needed
+                            if existing_start_dt.tzinfo:
+                                new_start_combined = new_start_combined.replace(tzinfo=existing_start_dt.tzinfo)
+                                new_end_combined = new_end_combined.replace(tzinfo=existing_end_dt.tzinfo)
+
+                            # Check overlap
+                            if not (existing_end_dt <= new_start_combined or existing_start_dt >= new_end_combined):
+                                conflicting_flows.append({
+                                    "_id": str(flow["_id"]),
+                                    "name": flow.get("name"),
+                                    "schedule": schedule
+                                })
+                                break  # Found conflict, no need to check more days
+
+                        current_date += timedelta(days=1)
                 continue
 
             existing_start = schedule.get("start_time")

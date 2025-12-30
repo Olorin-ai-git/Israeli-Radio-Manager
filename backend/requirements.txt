@@ -20,6 +20,9 @@ google-auth-httplib2>=0.2.0
 google-auth-oauthlib>=1.2.0
 google-cloud-storage>=2.18.0
 
+# Firebase
+firebase-admin>=6.4.0
+
 # Notifications
 twilio>=8.13.0
 pywebpush>=1.14.0
@@ -33,3 +36,4 @@ pydantic>=2.6.0
 pydantic-settings>=2.1.0
 httpx>=0.26.0
 aiofiles>=23.2.1
+psutil>=5.9.8

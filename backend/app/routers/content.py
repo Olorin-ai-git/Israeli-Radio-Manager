@@ -11,6 +11,7 @@ from app.models.content import (
     ContentUpdate,
     ContentType
 )
+from app.utils.common import get_first
 
 router = APIRouter()
 
@@ -207,14 +208,40 @@ async def start_sync(request: Request, download_files: bool = False):
     Returns immediately while sync runs in background.
     """
     import asyncio
+    import logging
     content_sync = request.app.state.content_sync
+    notification_service = request.app.state.notification_service
+    logger = logging.getLogger(__name__)
 
     # Run sync in background
     async def run_sync():
         try:
-            await content_sync.sync_all(download_files=download_files)
+            result = await content_sync.sync_all(download_files=download_files)
+
+            # Send success notification
+            if notification_service:
+                try:
+                    await notification_service.send_notification(
+                        level="INFO",
+                        title="Sync Completed",
+                        message=f"Synced {result.get('total_synced', 0)} files from Google Drive"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send sync success notification: {e}")
+
         except Exception as e:
-            print(f"Background sync error: {e}")
+            logger.error(f"Background sync error: {e}")
+
+            # Send error notification
+            if notification_service:
+                try:
+                    await notification_service.send_notification(
+                        level="ERROR",
+                        title="Sync Failed",
+                        message=f"Google Drive sync failed: {str(e)}"
+                    )
+                except Exception as notif_err:
+                    logger.warning(f"Failed to send sync error notification: {notif_err}")
 
     asyncio.create_task(run_sync())
 
@@ -303,11 +330,6 @@ async def refresh_metadata(request: Request):
             if audio is None:
                 stats["skipped"] += 1
                 continue
-
-            def get_first(value):
-                if isinstance(value, list) and value:
-                    return value[0]
-                return value
 
             # Build update document
             update_doc = {

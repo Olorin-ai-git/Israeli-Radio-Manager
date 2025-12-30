@@ -11,6 +11,7 @@ from mutagen.easyid3 import EasyID3
 
 from app.services.google_drive import GoogleDriveService
 from app.services.gcs_storage import GCSStorageService
+from app.utils.common import get_first
 
 logger = logging.getLogger(__name__)
 
@@ -416,12 +417,12 @@ class ContentSyncService:
 
             # Get basic tags
             if hasattr(audio, 'get'):
-                metadata["title"] = self._get_first(audio.get("title"))
-                metadata["artist"] = self._get_first(audio.get("artist"))
-                metadata["album"] = self._get_first(audio.get("album"))
-                metadata["genre"] = self._get_first(audio.get("genre"))
+                metadata["title"] = get_first(audio.get("title"))
+                metadata["artist"] = get_first(audio.get("artist"))
+                metadata["album"] = get_first(audio.get("album"))
+                metadata["genre"] = get_first(audio.get("genre"))
 
-                year = self._get_first(audio.get("date"))
+                year = get_first(audio.get("date"))
                 if year:
                     try:
                         metadata["year"] = int(year[:4])
@@ -436,12 +437,6 @@ class ContentSyncService:
             logger.warning(f"Could not extract metadata from {file_path}: {e}")
 
         return metadata
-
-    def _get_first(self, value) -> Optional[str]:
-        """Get first item if list, otherwise return value."""
-        if isinstance(value, list) and value:
-            return value[0]
-        return value
 
     def _title_from_filename(self, filename: str) -> str:
         """Extract title from filename."""

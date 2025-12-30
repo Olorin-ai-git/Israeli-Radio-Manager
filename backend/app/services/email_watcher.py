@@ -11,6 +11,7 @@ from mutagen import File as MutagenFile
 
 from app.models.agent import ActionType, ActionStatus
 from app.models.content import ContentType
+from app.utils.common import get_first
 
 logger = logging.getLogger(__name__)
 
@@ -220,12 +221,12 @@ class EmailWatcherService:
                 return metadata
 
             if hasattr(audio, 'get'):
-                metadata["title"] = self._get_first(audio.get("title"))
-                metadata["artist"] = self._get_first(audio.get("artist"))
-                metadata["album"] = self._get_first(audio.get("album"))
-                metadata["genre"] = self._get_first(audio.get("genre"))
+                metadata["title"] = get_first(audio.get("title"))
+                metadata["artist"] = get_first(audio.get("artist"))
+                metadata["album"] = get_first(audio.get("album"))
+                metadata["genre"] = get_first(audio.get("genre"))
 
-                year = self._get_first(audio.get("date"))
+                year = get_first(audio.get("date"))
                 if year:
                     try:
                         metadata["year"] = int(year[:4])
@@ -240,11 +241,38 @@ class EmailWatcherService:
 
         return metadata
 
-    def _get_first(self, value) -> Optional[str]:
-        """Get first item if list, otherwise return value."""
-        if isinstance(value, list) and value:
-            return value[0]
-        return value
+    async def _get_categorization_alternatives(self) -> List[Dict[str, Any]]:
+        """
+        Get categorization alternatives dynamically from database.
+
+        Returns list of available content types and genres for user selection.
+        """
+        alternatives = []
+
+        try:
+            # Get distinct genres from songs in the database
+            genres = await self.db.content.distinct("genre", {"content_type": "song", "genre": {"$ne": None}})
+
+            # Add song alternatives with actual genres from database
+            for genre in sorted(genres):
+                alternatives.append({"type": "song", "genre": genre})
+
+            # Add non-song content types
+            alternatives.extend([
+                {"type": "commercial", "genre": None},
+                {"type": "show", "genre": None},
+            ])
+
+        except Exception as e:
+            logger.warning(f"Could not fetch genres from database: {e}, using fallback")
+            # Fallback to basic alternatives if database query fails
+            alternatives = [
+                {"type": "song", "genre": "Unknown"},
+                {"type": "commercial", "genre": None},
+                {"type": "show", "genre": None},
+            ]
+
+        return alternatives
 
     async def _classify_content(
         self,
@@ -330,6 +358,9 @@ class EmailWatcherService:
         """Create a pending action for user review."""
         from app.models.agent import PendingAction
 
+        # Get alternatives dynamically from database
+        alternatives = await self._get_categorization_alternatives()
+
         pending_action = {
             "action_type": ActionType.CATEGORIZE_CONTENT.value,
             "description": f"Categorize new audio: {attachment_info['filename']}",
@@ -341,13 +372,7 @@ class EmailWatcherService:
                 "title": metadata.get("title") or self._title_from_filename(attachment_info['filename']),
                 "artist": metadata.get("artist"),
             },
-            "alternatives": [
-                {"type": "song", "genre": "Mizrahi"},
-                {"type": "song", "genre": "Hasidi"},
-                {"type": "song", "genre": "Rock"},
-                {"type": "commercial", "genre": None},
-                {"type": "show", "genre": None},
-            ],
+            "alternatives": alternatives,
             "context": {
                 "filename": attachment_info["filename"],
                 "sender": attachment_info["sender"],

@@ -152,10 +152,26 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   // Insert at front of queue (will play next after current track)
-  queueNext: (track) => {
-    // For now, just add to front of local queue
-    // TODO: Add backend support for queue position
-    set((state) => ({ queue: [track, ...state.queue] }))
+  queueNext: async (track) => {
+    const { currentTrack, isPlaying } = get()
+
+    // If nothing is playing, play immediately instead of queuing
+    if (!currentTrack || !isPlaying) {
+      set({ currentTrack: track, isPlaying: true })
+      return
+    }
+
+    // Add to backend queue then reorder to front
+    try {
+      await api.addToQueue(track._id)
+      // Get current queue length to find the newly added item (it's at the end)
+      const currentQueue = get().queue
+      const newItemIndex = currentQueue.length
+      // Reorder to position 0 (front of queue)
+      await api.reorderQueue(newItemIndex, 0)
+    } catch (error) {
+      console.error('Failed to queue next:', error)
+    }
   },
 
   removeFromQueue: async (index) => {

@@ -11,6 +11,7 @@ from mutagen import File as MutagenFile
 from mutagen.mp3 import MP3
 
 from app.services.google_drive import GoogleDriveService
+from app.utils.common import get_first
 
 logger = logging.getLogger(__name__)
 
@@ -111,11 +112,6 @@ class MetadataRefresherService:
                 if audio is None:
                     stats["skipped"] += 1
                     continue
-
-                def get_first(value):
-                    if isinstance(value, list) and value:
-                        return value[0]
-                    return value
 
                 # Build update document
                 update_doc = {

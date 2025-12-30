@@ -13,12 +13,14 @@ import {
   Globe,
   Blocks,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Shield
 } from 'lucide-react'
 import ChatSidebar from '../Agent/ChatSidebar'
 import AudioPlayer from '../Player/AudioPlayer'
 import FlowsPanel from '../Flows/FlowsPanel'
 import { usePlayerStore } from '../../store/playerStore'
+import { useAuth } from '../../contexts/AuthContext'
 
 interface LayoutProps {
   children: ReactNode
@@ -28,6 +30,7 @@ export default function Layout({ children }: LayoutProps) {
   const { t, i18n } = useTranslation()
   const location = useLocation()
   const queryClient = useQueryClient()
+  const { role } = useAuth()
   const [chatExpanded, setChatExpanded] = useState(false)
   const [flowsCollapsed, setFlowsCollapsed] = useState(true)
   const [navCollapsed, setNavCollapsed] = useState(() => {
@@ -234,6 +237,7 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/upload', icon: Upload, label: t('nav.upload') },
     { path: '/agent', icon: Bot, label: t('nav.agent') },
     { path: '/settings', icon: Settings, label: t('nav.settings') },
+    ...(role === 'admin' ? [{ path: '/admin', icon: Shield, label: isRTL ? 'ניהול' : 'Admin' }] : []),
   ]
 
   const toggleLanguage = () => {

@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { getIdToken } from '../lib/firebase'
 
 // Use Cloud Run backend in production (Firebase Hosting), local proxy in development
 const isProduction = window.location.hostname.includes('web.app') || window.location.hostname.includes('firebaseapp.com')
@@ -11,6 +12,15 @@ const client = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+})
+
+// Attach Firebase ID token to all requests
+client.interceptors.request.use(async (config) => {
+  const token = await getIdToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
 })
 
 export const api = {
@@ -222,6 +232,44 @@ export const api = {
   // Emergency mode reporting
   reportEmergencyMode: () =>
     client.post('/playback/emergency-mode-activated').then((r) => r.data),
+
+  // Admin - System Configuration
+  getAdminEnvConfig: () =>
+    client.get('/admin/config/env').then((r) => r.data),
+  updateAdminEnvConfig: (updates: Record<string, string>) =>
+    client.put('/admin/config/env', { updates }).then((r) => r.data),
+  getAdminSensitiveKeys: () =>
+    client.get('/admin/config/sensitive-keys').then((r) => r.data),
+
+  // Admin - Storage Management
+  getAdminStorageStats: () =>
+    client.get('/admin/storage/stats').then((r) => r.data),
+  clearAdminCache: (keepRecentDays?: number) =>
+    client.post('/admin/storage/cache/clear', null, { params: { keep_recent_days: keepRecentDays } }).then((r) => r.data),
+  getAdminOrphanedFiles: () =>
+    client.get('/admin/storage/orphaned').then((r) => r.data),
+
+  // Admin - Content Quality & Statistics
+  getAdminQualityIssues: () =>
+    client.get('/admin/content/quality-issues').then((r) => r.data),
+  getAdminContentStats: () =>
+    client.get('/admin/content/stats').then((r) => r.data),
+
+  // Admin - Batch Operations
+  adminBatchDeleteContent: (contentIds: string[]) =>
+    client.post('/admin/content/batch/delete', { content_ids: contentIds }).then((r) => r.data),
+  adminBatchUpdateMetadata: (contentIds: string[], updates: any) =>
+    client.patch('/admin/content/batch/metadata', { content_ids: contentIds, updates }).then((r) => r.data),
+  adminBatchReassignGenre: (contentIds: string[], newGenre: string) =>
+    client.post('/admin/content/batch/reassign-genre', { content_ids: contentIds, new_genre: newGenre }).then((r) => r.data),
+
+  // Admin - Server Health & Management
+  getServerHealth: () =>
+    client.get('/admin/server/health').then((r) => r.data),
+  restartServer: () =>
+    client.post('/admin/server/restart').then((r) => r.data),
+  clearCache: (keepRecentDays?: number, includeLogs?: boolean) =>
+    client.post('/admin/storage/cache/clear', null, { params: { keep_recent_days: keepRecentDays, include_logs: includeLogs } }).then((r) => r.data),
 }
 
 export default api

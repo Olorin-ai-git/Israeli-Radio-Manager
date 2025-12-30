@@ -1,6 +1,6 @@
 import { useState, useEffect, ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Globe, Bell, Cloud, Mail, Smartphone, MessageSquare, Send, Loader2, Check, X } from 'lucide-react'
+import { Globe, Bell, Mail, Smartphone, MessageSquare, Send, Loader2, Check } from 'lucide-react'
 import Checkbox from '../components/Form/Checkbox'
 import Input from '../components/Form/Input'
 import api from '../services/api'
@@ -212,7 +212,7 @@ export default function Settings() {
                 <Checkbox
                   label={t('settings.email')}
                   description="Receive alerts via email"
-                  checked={settings?.notifications.email_enabled ?? true}
+                  checked={settings?.notifications?.email_enabled ?? true}
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     updateNotificationSetting('email_enabled', e.target.checked)
                   }
@@ -237,7 +237,7 @@ export default function Settings() {
                 <Checkbox
                   label={t('settings.push')}
                   description="Browser push notifications"
-                  checked={settings?.notifications.push_enabled ?? true}
+                  checked={settings?.notifications?.push_enabled ?? true}
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     updateNotificationSetting('push_enabled', e.target.checked)
                   }
@@ -284,7 +284,7 @@ export default function Settings() {
                 <Checkbox
                   label={t('settings.sms')}
                   description="Critical alerts via SMS (requires Twilio)"
-                  checked={settings?.notifications.sms_enabled ?? false}
+                  checked={settings?.notifications?.sms_enabled ?? false}
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     updateNotificationSetting('sms_enabled', e.target.checked)
                   }
@@ -306,26 +306,6 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Google Drive Connection */}
-        <div className="glass-card p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-sky-500/20 rounded-xl flex items-center justify-center border border-sky-500/30">
-              <Cloud size={20} className="text-sky-400" />
-            </div>
-            <h2 className="text-lg font-semibold text-dark-100">{t('settings.googleDrive')}</h2>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium text-dark-100">Google Drive</p>
-              <p className="text-sm text-dark-400">{t('settings.notConnected')}</p>
-            </div>
-            <button className="px-4 py-2 glass-button-primary">
-              {t('settings.connect')}
-            </button>
-          </div>
-        </div>
-
         {/* Admin Contact */}
         <div className="glass-card p-6">
           <div className="flex items-center gap-3 mb-4">
@@ -340,7 +320,7 @@ export default function Settings() {
               type="email"
               label="Admin Email"
               placeholder="admin@example.com"
-              value={settings?.admin_contact.email || ''}
+              value={settings?.admin_contact?.email || ''}
               onChange={(e: ChangeEvent<HTMLInputElement>) =>
                 updateAdminContact('email', e.target.value)
               }
@@ -350,7 +330,7 @@ export default function Settings() {
               type="tel"
               label="Admin Phone (for SMS)"
               placeholder="+1234567890"
-              value={settings?.admin_contact.phone || ''}
+              value={settings?.admin_contact?.phone || ''}
               onChange={(e: ChangeEvent<HTMLInputElement>) =>
                 updateAdminContact('phone', e.target.value)
               }

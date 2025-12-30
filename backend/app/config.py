@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     google_client_id: str = Field(default="")
     google_client_secret: str = Field(default="")
     google_drive_root_folder_id: str = Field(default="")
+    google_drive_music_folder_id: str = Field(default="")
+    google_drive_shows_folder_id: str = Field(default="")
+    google_drive_commercials_folder_id: str = Field(default="")
     google_service_account_file: str = Field(default="service-account.json")
     google_credentials_file: str = Field(default="credentials.json")
     google_token_file: str = Field(default="token.json")  # Calendar token
@@ -25,6 +28,7 @@ class Settings(BaseSettings):
 
     # Claude AI
     anthropic_api_key: str = Field(default="")
+    anthropic_model: str = Field(default="claude-sonnet-4-5-20250929")
 
     # Twilio
     twilio_account_sid: str = Field(default="")
