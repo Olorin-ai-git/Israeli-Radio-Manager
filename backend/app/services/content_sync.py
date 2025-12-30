@@ -566,28 +566,38 @@ class ContentSyncService:
 
         return stats
 
-    async def get_emergency_playlist(self) -> List[Dict[str, Any]]:
+    async def get_emergency_playlist(self, base_url: str = "") -> List[Dict[str, Any]]:
         """
         Get the emergency playlist from GCS.
 
+        Args:
+            base_url: Base URL for streaming endpoint (e.g., /api/playback)
+
         Returns:
-            List of emergency song info with public URLs
+            List of emergency song info with streaming URLs
         """
+        from urllib.parse import quote
+
         try:
             files = await self.gcs.list_files(prefix="emergency/")
 
             playlist = []
             for file in files:
-                if file.get("name", "").endswith(('.mp3', '.wav', '.m4a', '.ogg')):
-                    # Use public URL (bucket has public read access)
-                    public_url = self.gcs.get_public_url(file["gcs_path"])
-                    if public_url:
-                        playlist.append({
-                            "name": file["name"].split("/")[-1],
-                            "gcs_path": file["gcs_path"],
-                            "url": public_url,
-                            "size": file.get("size", 0)
-                        })
+                filename = file.get("name", "")
+                if filename.endswith(('.mp3', '.wav', '.m4a', '.ogg')):
+                    # Extract just the filename from the path
+                    just_filename = filename.split("/")[-1]
+                    # URL-encode the filename for the streaming endpoint
+                    encoded_filename = quote(just_filename, safe='')
+                    # Use backend proxy URL
+                    stream_url = f"/api/playback/stream/emergency/{encoded_filename}"
+
+                    playlist.append({
+                        "name": just_filename,
+                        "gcs_path": file["gcs_path"],
+                        "url": stream_url,
+                        "size": file.get("size", 0)
+                    })
 
             return playlist
 

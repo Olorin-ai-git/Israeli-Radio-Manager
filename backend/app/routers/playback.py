@@ -736,6 +736,60 @@ async def generate_emergency_playlist(request: Request, count: int = 20):
     }
 
 
+@router.get("/stream/emergency/{filename:path}")
+async def stream_emergency_song(request: Request, filename: str):
+    """
+    Stream an emergency song from GCS through the backend.
+
+    This proxies the request since the bucket isn't publicly accessible.
+    """
+    from urllib.parse import unquote
+
+    content_sync = request.app.state.content_sync
+
+    # Decode the filename (may be URL-encoded)
+    decoded_filename = unquote(filename)
+
+    # Construct the GCS path
+    gcs_path = f"gs://{content_sync.gcs.bucket_name}/emergency/{decoded_filename}"
+
+    # Download from GCS to memory and stream
+    try:
+        blob_path = f"emergency/{decoded_filename}"
+        blob = content_sync.gcs.bucket.blob(blob_path)
+
+        if not blob.exists():
+            raise HTTPException(status_code=404, detail="Emergency song not found")
+
+        # Download to memory
+        content = blob.download_as_bytes()
+
+        # Determine content type
+        content_type = "audio/mpeg"
+        if decoded_filename.endswith(".wav"):
+            content_type = "audio/wav"
+        elif decoded_filename.endswith(".ogg"):
+            content_type = "audio/ogg"
+        elif decoded_filename.endswith(".m4a"):
+            content_type = "audio/mp4"
+
+        return StreamingResponse(
+            BytesIO(content),
+            media_type=content_type,
+            headers={
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=86400",
+                "Content-Disposition": f'inline; filename="{decoded_filename}"'
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to stream emergency song {filename}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to stream emergency song")
+
+
 @router.post("/emergency-mode-activated")
 async def report_emergency_mode(request: Request):
     """
