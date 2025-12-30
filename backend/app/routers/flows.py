@@ -1215,62 +1215,28 @@ async def run_flow(request: Request, flow_id: str):
         end_time_str = flow.get("schedule", {}).get("end_time") if flow.get("schedule") else None
 
         if should_loop and end_time_str:
-            # Run looping flow in background task to not block the request
-            logger.info(f"Flow {flow_id} will loop until {end_time_str} (running in background)")
+            # For looping flows: execute first batch immediately, then flow_monitor handles the rest
+            logger.info(f"Flow {flow_id} will loop until {end_time_str}")
 
-            async def run_looping_flow():
-                """Background task to run looping flow."""
-                try:
-                    end_hour, end_minute = map(int, end_time_str.split(':'))
-                    end_time = datetime.utcnow().replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
-                    if end_time < datetime.utcnow():
-                        end_time = end_time + timedelta(days=1)
+            # Execute first batch of actions immediately
+            logger.info(f"Flow {flow_id} - Executing initial actions")
+            initial_actions = await run_flow_actions(db, flow, audio_player)
+            logger.info(f"Flow {flow_id} - Initial actions completed: {initial_actions}")
 
-                    total_actions = 0
-                    loop_count = 0
+            # Mark execution as running (flow_monitor will continue it)
+            await db.flow_executions.update_one(
+                {"_id": log_result.inserted_id},
+                {"$set": {"status": "running", "actions_completed": initial_actions}}
+            )
 
-                    while datetime.utcnow() < end_time:
-                        queue_size = len(audio_player.get_queue()) if audio_player else 0
-
-                        if queue_size < 5:
-                            loop_count += 1
-                            logger.info(f"Flow {flow_id} - Loop {loop_count} (queue: {queue_size})")
-                            actions = await run_flow_actions(db, flow, audio_player)
-                            total_actions += actions
-                        else:
-                            logger.debug(f"Flow {flow_id} - Queue has {queue_size} items, waiting...")
-
-                        await asyncio.sleep(10 if queue_size >= 5 else 1)
-
-                    logger.info(f"Flow {flow_id} - Completed {loop_count} loops, {total_actions} actions")
-
-                    # Mark as completed
-                    await db.flow_executions.update_one(
-                        {"_id": log_result.inserted_id},
-                        {"$set": {"status": "completed", "ended_at": datetime.utcnow(), "actions_completed": total_actions}}
-                    )
-                    await db.flows.update_one(
-                        {"_id": ObjectId(flow_id)},
-                        {"$set": {"status": FlowStatus.ACTIVE.value, "last_run": datetime.utcnow()}}
-                    )
-                except Exception as e:
-                    logger.error(f"Flow {flow_id} background loop failed: {e}")
-                    await db.flow_executions.update_one(
-                        {"_id": log_result.inserted_id},
-                        {"$set": {"status": "failed", "ended_at": datetime.utcnow(), "error_message": str(e)}}
-                    )
-                    await db.flows.update_one(
-                        {"_id": ObjectId(flow_id)},
-                        {"$set": {"status": FlowStatus.ACTIVE.value}}
-                    )
-
-            # Start background task and return immediately
-            asyncio.create_task(run_looping_flow())
+            # Keep flow in RUNNING status so flow_monitor knows to continue it
+            # The flow_monitor will check queue and add more content as needed
 
             return {
                 "message": f"Flow '{flow.get('name')}' started (looping until {end_time_str})",
                 "execution_id": execution_id,
-                "status": "running_in_background"
+                "actions_completed": initial_actions,
+                "status": "running"
             }
         else:
             # Single execution - run synchronously
