@@ -636,10 +636,10 @@ async def get_album_cover(request: Request, content_id: str):
 @router.get("/stream/gcs/{content_id}")
 async def stream_from_gcs(request: Request, content_id: str):
     """
-    Stream audio from Google Cloud Storage using signed URL redirect.
+    Stream audio directly from Google Cloud Storage through the backend.
 
-    This is the preferred streaming method - faster and more reliable than
-    proxying through the backend.
+    This proxies the audio through the backend server, which works reliably
+    with Cloud Run's default credentials.
     """
     db = request.app.state.db
     content_sync = request.app.state.content_sync
@@ -651,13 +651,25 @@ async def stream_from_gcs(request: Request, content_id: str):
 
     # Check if content has GCS path
     gcs_path = content.get("gcs_path")
-    if gcs_path:
-        # Generate signed URL and redirect
-        signed_url = content_sync.gcs.get_signed_url(gcs_path)
-        if signed_url:
-            return RedirectResponse(url=signed_url, status_code=302)
+    if gcs_path and content_sync.gcs.is_available:
+        # Stream directly from GCS through backend
+        result = content_sync.gcs.stream_file(gcs_path)
+        if result:
+            content_bytes, content_type, size = result
+            headers = {
+                "Content-Type": content_type,
+                "Content-Length": str(size),
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=3600",
+            }
+            return StreamingResponse(
+                iter([content_bytes]),
+                media_type=content_type,
+                headers=headers
+            )
+        logger.warning(f"Failed to stream {content_id} from GCS, falling back to Drive")
 
-    # Fallback to traditional streaming if no GCS path
+    # Fallback to traditional streaming if no GCS path or GCS failed
     return await stream_audio(request, content_id)
 
 

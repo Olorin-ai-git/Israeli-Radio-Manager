@@ -325,6 +325,50 @@ class GCSStorageService:
             logger.error(f"Failed to list files with prefix {prefix}: {e}")
             return []
 
+    def stream_file(self, gcs_path: str) -> Optional[tuple]:
+        """
+        Stream a file directly from GCS.
+
+        Args:
+            gcs_path: GCS path (gs://bucket/path or just path)
+
+        Returns:
+            Tuple of (blob content iterator, content_type, size) or None if failed
+        """
+        if not self.is_available:
+            return None
+
+        try:
+            # Extract blob path from gs:// URL if needed
+            if gcs_path.startswith('gs://'):
+                parts = gcs_path.replace('gs://', '').split('/', 1)
+                if len(parts) < 2:
+                    return None
+                blob_path = parts[1]
+            else:
+                blob_path = gcs_path
+
+            blob = self.bucket.blob(blob_path)
+
+            # Check if blob exists
+            if not blob.exists():
+                logger.warning(f"Blob not found: {blob_path}")
+                return None
+
+            # Get blob metadata
+            blob.reload()
+            content_type = blob.content_type or 'audio/mpeg'
+            size = blob.size
+
+            # Download as bytes
+            content = blob.download_as_bytes()
+
+            return (content, content_type, size)
+
+        except Exception as e:
+            logger.error(f"Failed to stream file {gcs_path}: {e}")
+            return None
+
     async def copy_to_emergency(self, gcs_path: str) -> Optional[str]:
         """
         Copy a file to the emergency playlist folder.
