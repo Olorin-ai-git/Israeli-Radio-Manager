@@ -5,6 +5,7 @@ import Checkbox from '../components/Form/Checkbox'
 import Input from '../components/Form/Input'
 import api from '../services/api'
 import { useToastStore } from '../store/toastStore'
+import { useAuth } from '../contexts/AuthContext'
 
 interface Settings {
   notifications: {
@@ -22,10 +23,12 @@ interface Settings {
 export default function Settings() {
   const { t, i18n } = useTranslation()
   const { addToast } = useToastStore()
+  const { refreshUser } = useAuth()
 
   // Loading states
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [savingLanguage, setSavingLanguage] = useState(false)
   const [testingChannel, setTestingChannel] = useState<string | null>(null)
 
   // Settings state
@@ -124,8 +127,19 @@ export default function Settings() {
     }
   }
 
-  const handleLanguageChange = (lang: string) => {
-    i18n.changeLanguage(lang)
+  const handleLanguageChange = async (lang: string) => {
+    setSavingLanguage(true)
+    try {
+      // Update i18n locally
+      i18n.changeLanguage(lang)
+      // Save to user profile
+      await api.updateUserPreferences({ language: lang })
+      await refreshUser()
+    } catch (error) {
+      addToast('Failed to save language preference', 'error')
+    } finally {
+      setSavingLanguage(false)
+    }
   }
 
   const updateNotificationSetting = (key: keyof Settings['notifications'], value: boolean) => {
@@ -175,22 +189,24 @@ export default function Settings() {
           <div className="flex gap-4">
             <button
               onClick={() => handleLanguageChange('en')}
+              disabled={savingLanguage}
               className={`flex-1 p-4 rounded-xl border-2 transition-all ${
                 i18n.language === 'en'
                   ? 'border-primary-500/50 bg-primary-500/10'
                   : 'border-white/10 hover:border-white/20 bg-dark-700/30'
-              }`}
+              } ${savingLanguage ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <span className="text-2xl mb-2 block">US</span>
               <span className="font-medium text-dark-100">{t('settings.english')}</span>
             </button>
             <button
               onClick={() => handleLanguageChange('he')}
+              disabled={savingLanguage}
               className={`flex-1 p-4 rounded-xl border-2 transition-all ${
                 i18n.language === 'he'
                   ? 'border-primary-500/50 bg-primary-500/10'
                   : 'border-white/10 hover:border-white/20 bg-dark-700/30'
-              }`}
+              } ${savingLanguage ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <span className="text-2xl mb-2 block">IL</span>
               <span className="font-medium text-dark-100">{t('settings.hebrew')}</span>
