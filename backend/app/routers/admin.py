@@ -64,7 +64,7 @@ class BatchGenreReassign(BaseModel):
 async def get_env_config(
     request: Request,
     user: Dict = Depends(firebase_auth.require_admin)
-) -> Dict[str, Dict[str, str]]:
+):
     """
     Get environment configuration organized by category.
     Sensitive keys are masked for security.
