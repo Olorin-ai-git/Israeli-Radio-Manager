@@ -128,6 +128,9 @@ export default function Settings() {
   }
 
   const handleLanguageChange = async (lang: string) => {
+    // Don't do anything if already on this language
+    if (i18n.language === lang) return
+
     setSavingLanguage(true)
     try {
       // Update i18n locally
