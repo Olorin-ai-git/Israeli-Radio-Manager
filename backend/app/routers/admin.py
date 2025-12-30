@@ -211,52 +211,70 @@ async def get_storage_stats(
         if not content_sync or not content_sync.drive or not content_sync.drive._service:
             raise Exception("Drive service not initialized")
 
-        # Get quota information from Drive API
-        about = content_sync.drive._service.about().get(fields="storageQuota").execute()
-        quota = about.get("storageQuota", {})
+        drive_service = content_sync.drive._service
+        root_folder_id = content_sync.drive.root_folder_id
 
-        used_bytes = int(quota.get("usage", 0))
-        total_bytes = int(quota.get("limit", 0))
-        usage_percentage = (used_bytes / total_bytes) * 100 if total_bytes else 0
+        # Count files and total size in the radio content folder
+        # Service accounts don't have personal quota, so we calculate actual usage
+        total_size = 0
+        file_count = 0
+        inaccessible_folders = []
+
+        if root_folder_id:
+            # Recursively get all files in the folder
+            def get_all_files(folder_id):
+                nonlocal total_size, file_count, inaccessible_folders
+                # Get files in this folder
+                query = f"'{folder_id}' in parents and trashed=false"
+                page_token = None
+
+                try:
+                    while True:
+                        results = drive_service.files().list(
+                            q=query,
+                            fields="nextPageToken, files(id, name, size, mimeType)",
+                            pageToken=page_token,
+                            pageSize=1000,
+                            supportsAllDrives=True,
+                            includeItemsFromAllDrives=True
+                        ).execute()
+
+                        for item in results.get('files', []):
+                            if item.get('mimeType') == 'application/vnd.google-apps.folder':
+                                # Recurse into subfolders
+                                get_all_files(item['id'])
+                            else:
+                                file_count += 1
+                                total_size += int(item.get('size', 0))
+
+                        page_token = results.get('nextPageToken')
+                        if not page_token:
+                            break
+                except Exception as folder_error:
+                    # Log but continue - folder might be inaccessible
+                    logger.warning(f"Could not access folder {folder_id}: {folder_error}")
+                    inaccessible_folders.append(folder_id)
+
+            get_all_files(root_folder_id)
 
         stats["drive"] = {
-            "used_bytes": used_bytes,
-            "total_bytes": total_bytes,
-            "usage_percentage": usage_percentage
+            "size_bytes": total_size,
+            "file_count": file_count,
+            "folder_id": root_folder_id or "Not configured"
         }
-
-        # Check storage threshold and send warning notification
-        STORAGE_WARNING_THRESHOLD = 80  # Warn at 80% usage
-        STORAGE_CRITICAL_THRESHOLD = 90  # Critical at 90% usage
-
-        if usage_percentage >= STORAGE_CRITICAL_THRESHOLD:
-            try:
-                notification_service = request.app.state.notification_service
-                if notification_service:
-                    await notification_service.send_notification(
-                        level="ERROR",
-                        title="Critical: Storage Almost Full",
-                        message=f"Google Drive is {usage_percentage:.1f}% full ({used_bytes/(1024**3):.1f} GB / {total_bytes/(1024**3):.1f} GB)"
-                    )
-            except Exception as e:
-                logger.warning(f"Failed to send critical storage notification: {e}")
-
-        elif usage_percentage >= STORAGE_WARNING_THRESHOLD:
-            try:
-                notification_service = request.app.state.notification_service
-                if notification_service:
-                    await notification_service.send_notification(
-                        level="WARNING",
-                        title="Storage Warning",
-                        message=f"Google Drive is {usage_percentage:.1f}% full ({used_bytes/(1024**3):.1f} GB / {total_bytes/(1024**3):.1f} GB)"
-                    )
-            except Exception as e:
-                logger.warning(f"Failed to send storage warning notification: {e}")
+        if inaccessible_folders:
+            stats["drive"]["inaccessible_folders"] = inaccessible_folders
+            stats["drive"]["warning"] = "Some folders could not be accessed. Check folder permissions."
 
     except Exception as e:
         logger.error(f"Failed to get Google Drive statistics: {e}")
+        error_msg = str(e)
+        # Provide helpful message for common errors
+        if "File not found" in error_msg or "404" in error_msg:
+            error_msg = f"Folder not found or not accessible. Verify the folder ID exists and the service account has access."
         stats["drive"] = {
-            "error": str(e)
+            "error": error_msg,
+            "folder_id": content_sync.drive.root_folder_id if content_sync and content_sync.drive else "Unknown"
         }
 
     return stats
