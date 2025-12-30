@@ -716,7 +716,7 @@ async def delete_flow(request: Request, flow_id: str):
     return {"message": "Flow deleted", "flow_id": flow_id}
 
 
-@router.post("/{flow_id}/toggle", response_model=dict)
+@router.post("/{flow_id}/toggle")
 async def toggle_flow_status(request: Request, flow_id: str):
     """Toggle flow between active and paused. Updates Google Calendar accordingly."""
     db = request.app.state.db
@@ -724,7 +724,8 @@ async def toggle_flow_status(request: Request, flow_id: str):
 
     try:
         flow = await db.flows.find_one({"_id": ObjectId(flow_id)})
-    except:
+    except Exception as e:
+        logger.error(f"Invalid flow ID {flow_id}: {e}")
         raise HTTPException(status_code=400, detail="Invalid flow ID")
 
     if not flow:
@@ -739,54 +740,61 @@ async def toggle_flow_status(request: Request, flow_id: str):
     else:
         new_status = FlowStatus.ACTIVE.value
 
-    # Update database
-    await db.flows.update_one(
-        {"_id": ObjectId(flow_id)},
-        {"$set": {"status": new_status, "updated_at": datetime.utcnow()}}
-    )
+    try:
+        # Update database
+        await db.flows.update_one(
+            {"_id": ObjectId(flow_id)},
+            {"$set": {"status": new_status, "updated_at": datetime.utcnow()}}
+        )
 
-    # Update Google Calendar if flow is scheduled and has a calendar event ID
-    calendar_event_id = flow.get("calendar_event_id")
-    if calendar_event_id and flow.get("trigger_type") == "scheduled":
-        try:
-            if new_status == FlowStatus.PAUSED.value:
-                # Delete the calendar event when paused
-                await calendar.delete_event(calendar_event_id)
-                logger.info(f"Deleted calendar event {calendar_event_id} for paused flow {flow_id}")
+        # Update Google Calendar if flow is scheduled and has a calendar event ID
+        calendar_event_id = flow.get("calendar_event_id")
+        if calendar_event_id and flow.get("trigger_type") == "scheduled":
+            try:
+                if new_status == FlowStatus.PAUSED.value:
+                    # Delete the calendar event when paused
+                    await calendar.delete_event(calendar_event_id)
+                    logger.info(f"Deleted calendar event {calendar_event_id} for paused flow {flow_id}")
 
-                # Remove calendar_event_id from flow
-                await db.flows.update_one(
-                    {"_id": ObjectId(flow_id)},
-                    {"$unset": {"calendar_event_id": ""}}
-                )
-            else:
-                # Re-create calendar event when re-enabled
-                schedule = flow.get("schedule", {})
-                if schedule:
-                    event_data = await calendar.create_event(
-                        title=f"Flow: {flow.get('name', 'Unnamed')}",
-                        description=flow.get("description", ""),
-                        start_time=schedule.get("start_time"),
-                        end_time=schedule.get("end_time"),
-                        recurrence=schedule.get("recurrence"),
-                        days_of_week=schedule.get("days_of_week"),
-                        day_of_month=schedule.get("day_of_month"),
-                        month=schedule.get("month"),
-                        metadata={"flow_id": str(flow_id), "type": "flow"}
+                    # Remove calendar_event_id from flow
+                    await db.flows.update_one(
+                        {"_id": ObjectId(flow_id)},
+                        {"$unset": {"calendar_event_id": ""}}
                     )
-
-                    if event_data:
-                        # Store new calendar event ID
-                        await db.flows.update_one(
-                            {"_id": ObjectId(flow_id)},
-                            {"$set": {"calendar_event_id": event_data["id"]}}
+                else:
+                    # Re-create calendar event when re-enabled
+                    schedule = flow.get("schedule", {})
+                    if schedule:
+                        event_data = await calendar.create_event(
+                            title=f"Flow: {flow.get('name', 'Unnamed')}",
+                            description=flow.get("description", ""),
+                            start_time=schedule.get("start_time"),
+                            end_time=schedule.get("end_time"),
+                            recurrence=schedule.get("recurrence"),
+                            days_of_week=schedule.get("days_of_week"),
+                            day_of_month=schedule.get("day_of_month"),
+                            month=schedule.get("month"),
+                            metadata={"flow_id": str(flow_id), "type": "flow"}
                         )
-                        logger.info(f"Created calendar event {event_data['id']} for resumed flow {flow_id}")
-        except Exception as e:
-            logger.error(f"Failed to update calendar for flow {flow_id}: {e}")
-            # Don't fail the toggle operation if calendar update fails
 
-    return {"message": f"Flow status changed to {new_status}", "status": new_status}
+                        if event_data:
+                            # Store new calendar event ID
+                            await db.flows.update_one(
+                                {"_id": ObjectId(flow_id)},
+                                {"$set": {"calendar_event_id": event_data["id"]}}
+                            )
+                            logger.info(f"Created calendar event {event_data['id']} for resumed flow {flow_id}")
+            except Exception as e:
+                logger.error(f"Failed to update calendar for flow {flow_id}: {e}")
+                # Don't fail the toggle operation if calendar update fails
+
+        return {"message": f"Flow status changed to {new_status}", "status": new_status}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to toggle flow {flow_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to toggle flow: {str(e)}")
 
 
 @router.post("/{flow_id}/reset", response_model=dict)
