@@ -45,6 +45,13 @@ class UserCreate(BaseModel):
     photo_url: Optional[str] = None
 
 
+class UserPreCreate(BaseModel):
+    """Model for pre-creating a user (admin only, before first login)."""
+    email: EmailStr
+    role: UserRole = UserRole.VIEWER
+    display_name: Optional[str] = None  # Optional, defaults to email prefix
+
+
 class UserUpdate(BaseModel):
     """Model for updating user profile."""
     display_name: Optional[str] = None
@@ -77,7 +84,7 @@ class User(UserBase):
 
 class UserInDB(BaseModel):
     """User document as stored in MongoDB."""
-    firebase_uid: str
+    firebase_uid: Optional[str] = None  # None for pre-created users who haven't logged in
     email: str
     display_name: str
     photo_url: Optional[str] = None
@@ -94,4 +101,4 @@ class UserInDB(BaseModel):
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    last_login: datetime = Field(default_factory=datetime.utcnow)
+    last_login: Optional[datetime] = None  # None for users who haven't logged in yet

@@ -37,6 +37,9 @@ class UserService:
         """
         Get existing user or create new one on first login.
 
+        If a user was pre-created by admin (has email but no firebase_uid),
+        this will update them with the firebase_uid on first login.
+
         Returns the user document with _id as string.
         """
         # Try to find existing user by Firebase UID
@@ -57,6 +60,38 @@ class UserService:
             user["last_login"] = datetime.utcnow()
             user["_id"] = str(user["_id"])
             return user
+
+        # Check if user was pre-created by admin (has email but no firebase_uid)
+        pre_created = await self.collection.find_one({
+            "email": {"$regex": f"^{email}$", "$options": "i"},
+            "$or": [
+                {"firebase_uid": None},
+                {"firebase_uid": ""},
+                {"firebase_uid": {"$exists": False}}
+            ]
+        })
+
+        if pre_created:
+            # Update pre-created user with Firebase UID
+            await self.collection.update_one(
+                {"_id": pre_created["_id"]},
+                {
+                    "$set": {
+                        "firebase_uid": firebase_uid,
+                        "display_name": display_name,
+                        "photo_url": photo_url,
+                        "last_login": datetime.utcnow(),
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+            pre_created["firebase_uid"] = firebase_uid
+            pre_created["display_name"] = display_name
+            pre_created["photo_url"] = photo_url
+            pre_created["last_login"] = datetime.utcnow()
+            pre_created["_id"] = str(pre_created["_id"])
+            logger.info(f"Linked pre-created user {email} with Firebase UID")
+            return pre_created
 
         # Check if this is the initial admin email
         is_initial_admin = email.lower() == INITIAL_ADMIN_EMAIL.lower()
@@ -84,6 +119,45 @@ class UserService:
         else:
             logger.info(f"Created new user: {email} with role: viewer")
 
+        return user_doc
+
+    async def pre_create_user(
+        self,
+        email: str,
+        role: UserRole,
+        display_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Pre-create a user by email (admin only).
+
+        The user will be linked to their Firebase account on first login.
+        """
+        # Check if user already exists
+        existing = await self.collection.find_one({
+            "email": {"$regex": f"^{email}$", "$options": "i"}
+        })
+
+        if existing:
+            raise ValueError(f"User with email {email} already exists")
+
+        now = datetime.utcnow()
+        new_user = UserInDB(
+            firebase_uid=None,  # Will be set on first login
+            email=email.lower(),
+            display_name=display_name or email.split("@")[0],
+            photo_url=None,
+            role=role.value,
+            created_at=now,
+            updated_at=now,
+            last_login=None  # Never logged in yet
+        )
+
+        result = await self.collection.insert_one(new_user.model_dump())
+
+        user_doc = new_user.model_dump()
+        user_doc["_id"] = str(result.inserted_id)
+
+        logger.info(f"Pre-created user: {email} with role: {role.value}")
         return user_doc
 
     async def get_user_by_uid(self, firebase_uid: str) -> Optional[Dict[str, Any]]:

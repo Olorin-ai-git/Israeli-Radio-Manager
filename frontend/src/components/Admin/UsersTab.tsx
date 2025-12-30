@@ -14,7 +14,8 @@ import {
   Mail,
   Pencil,
   X,
-  Save
+  Save,
+  UserPlus
 } from 'lucide-react'
 import api from '../../services/api'
 
@@ -37,6 +38,12 @@ interface User {
 interface EditFormData {
   display_name: string
   photo_url: string
+}
+
+interface CreateFormData {
+  email: string
+  role: 'admin' | 'editor' | 'viewer'
+  display_name: string
 }
 
 const roleColors = {
@@ -65,6 +72,8 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [editForm, setEditForm] = useState<EditFormData>({ display_name: '', photo_url: '' })
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [createForm, setCreateForm] = useState<CreateFormData>({ email: '', role: 'viewer', display_name: '' })
 
   // Fetch users
   const { data: usersData, isLoading, error } = useQuery({
@@ -119,6 +128,17 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
     }
   })
 
+  // Create user mutation
+  const createUserMutation = useMutation({
+    mutationFn: (data: { email: string; role: 'admin' | 'editor' | 'viewer'; display_name?: string }) =>
+      api.createUser(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
+      setShowCreateModal(false)
+      setCreateForm({ email: '', role: 'viewer', display_name: '' })
+    }
+  })
+
   // Filter users by search query
   const users: User[] = usersData?.users || []
   const filteredUsers = users.filter(user =>
@@ -160,6 +180,15 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
         display_name: editForm.display_name,
         photo_url: editForm.photo_url || undefined
       }
+    })
+  }
+
+  const handleCreateSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    createUserMutation.mutate({
+      email: createForm.email,
+      role: createForm.role,
+      display_name: createForm.display_name || undefined
     })
   }
 
@@ -281,6 +310,15 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
             />
             {isRTL ? 'הצג לא פעילים' : 'Show Inactive'}
           </label>
+
+          {/* Add User Button */}
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+          >
+            <UserPlus size={18} />
+            <span>{isRTL ? 'הוסף משתמש' : 'Add User'}</span>
+          </button>
         </div>
       </div>
 
@@ -566,6 +604,116 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
                 >
                   <Save size={16} />
                   <span>{updateUserMutation.isPending ? (isRTL ? 'שומר...' : 'Saving...') : (isRTL ? 'שמור' : 'Save')}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create User Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-dark-800 border border-dark-600 rounded-xl shadow-2xl w-full max-w-md mx-4">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dark-600">
+              <h3 className="text-lg font-semibold text-dark-100">
+                {isRTL ? 'הוספת משתמש חדש' : 'Add New User'}
+              </h3>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="p-2 text-dark-400 hover:text-dark-200 hover:bg-white/10 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleCreateSubmit} className="p-6 space-y-4">
+              {/* Info Banner */}
+              <div className="p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
+                <p className="text-sm text-primary-300">
+                  {isRTL
+                    ? 'המשתמש יקבל את ההרשאות שנבחרו כאשר יתחבר לראשונה עם Google.'
+                    : 'The user will receive the selected permissions when they first sign in with Google.'}
+                </p>
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-medium text-dark-300 mb-2">
+                  {isRTL ? 'כתובת אימייל' : 'Email Address'} *
+                </label>
+                <input
+                  type="email"
+                  value={createForm.email}
+                  onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
+                  required
+                  className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-dark-100 placeholder-dark-400 focus:outline-none focus:border-primary-500"
+                  placeholder={isRTL ? 'user@example.com' : 'user@example.com'}
+                />
+              </div>
+
+              {/* Role */}
+              <div>
+                <label className="block text-sm font-medium text-dark-300 mb-2">
+                  {isRTL ? 'תפקיד' : 'Role'} *
+                </label>
+                <select
+                  value={createForm.role}
+                  onChange={(e) => setCreateForm({ ...createForm, role: e.target.value as 'admin' | 'editor' | 'viewer' })}
+                  className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-dark-100 focus:outline-none focus:border-primary-500"
+                >
+                  <option value="viewer">{isRTL ? 'צופה' : 'Viewer'}</option>
+                  <option value="editor">{isRTL ? 'עורך' : 'Editor'}</option>
+                  <option value="admin">{isRTL ? 'מנהל' : 'Admin'}</option>
+                </select>
+                <p className="text-xs text-dark-400 mt-1">
+                  {createForm.role === 'admin' && (isRTL ? 'גישה מלאה לכל המערכת' : 'Full access to the entire system')}
+                  {createForm.role === 'editor' && (isRTL ? 'יכול לערוך תוכן ולוחות זמנים' : 'Can edit content and schedules')}
+                  {createForm.role === 'viewer' && (isRTL ? 'יכול לצפות בלבד' : 'Read-only access')}
+                </p>
+              </div>
+
+              {/* Display Name (optional) */}
+              <div>
+                <label className="block text-sm font-medium text-dark-300 mb-2">
+                  {isRTL ? 'שם תצוגה' : 'Display Name'} ({isRTL ? 'אופציונלי' : 'optional'})
+                </label>
+                <input
+                  type="text"
+                  value={createForm.display_name}
+                  onChange={(e) => setCreateForm({ ...createForm, display_name: e.target.value })}
+                  className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-dark-100 placeholder-dark-400 focus:outline-none focus:border-primary-500"
+                  placeholder={isRTL ? 'יעודכן בהתחברות הראשונה' : 'Will be updated on first login'}
+                />
+              </div>
+
+              {/* Error display */}
+              {createUserMutation.isError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                  <p className="text-sm text-red-400">
+                    {(createUserMutation.error as any)?.response?.data?.detail || (isRTL ? 'שגיאה ביצירת משתמש' : 'Error creating user')}
+                  </p>
+                </div>
+              )}
+
+              {/* Modal Footer */}
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 text-sm text-dark-300 hover:text-dark-100 hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  {isRTL ? 'ביטול' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={createUserMutation.isPending || !createForm.email.trim()}
+                  className="flex items-center gap-2 px-4 py-2 text-sm bg-primary-500 text-white rounded-lg hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <UserPlus size={16} />
+                  <span>{createUserMutation.isPending ? (isRTL ? 'מוסיף...' : 'Adding...') : (isRTL ? 'הוסף משתמש' : 'Add User')}</span>
                 </button>
               </div>
             </form>

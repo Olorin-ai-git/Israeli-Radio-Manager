@@ -10,7 +10,8 @@ from app.models.user import (
     UserRole,
     UserUpdate,
     UserPreferencesUpdate,
-    UserRoleUpdate
+    UserRoleUpdate,
+    UserPreCreate
 )
 from app.services.firebase_auth import firebase_auth
 
@@ -124,6 +125,31 @@ async def list_users(
         "skip": skip,
         "limit": limit
     }
+
+
+@router.post("/")
+async def create_user(
+    request: Request,
+    user_data: UserPreCreate,
+    user: Dict = Depends(firebase_auth.require_admin)
+) -> Dict:
+    """
+    Pre-create a user by email (admin only).
+
+    The user will be linked to their Firebase account when they first log in.
+    Useful for setting up user roles before they access the system.
+    """
+    user_service = get_user_service(request)
+
+    try:
+        new_user = await user_service.pre_create_user(
+            email=user_data.email,
+            role=user_data.role,
+            display_name=user_data.display_name
+        )
+        return new_user
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/stats")
