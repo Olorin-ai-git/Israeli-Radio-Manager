@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 from enum import Enum
 
+import google.auth
 from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -116,14 +117,25 @@ class GoogleCalendarService:
         """
         Authenticate with Google Calendar API.
 
-        Tries service account first (preferred for server deployments),
-        then falls back to OAuth2.
+        Tries in order:
+        1. Application Default Credentials (ADC) - works on Cloud Run
+        2. Service account file
+        3. OAuth2 with token/credentials files
 
         Returns:
             True if authentication successful
         """
         try:
-            # Try service account first (preferred for server apps)
+            # Try Application Default Credentials first (works on Cloud Run, GCE, etc.)
+            try:
+                self._creds, project = google.auth.default(scopes=self.SCOPES)
+                self._service = build('calendar', 'v3', credentials=self._creds)
+                logger.info("Google Calendar authentication successful (ADC)")
+                return True
+            except google.auth.exceptions.DefaultCredentialsError:
+                logger.info("ADC not available, trying other methods...")
+
+            # Try service account file
             if self._service_account_file and self._service_account_file.exists():
                 logger.info(f"Using service account for Calendar: {self._service_account_file}")
                 self._creds = service_account.Credentials.from_service_account_file(
