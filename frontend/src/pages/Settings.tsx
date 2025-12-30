@@ -34,6 +34,9 @@ export default function Settings() {
   // Settings state
   const [settings, setSettings] = useState<Settings | null>(null)
 
+  // Language selection state (before saving)
+  const [selectedLanguage, setSelectedLanguage] = useState(i18n.language)
+
   // Push subscription state
   const [pushSupported, setPushSupported] = useState(false)
   const [pushSubscribed, setPushSubscribed] = useState(false)
@@ -127,19 +130,22 @@ export default function Settings() {
     }
   }
 
-  const handleLanguageChange = async (lang: string) => {
-    // Don't do anything if already on this language
-    if (i18n.language === lang) return
+  const saveLanguagePreference = async () => {
+    // Don't save if language hasn't changed
+    if (i18n.language === selectedLanguage) return
 
     setSavingLanguage(true)
     try {
       // Update i18n locally
-      i18n.changeLanguage(lang)
+      i18n.changeLanguage(selectedLanguage)
       // Save to user profile
-      await api.updateUserPreferences({ language: lang })
+      await api.updateUserPreferences({ language: selectedLanguage })
       await refreshUser()
+      addToast(t('settings.saved') || 'Language saved', 'success')
     } catch (error) {
       addToast('Failed to save language preference', 'error')
+      // Revert selection on error
+      setSelectedLanguage(i18n.language)
     } finally {
       setSavingLanguage(false)
     }
@@ -191,10 +197,10 @@ export default function Settings() {
 
           <div className="flex gap-4">
             <button
-              onClick={() => handleLanguageChange('en')}
+              onClick={() => setSelectedLanguage('en')}
               disabled={savingLanguage}
               className={`flex-1 p-4 rounded-xl border-2 transition-all ${
-                i18n.language === 'en'
+                selectedLanguage === 'en'
                   ? 'border-primary-500/50 bg-primary-500/10'
                   : 'border-white/10 hover:border-white/20 bg-dark-700/30'
               } ${savingLanguage ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -203,10 +209,10 @@ export default function Settings() {
               <span className="font-medium text-dark-100">{t('settings.english')}</span>
             </button>
             <button
-              onClick={() => handleLanguageChange('he')}
+              onClick={() => setSelectedLanguage('he')}
               disabled={savingLanguage}
               className={`flex-1 p-4 rounded-xl border-2 transition-all ${
-                i18n.language === 'he'
+                selectedLanguage === 'he'
                   ? 'border-primary-500/50 bg-primary-500/10'
                   : 'border-white/10 hover:border-white/20 bg-dark-700/30'
               } ${savingLanguage ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -215,6 +221,20 @@ export default function Settings() {
               <span className="font-medium text-dark-100">{t('settings.hebrew')}</span>
             </button>
           </div>
+          {selectedLanguage !== i18n.language && (
+            <button
+              onClick={saveLanguagePreference}
+              disabled={savingLanguage}
+              className="mt-4 px-4 py-2 glass-button-primary flex items-center gap-2"
+            >
+              {savingLanguage ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Check size={16} />
+              )}
+              {t('actions.save')}
+            </button>
+          )}
         </div>
 
         {/* Notification Settings */}
