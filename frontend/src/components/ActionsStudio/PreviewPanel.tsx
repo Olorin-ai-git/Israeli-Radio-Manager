@@ -92,8 +92,8 @@ function getActionPreviewText(action: StudioAction, isRTL: boolean): string {
       return action.announcement_text?.substring(0, 50) || (isRTL ? 'הכרזה' : 'Announcement')
     case 'play_jingle':
       return isRTL
-        ? `מנגן ג'ינגל ${action.jingle_type?.replace('_', ' ') || 'זיהוי תחנה'}`
-        : `Playing ${action.jingle_type?.replace('_', ' ') || 'station ID'} jingle`
+        ? `מנגן ג'ינגל: ${action.content_title || 'לא נבחר'}`
+        : `Playing jingle: ${action.content_title || 'not selected'}`
     case 'fade_volume':
       return isRTL
         ? `דעיכה ל-${action.target_volume || 0}% במשך ${action.fade_duration_seconds || 0} שניות`

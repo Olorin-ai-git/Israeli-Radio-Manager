@@ -8,7 +8,7 @@ import { X, Plus } from 'lucide-react'
 import { Input, Select, Slider, Textarea } from '../../Form'
 import { api } from '../../../services/api'
 import { FlowAction } from '../types'
-import { FLOW_GENRES, ACTION_TYPE_OPTIONS, JINGLE_TYPE_OPTIONS, JINGLE_STYLE_OPTIONS, TIME_FORMAT_OPTIONS, TIME_LANGUAGE_OPTIONS, TTS_LANGUAGE_OPTIONS } from '../constants'
+import { FLOW_GENRES, ACTION_TYPE_OPTIONS, JINGLE_STYLE_OPTIONS, TIME_FORMAT_OPTIONS, TIME_LANGUAGE_OPTIONS, TTS_LANGUAGE_OPTIONS } from '../constants'
 
 interface AddActionModalProps {
   isOpen: boolean
@@ -43,7 +43,7 @@ export default function AddActionModal({
   const [songCount, setSongCount] = useState(0)
   const [useDuration, setUseDuration] = useState(true)
   // New action states
-  const [jingleType, setJingleType] = useState('station_id')
+  const [selectedJingleId, setSelectedJingleId] = useState('')
   const [targetVolume, setTargetVolume] = useState(80)
   const [fadeDurationSeconds, setFadeDurationSeconds] = useState(5)
   const [timeFormat, setTimeFormat] = useState('24h')
@@ -63,6 +63,13 @@ export default function AddActionModal({
     queryKey: ['commercials'],
     queryFn: api.getCommercials,
     enabled: isOpen && selectedActionType === 'play_commercials'
+  })
+
+  // Fetch jingles for selection
+  const { data: jingles } = useQuery({
+    queryKey: ['jingles'],
+    queryFn: api.getJingles,
+    enabled: isOpen && selectedActionType === 'play_jingle'
   })
 
   // Fetch voice presets for TTS actions
@@ -92,7 +99,7 @@ export default function AddActionModal({
       setSongCount(0)
       setUseDuration(true)
       // Reset new action states
-      setJingleType('station_id')
+      setSelectedJingleId('')
       setTargetVolume(80)
       setFadeDurationSeconds(5)
       setTimeFormat('24h')
@@ -145,7 +152,7 @@ export default function AddActionModal({
         action.use_tts = useTts
         break
       case 'play_jingle':
-        action.jingle_type = jingleType
+        action.content_id = selectedJingleId
         break
       case 'fade_volume':
         action.target_volume = targetVolume
@@ -184,7 +191,8 @@ export default function AddActionModal({
       case 'announcement':
         return 'Announcement'
       case 'play_jingle':
-        return `Play ${jingleType.replace('_', ' ')} jingle`
+        const selectedJingle = jingles?.find((j: any) => j._id === selectedJingleId)
+        return selectedJingle ? `Play jingle: ${selectedJingle.title}` : 'Play jingle'
       case 'fade_volume':
         return `Fade volume to ${targetVolume}% over ${fadeDurationSeconds}s`
       case 'time_check':
@@ -414,15 +422,25 @@ export default function AddActionModal({
 
           {/* Play Jingle Fields */}
           {selectedActionType === 'play_jingle' && (
-            <Select
-              label={isRTL ? 'סוג ג\'ינגל' : 'Jingle Type'}
-              value={jingleType}
-              onChange={setJingleType}
-              options={JINGLE_TYPE_OPTIONS.map(opt => ({
-                value: opt.value,
-                label: isRTL ? opt.label_he : opt.label,
-              }))}
-            />
+            <>
+              <Select
+                label={isRTL ? "בחר ג'ינגל" : 'Select Jingle'}
+                value={selectedJingleId}
+                onChange={setSelectedJingleId}
+                options={[
+                  { value: '', label: isRTL ? "בחר ג'ינגל..." : 'Select a jingle...' },
+                  ...(jingles || []).map((j: any) => ({
+                    value: j._id,
+                    label: j.title || j.google_drive_path,
+                  })),
+                ]}
+              />
+              {jingles && (
+                <p className="text-xs text-dark-400">
+                  {jingles.length} {isRTL ? "ג'ינגלים זמינים" : 'jingles available'}
+                </p>
+              )}
+            </>
           )}
 
           {/* Fade Volume Fields */}

@@ -94,9 +94,9 @@ function getActionSummary(action: StudioAction, isRTL: boolean): string {
       return isRTL ? 'הזן טקסט' : 'Enter text'
 
     case 'play_jingle':
-      return action.jingle_type
-        ? action.jingle_type.replace('_', ' ')
-        : isRTL ? 'זיהוי תחנה' : 'Station ID'
+      return action.content_title
+        ? action.content_title
+        : isRTL ? "בחר ג'ינגל" : 'Select jingle'
 
     case 'fade_volume':
       return action.target_volume !== undefined && action.fade_duration_seconds

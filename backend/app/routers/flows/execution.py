@@ -736,42 +736,43 @@ async def _execute_play_jingle(
     db, action: dict, is_first_playback_action: bool, audio_player=None
 ) -> bool:
     """
-    Execute a play_jingle action - plays station jingles (station ID, bumper, transition).
+    Execute a play_jingle action - plays a specific jingle by content_id.
+    Falls back to random jingle selection if no content_id specified.
     Returns True if playback was triggered.
     """
-    jingle_type = action.get("jingle_type", "station_id")  # station_id, bumper, transition
+    from bson import ObjectId
 
-    # Query for jingles by type
-    query = {
-        "type": "jingle",
-        "active": True
-    }
+    content_id = action.get("content_id")
+    jingle = None
 
-    # If jingle_type is specified, filter by it (stored in metadata or genre field)
-    if jingle_type:
-        query["$or"] = [
-            {"metadata.jingle_type": jingle_type},
-            {"genre": jingle_type}
-        ]
+    # If content_id is provided, fetch that specific jingle
+    if content_id:
+        try:
+            jingle = await db.content.find_one({
+                "_id": ObjectId(content_id),
+                "type": "jingle",
+                "active": True
+            })
+            if not jingle:
+                logger.warning(f"Jingle not found with id: {content_id}")
+        except Exception as e:
+            logger.error(f"Error fetching jingle by id: {e}")
 
-    jingles = await db.content.find(query).to_list(20)
-
-    # Fallback: get any jingle if specific type not found
-    if not jingles:
+    # Fallback: get a random jingle if no content_id or jingle not found
+    if not jingle:
         jingles = await db.content.find({
             "type": "jingle",
             "active": True
         }).to_list(20)
 
-    if not jingles:
-        logger.warning(f"No jingles found for type: {jingle_type}")
-        return False
+        if not jingles:
+            logger.warning("No jingles found in library")
+            return False
 
-    # Select a random jingle
-    import random
-    jingle = random.choice(jingles)
+        import random
+        jingle = random.choice(jingles)
 
-    logger.info(f"Playing jingle: {jingle.get('title')} (type: {jingle_type})")
+    logger.info(f"Playing jingle: {jingle.get('title')} (id: {jingle.get('_id')})")
 
     # Build content data for broadcast
     content_data = {

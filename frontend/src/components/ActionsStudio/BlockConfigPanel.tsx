@@ -105,6 +105,13 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
     enabled: action.action_type === 'play_commercials',
   })
 
+  // Fetch jingles for jingle picker
+  const { data: jingles } = useQuery({
+    queryKey: ['jingles'],
+    queryFn: api.getJingles,
+    enabled: action.action_type === 'play_jingle',
+  })
+
   // Update action when form values change
   const handleSave = () => {
     const updates: Partial<StudioAction> = {
@@ -139,6 +146,10 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
         break
       case 'announcement':
         updates.announcement_text = announcementText
+        break
+      case 'play_jingle':
+        updates.content_id = selectedContentId || undefined
+        updates.content_title = selectedContentTitle || undefined
         break
     }
 
@@ -351,6 +362,70 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
               rows={4}
               showCount
             />
+          )}
+
+          {/* Play Jingle Config */}
+          {action.action_type === 'play_jingle' && (
+            <div>
+              <Input
+                label={isRTL ? "חפש ג'ינגל" : 'Search jingle'}
+                value={contentSearch}
+                onChange={(e) => setContentSearch(e.target.value)}
+                placeholder={isRTL ? 'חפש לפי שם...' : 'Search by name...'}
+                icon={Search}
+              />
+
+              {selectedContentTitle && (
+                <div className="mt-2 p-2 bg-primary-500/20 rounded-lg flex items-center justify-between">
+                  <span className="text-sm text-primary-400">{selectedContentTitle}</span>
+                  <button
+                    onClick={() => {
+                      setSelectedContentId('')
+                      setSelectedContentTitle('')
+                    }}
+                    className="p-1 hover:bg-white/10 rounded"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+
+              {Array.isArray(jingles) && jingles.length > 0 && (
+                <div className="mt-2 max-h-48 overflow-auto space-y-1">
+                  {jingles
+                    .filter((item: any) => {
+                      if (!contentSearch) return true
+                      const searchLower = contentSearch.toLowerCase()
+                      return item.title?.toLowerCase().includes(searchLower)
+                    })
+                    .slice(0, 10)
+                    .map((item: any) => (
+                      <button
+                        key={item._id}
+                        onClick={() => {
+                          setSelectedContentId(item._id)
+                          setSelectedContentTitle(item.title || item.google_drive_path)
+                          setContentSearch('')
+                        }}
+                        className="w-full p-2 text-left hover:bg-white/10 rounded-lg transition-colors flex items-center justify-between"
+                      >
+                        <div>
+                          <p className="text-sm text-dark-200">{item.title || item.google_drive_path}</p>
+                        </div>
+                        {selectedContentId === item._id && (
+                          <Check size={16} className="text-primary-400" />
+                        )}
+                      </button>
+                    ))}
+                </div>
+              )}
+
+              {jingles && (
+                <p className="text-xs text-dark-400 mt-2">
+                  {jingles.length} {isRTL ? "ג'ינגלים זמינים" : 'jingles available'}
+                </p>
+              )}
+            </div>
           )}
         </div>
 
