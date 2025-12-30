@@ -447,13 +447,13 @@ async def get_quality_issues(
 
     # Find missing metadata
     missing_artist = await content_collection.find(
-        {"content_type": "song", "$or": [{"artist": None}, {"artist": ""}]},
+        {"type": "song", "$or": [{"artist": None}, {"artist": ""}]},
         {"_id": 1, "title": 1, "artist": 1}
     ).to_list(length=100)
 
     missing_genre = await content_collection.find(
         {"$or": [{"genre": None}, {"genre": ""}]},
-        {"_id": 1, "title": 1, "genre": 1, "content_type": 1}
+        {"_id": 1, "title": 1, "genre": 1, "type": 1}
     ).to_list(length=100)
 
     issues["missing_metadata"] = missing_artist + missing_genre
@@ -467,14 +467,14 @@ async def get_quality_issues(
 
     # Find short duration songs (< 30 seconds)
     short_songs = await content_collection.find(
-        {"content_type": "song", "duration": {"$lt": 30}},
+        {"type": "song", "duration": {"$lt": 30}},
         {"_id": 1, "title": 1, "duration": 1}
     ).to_list(length=100)
     issues["short_duration"] = short_songs
 
     # Find potential duplicates (same title and artist)
     pipeline = [
-        {"$match": {"content_type": "song"}},
+        {"$match": {"type": "song"}},
         {"$group": {
             "_id": {"title": "$title", "artist": "$artist"},
             "count": {"$sum": 1},
@@ -520,7 +520,7 @@ async def get_content_stats(
     # Count by content type
     pipeline_by_type = [
         {"$group": {
-            "_id": "$content_type",
+            "_id": "$type",
             "count": {"$sum": 1},
             "total_duration": {"$sum": "$duration"},
             "avg_play_count": {"$avg": "$play_count"}
@@ -541,9 +541,9 @@ async def get_content_stats(
 
     # Overall statistics
     total_content = await content_collection.count_documents({})
-    total_songs = await content_collection.count_documents({"content_type": "song"})
-    total_shows = await content_collection.count_documents({"content_type": "show"})
-    total_commercials = await content_collection.count_documents({"content_type": "commercial"})
+    total_songs = await content_collection.count_documents({"type": "song"})
+    total_shows = await content_collection.count_documents({"type": "show"})
+    total_commercials = await content_collection.count_documents({"type": "commercial"})
 
     # Get average play count
     avg_play_count_result = await content_collection.aggregate([
