@@ -5,6 +5,7 @@ import logging
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 
+import google.auth
 from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -48,8 +49,16 @@ class GoogleDriveService:
         self._credentials = None
 
     def _get_credentials(self):
-        """Get credentials - tries service account first, then OAuth."""
-        # Try service account first (preferred for server apps)
+        """Get credentials - tries ADC first, then service account, then OAuth."""
+        # Try Application Default Credentials first (works on Cloud Run, GCE, etc.)
+        try:
+            creds, project = google.auth.default(scopes=SCOPES)
+            logger.info(f"Using Application Default Credentials (project: {project})")
+            return creds
+        except google.auth.exceptions.DefaultCredentialsError:
+            logger.info("ADC not available, trying other authentication methods...")
+
+        # Try service account file (for local development)
         if self.service_account_file and Path(self.service_account_file).exists():
             logger.info(f"Using service account: {self.service_account_file}")
             return service_account.Credentials.from_service_account_file(
@@ -57,7 +66,7 @@ class GoogleDriveService:
                 scopes=SCOPES
             )
 
-        # Fall back to OAuth
+        # Fall back to OAuth (for local development with user credentials)
         creds = None
 
         # Load existing token
