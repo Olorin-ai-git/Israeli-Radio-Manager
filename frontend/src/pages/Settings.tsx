@@ -92,9 +92,10 @@ export default function Settings() {
     setSubscribingPush(true)
     try {
       const registration = await navigator.serviceWorker.ready
+      const vapidKey = urlBase64ToUint8Array(settings.vapid_public_key)
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(settings.vapid_public_key)
+        applicationServerKey: vapidKey as BufferSource
       })
 
       await api.subscribeToPush(subscription.toJSON())

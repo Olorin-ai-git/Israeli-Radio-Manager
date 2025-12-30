@@ -9,7 +9,7 @@ import ContentManagementTab from '../components/Admin/ContentManagementTab'
 import ServerManagementTab from '../components/Admin/ServerManagementTab'
 
 export default function Admin() {
-  const { t, i18n } = useTranslation()
+  const { i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
   const { user, signOut } = useAuth()
   const [activeTab, setActiveTab] = useState('system')

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { FileText, AlertCircle, TrendingUp, Music, Tv, Radio } from 'lucide-react'
+import { AlertCircle, TrendingUp, Music, Tv, Radio } from 'lucide-react'
 import api from '../../services/api'
 
 interface ContentManagementTabProps {

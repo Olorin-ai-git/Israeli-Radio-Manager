@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { HardDrive, RefreshCw, Trash2, AlertTriangle, Cloud, FolderOpen } from 'lucide-react'
 import api from '../../services/api'
 import { toast } from '../../store/toastStore'
@@ -17,7 +17,6 @@ const formatBytes = (bytes: number): string => {
 }
 
 export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
-  const queryClient = useQueryClient()
 
   const { data: storageStats, isLoading, error, refetch } = useQuery({
     queryKey: ['admin', 'storage', 'stats'],
@@ -164,7 +163,7 @@ export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <button
-            onClick={() => syncMutation.mutate()}
+            onClick={() => syncMutation.mutate(undefined)}
             disabled={syncMutation.isPending}
             className="glass-button-primary flex items-center justify-center gap-2 px-4 py-3 disabled:opacity-50"
           >
@@ -178,7 +177,7 @@ export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
             onClick={() => {
               const confirmed = confirm(isRTL ? 'לנקות את כל קבצי המטמון?' : 'Clear all cached files?')
               if (confirmed) {
-                clearCacheMutation.mutate()
+                clearCacheMutation.mutate(undefined)
               }
             }}
             disabled={clearCacheMutation.isPending}
