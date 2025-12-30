@@ -1214,76 +1214,96 @@ async def run_flow(request: Request, flow_id: str):
         should_loop = flow.get("loop", False)
         end_time_str = flow.get("schedule", {}).get("end_time") if flow.get("schedule") else None
 
-        total_actions_completed = 0
-        loop_count = 0
-
         if should_loop and end_time_str:
-            logger.info(f"Flow {flow_id} will loop until {end_time_str}")
+            # Run looping flow in background task to not block the request
+            logger.info(f"Flow {flow_id} will loop until {end_time_str} (running in background)")
 
-            # Parse end time (datetime already imported at module level)
-            end_hour, end_minute = map(int, end_time_str.split(':'))
-            end_time = datetime.utcnow().replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
+            async def run_looping_flow():
+                """Background task to run looping flow."""
+                try:
+                    end_hour, end_minute = map(int, end_time_str.split(':'))
+                    end_time = datetime.utcnow().replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
+                    if end_time < datetime.utcnow():
+                        end_time = end_time + timedelta(days=1)
 
-            # If end time is earlier than current time, it's tomorrow
-            if end_time < datetime.utcnow():
-                end_time = end_time + timedelta(days=1)
+                    total_actions = 0
+                    loop_count = 0
 
-            # Loop until end time
-            while datetime.utcnow() < end_time:
-                # Check queue size before adding more content
-                queue_size = len(audio_player.get_queue()) if audio_player else 0
+                    while datetime.utcnow() < end_time:
+                        queue_size = len(audio_player.get_queue()) if audio_player else 0
 
-                # Only add more content if queue is running low (less than 5 items)
-                if queue_size < 5:
-                    loop_count += 1
-                    logger.info(f"Flow {flow_id} - Loop iteration {loop_count} (queue has {queue_size} items)")
+                        if queue_size < 5:
+                            loop_count += 1
+                            logger.info(f"Flow {flow_id} - Loop {loop_count} (queue: {queue_size})")
+                            actions = await run_flow_actions(db, flow, audio_player)
+                            total_actions += actions
+                        else:
+                            logger.debug(f"Flow {flow_id} - Queue has {queue_size} items, waiting...")
 
-                    actions_completed = await run_flow_actions(db, flow, audio_player)
-                    total_actions_completed += actions_completed
-                else:
-                    logger.debug(f"Flow {flow_id} - Queue has {queue_size} items, waiting...")
+                        await asyncio.sleep(10 if queue_size >= 5 else 1)
 
-                # Delay between checks - longer when queue is full
-                await asyncio.sleep(10 if queue_size >= 5 else 1)
+                    logger.info(f"Flow {flow_id} - Completed {loop_count} loops, {total_actions} actions")
 
-                # Check if we've passed the end time
-                if datetime.utcnow() >= end_time:
-                    logger.info(f"Flow {flow_id} - Reached end time, stopping loop")
-                    break
+                    # Mark as completed
+                    await db.flow_executions.update_one(
+                        {"_id": log_result.inserted_id},
+                        {"$set": {"status": "completed", "ended_at": datetime.utcnow(), "actions_completed": total_actions}}
+                    )
+                    await db.flows.update_one(
+                        {"_id": ObjectId(flow_id)},
+                        {"$set": {"status": FlowStatus.ACTIVE.value, "last_run": datetime.utcnow()}}
+                    )
+                except Exception as e:
+                    logger.error(f"Flow {flow_id} background loop failed: {e}")
+                    await db.flow_executions.update_one(
+                        {"_id": log_result.inserted_id},
+                        {"$set": {"status": "failed", "ended_at": datetime.utcnow(), "error_message": str(e)}}
+                    )
+                    await db.flows.update_one(
+                        {"_id": ObjectId(flow_id)},
+                        {"$set": {"status": FlowStatus.ACTIVE.value}}
+                    )
 
-            logger.info(f"Flow {flow_id} - Completed {loop_count} loops with {total_actions_completed} total actions")
+            # Start background task and return immediately
+            asyncio.create_task(run_looping_flow())
+
+            return {
+                "message": f"Flow '{flow.get('name')}' started (looping until {end_time_str})",
+                "execution_id": execution_id,
+                "status": "running_in_background"
+            }
         else:
-            # Single execution
+            # Single execution - run synchronously
             total_actions_completed = await run_flow_actions(db, flow, audio_player)
 
-        # Mark as completed
-        await db.flow_executions.update_one(
-            {"_id": log_result.inserted_id},
-            {
-                "$set": {
-                    "status": "completed",
-                    "ended_at": datetime.utcnow(),
-                    "actions_completed": total_actions_completed
+            # Mark as completed
+            await db.flow_executions.update_one(
+                {"_id": log_result.inserted_id},
+                {
+                    "$set": {
+                        "status": "completed",
+                        "ended_at": datetime.utcnow(),
+                        "actions_completed": total_actions_completed
+                    }
                 }
-            }
-        )
+            )
 
-        # Update flow
-        await db.flows.update_one(
-            {"_id": ObjectId(flow_id)},
-            {
-                "$set": {
-                    "status": FlowStatus.ACTIVE.value,
-                    "last_run": datetime.utcnow()
+            # Update flow
+            await db.flows.update_one(
+                {"_id": ObjectId(flow_id)},
+                {
+                    "$set": {
+                        "status": FlowStatus.ACTIVE.value,
+                        "last_run": datetime.utcnow()
+                    }
                 }
-            }
-        )
+            )
 
-        return {
-            "message": f"Flow '{flow.get('name')}' executed successfully",
-            "execution_id": execution_id,
-            "actions_completed": total_actions_completed
-        }
+            return {
+                "message": f"Flow '{flow.get('name')}' executed successfully",
+                "execution_id": execution_id,
+                "actions_completed": total_actions_completed
+            }
 
     except Exception as e:
         # Mark as failed
