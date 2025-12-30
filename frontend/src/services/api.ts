@@ -1,11 +1,11 @@
 import axios from 'axios'
 import { getIdToken } from '../lib/firebase'
 
-// Use Cloud Run backend in production (Firebase Hosting), local proxy in development
-const isProduction = window.location.hostname.includes('web.app') || window.location.hostname.includes('firebaseapp.com')
-const API_BASE_URL = isProduction
-  ? 'https://israeli-radio-manager-534446777606.us-east1.run.app/api'
-  : '/api'
+// Use Cloud Run backend in production, local proxy in development
+const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+const API_BASE_URL = isLocalDev
+  ? '/api'
+  : 'https://israeli-radio-manager-534446777606.us-east1.run.app/api'
 
 const client = axios.create({
   baseURL: API_BASE_URL,
