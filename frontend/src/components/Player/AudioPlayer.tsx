@@ -168,10 +168,9 @@ function SortableQueueItem({
   )
 }
 
-// Fade duration constants
-const FADE_IN_DURATION = 1000 // 1 second fade in
-const FADE_OUT_DURATION = 1000 // 1 second fade out
-const FADE_OUT_BEFORE_END = 1.5 // Start fade out 1.5 seconds before track ends
+// Crossfade duration constants
+const CROSSFADE_DURATION = 1000 // 1 second crossfade (both tracks overlap)
+const CROSSFADE_START_BEFORE_END = 1.5 // Start crossfade 1.5 seconds before track ends
 
 export default function AudioPlayer({
   track,
@@ -181,10 +180,13 @@ export default function AudioPlayer({
   autoPlay = true
 }: AudioPlayerProps) {
   const { i18n } = useTranslation()
-  const audioRef = useRef<HTMLAudioElement>(null)
-  const fadeAnimationRef = useRef<number | null>(null)
-  const isFadingOutRef = useRef(false)
-  const needsFadeInRef = useRef(false) // Track if new track needs fade in
+  // Two audio elements for true crossfade
+  const audioARef = useRef<HTMLAudioElement>(null)
+  const audioBRef = useRef<HTMLAudioElement>(null)
+  const activeAudioRef = useRef<'A' | 'B'>('A') // Which audio element is currently active
+  const crossfadeAnimationRef = useRef<number | null>(null)
+  const isCrossfadingRef = useRef(false) // Currently in crossfade transition
+  const crossfadeTriggeredRef = useRef(false) // Prevent multiple crossfade triggers
   const currentTrackIdRef = useRef<string | null>(null) // Prevent reloading same track
   const consecutiveErrorsRef = useRef(0) // Track consecutive errors to prevent infinite loops
   const MAX_CONSECUTIVE_ERRORS = 5 // Stop auto-skipping after this many consecutive errors
@@ -202,8 +204,12 @@ export default function AudioPlayer({
   const [volume, setVolume] = useState(80)
   const [isMuted, setIsMuted] = useState(false)
   const [queueExpanded, setQueueExpanded] = useState(false)
-  const [isFading, setIsFading] = useState(false)
+  const [isCrossfading, setIsCrossfading] = useState(false)
   const [pendingAutoplay, setPendingAutoplay] = useState(false) // Track waiting for user interaction
+
+  // Helper to get current active audio element
+  const getActiveAudio = () => activeAudioRef.current === 'A' ? audioARef.current : audioBRef.current
+  const getInactiveAudio = () => activeAudioRef.current === 'A' ? audioBRef.current : audioARef.current
 
   // Queue panel height with localStorage persistence
   const [queueHeight, setQueueHeight] = useState(() => {
@@ -381,88 +387,120 @@ export default function AudioPlayer({
     }
   }, [queueHeight])
 
-  // Cancel any ongoing fade animation
-  const cancelFade = () => {
-    if (fadeAnimationRef.current) {
-      cancelAnimationFrame(fadeAnimationRef.current)
-      fadeAnimationRef.current = null
+  // Cancel any ongoing crossfade animation
+  const cancelCrossfade = () => {
+    if (crossfadeAnimationRef.current) {
+      cancelAnimationFrame(crossfadeAnimationRef.current)
+      crossfadeAnimationRef.current = null
     }
   }
 
-  // Fade in function - smoothly increases volume from 0 to target
-  const fadeIn = () => {
-    if (!audioRef.current) return
+  // True crossfade - fade out current track while fading in next track simultaneously
+  const startCrossfade = (nextTrackId: string, onComplete?: () => void) => {
+    const activeAudio = getActiveAudio()
+    const inactiveAudio = getInactiveAudio()
 
-    cancelFade()
-    isFadingOutRef.current = false
-    setIsFading(true)
+    if (!activeAudio || !inactiveAudio) {
+      onComplete?.()
+      return
+    }
+
+    cancelCrossfade()
+    isCrossfadingRef.current = true
+    setIsCrossfading(true)
+
+    // Load next track on inactive audio element
+    const streamUrl = api.getStreamUrl(nextTrackId)
+    inactiveAudio.src = streamUrl
+    inactiveAudio.volume = 0
+
+    const targetVolume = isMuted ? 0 : volume / 100
+    const startVolume = activeAudio.volume
+    const startTime = performance.now()
+
+    // Start playing the next track
+    inactiveAudio.play().catch(console.error)
+
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime
+      const progress = Math.min(elapsed / CROSSFADE_DURATION, 1)
+
+      // Use smooth easing for both
+      const easeInOut = progress < 0.5
+        ? 2 * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 2) / 2
+
+      // Fade out active (current track)
+      if (activeAudio) {
+        activeAudio.volume = startVolume * (1 - easeInOut)
+      }
+
+      // Fade in inactive (next track)
+      if (inactiveAudio) {
+        inactiveAudio.volume = targetVolume * easeInOut
+      }
+
+      if (progress < 1) {
+        crossfadeAnimationRef.current = requestAnimationFrame(animate)
+      } else {
+        // Crossfade complete
+        setIsCrossfading(false)
+        isCrossfadingRef.current = false
+        crossfadeAnimationRef.current = null
+        crossfadeTriggeredRef.current = false
+
+        // Stop the old track
+        if (activeAudio) {
+          activeAudio.pause()
+          activeAudio.src = ''
+        }
+
+        // Swap active audio
+        activeAudioRef.current = activeAudioRef.current === 'A' ? 'B' : 'A'
+
+        onComplete?.()
+      }
+    }
+
+    crossfadeAnimationRef.current = requestAnimationFrame(animate)
+  }
+
+  // Simple fade in for first track or after errors
+  const fadeInActive = () => {
+    const activeAudio = getActiveAudio()
+    if (!activeAudio) return
+
+    cancelCrossfade()
+    setIsCrossfading(true)
 
     const targetVolume = isMuted ? 0 : volume / 100
     const startTime = performance.now()
-    audioRef.current.volume = 0
+    activeAudio.volume = 0
 
     const animate = (currentTime: number) => {
-      if (!audioRef.current) return
+      if (!activeAudio) return
 
       const elapsed = currentTime - startTime
-      const progress = Math.min(elapsed / FADE_IN_DURATION, 1)
-      // Use easeOutCubic for smoother fade in
+      const progress = Math.min(elapsed / CROSSFADE_DURATION, 1)
       const easedProgress = 1 - Math.pow(1 - progress, 3)
 
-      audioRef.current.volume = targetVolume * easedProgress
+      activeAudio.volume = targetVolume * easedProgress
 
       if (progress < 1) {
-        fadeAnimationRef.current = requestAnimationFrame(animate)
+        crossfadeAnimationRef.current = requestAnimationFrame(animate)
       } else {
-        setIsFading(false)
-        fadeAnimationRef.current = null
+        setIsCrossfading(false)
+        crossfadeAnimationRef.current = null
       }
     }
 
-    fadeAnimationRef.current = requestAnimationFrame(animate)
+    crossfadeAnimationRef.current = requestAnimationFrame(animate)
   }
 
-  // Fade out function - smoothly decreases volume to 0
-  const fadeOut = (callback?: () => void) => {
-    if (!audioRef.current) return
-
-    cancelFade()
-    isFadingOutRef.current = true
-    setIsFading(true)
-
-    const startTime = performance.now()
-    const startVolume = audioRef.current.volume
-
-    const animate = (currentTime: number) => {
-      if (!audioRef.current) {
-        callback?.()
-        return
-      }
-
-      const elapsed = currentTime - startTime
-      const progress = Math.min(elapsed / FADE_OUT_DURATION, 1)
-      // Use easeInCubic for smoother fade out
-      const easedProgress = Math.pow(progress, 3)
-
-      audioRef.current.volume = startVolume * (1 - easedProgress)
-
-      if (progress < 1) {
-        fadeAnimationRef.current = requestAnimationFrame(animate)
-      } else {
-        setIsFading(false)
-        isFadingOutRef.current = false
-        fadeAnimationRef.current = null
-        callback?.()
-      }
-    }
-
-    fadeAnimationRef.current = requestAnimationFrame(animate)
-  }
-
-  // Cleanup fade animation on unmount
+  // Cleanup crossfade animation on unmount
   useEffect(() => {
     return () => {
-      cancelFade()
+      cancelCrossfade()
     }
   }, [])
 
@@ -475,7 +513,8 @@ export default function AudioPlayer({
 
   // Load new track when track changes
   useEffect(() => {
-    if (track && audioRef.current) {
+    const activeAudio = getActiveAudio()
+    if (track && activeAudio) {
       // Skip if same track (prevents duplicate loading from multiple renders)
       if (currentTrackIdRef.current === track._id) {
         console.log('Skipping duplicate track load:', track.title)
@@ -483,24 +522,23 @@ export default function AudioPlayer({
       }
       currentTrackIdRef.current = track._id
 
-      // Cancel any ongoing fade from previous track and reset all fade state
-      cancelFade()
-      isFadingOutRef.current = false
-      needsFadeInRef.current = true // Mark that this new track needs fade in
-      setIsFading(false) // Reset fading state
+      // Cancel any ongoing crossfade and reset state
+      cancelCrossfade()
+      isCrossfadingRef.current = false
+      crossfadeTriggeredRef.current = false
+      setIsCrossfading(false)
 
       const streamUrl = api.getStreamUrl(track._id)
-      audioRef.current.src = streamUrl
-      audioRef.current.volume = 0 // Start at 0 for fade in
+      activeAudio.src = streamUrl
+      activeAudio.volume = 0 // Start at 0 for fade in
       setIsLoading(true)
       setHasError(false)
       setCurrentTime(0)
 
       if (autoPlay) {
-        audioRef.current.play().catch((error) => {
+        activeAudio.play().catch((error) => {
           console.error('Playback error:', error)
           setIsLoading(false)
-          needsFadeInRef.current = false // Don't fade in if error
 
           // Check if it's an autoplay policy error
           if (error.name === 'NotAllowedError') {
@@ -510,7 +548,6 @@ export default function AudioPlayer({
               ? `לחץ על ▶ כדי לנגן: ${track.title}`
               : `Click ▶ to play: ${track.title}`
             toast.info(errorMsg)
-            // Don't mark as error - user can click play manually
           } else {
             setHasError(true)
             const errorMsg = isRTL
@@ -581,14 +618,15 @@ export default function AudioPlayer({
   // Play a song from the emergency playlist
   const lastEmergencyToastRef = useRef<number>(0)
   const playEmergencySong = (index: number, playlist: Array<{name: string, url: string}>) => {
-    if (!audioRef.current || playlist.length === 0) return
+    const activeAudio = getActiveAudio()
+    if (!activeAudio || playlist.length === 0) return
 
     const song = playlist[index % playlist.length]
     // Convert relative URL to absolute URL with backend base
     const absoluteUrl = api.getEmergencyStreamUrl(song.url)
-    audioRef.current.src = absoluteUrl
-    audioRef.current.volume = isMuted ? 0 : volume / 100
-    audioRef.current.play()
+    activeAudio.src = absoluteUrl
+    activeAudio.volume = isMuted ? 0 : volume / 100
+    activeAudio.play()
       .then(() => {
         // Reset error counter on successful play
         emergencyErrorsRef.current = 0
@@ -646,7 +684,6 @@ export default function AudioPlayer({
     setIsLoading(false)
     setHasError(true)
     setIsPlaying(false)
-    needsFadeInRef.current = false // Don't try to fade in on error
 
     // In emergency mode, skip to next emergency song (but limit retries)
     if (emergencyMode) {
@@ -697,59 +734,74 @@ export default function AudioPlayer({
     }, 1000) // 1 second delay before auto-skip
   }
 
-  // Update volume (but don't override during fades)
+  // Update volume (but don't override during crossfade)
   useEffect(() => {
-    if (audioRef.current && !isFading) {
-      audioRef.current.volume = isMuted ? 0 : volume / 100
+    const activeAudio = getActiveAudio()
+    if (activeAudio && !isCrossfading) {
+      activeAudio.volume = isMuted ? 0 : volume / 100
     }
-  }, [volume, isMuted, isFading])
+  }, [volume, isMuted, isCrossfading])
 
   const handlePlayPause = () => {
-    if (!audioRef.current) return
+    const activeAudio = getActiveAudio()
+    if (!activeAudio) return
 
     if (isPlaying) {
-      audioRef.current.pause()
+      activeAudio.pause()
     } else {
-      audioRef.current.play().catch(console.error)
+      activeAudio.play().catch(console.error)
     }
   }
 
   const handleTimeUpdate = () => {
-    if (audioRef.current) {
-      const current = audioRef.current.currentTime
-      const total = audioRef.current.duration
+    const activeAudio = getActiveAudio()
+    if (activeAudio) {
+      const current = activeAudio.currentTime
+      const total = activeAudio.duration
       setCurrentTime(current)
 
-      // Start fade out when approaching end of track
-      if (total && total > FADE_OUT_BEFORE_END + 1) {
+      // Start crossfade when approaching end of track (if there's a next track in queue)
+      if (total && total > CROSSFADE_START_BEFORE_END + 1 && queueRef.current.length > 0) {
         const timeRemaining = total - current
-        if (timeRemaining <= FADE_OUT_BEFORE_END && !isFadingOutRef.current && isPlaying) {
-          fadeOut()
+        if (timeRemaining <= CROSSFADE_START_BEFORE_END && !isCrossfadingRef.current && !crossfadeTriggeredRef.current && isPlaying) {
+          crossfadeTriggeredRef.current = true
+          const nextTrack = queueRef.current[0]
+          if (nextTrack) {
+            // Start true crossfade - both tracks play simultaneously
+            startCrossfade(nextTrack._id, () => {
+              // After crossfade completes, update the track state
+              animateQueuePopThenPlay(onTrackEnd)
+            })
+          }
         }
       }
     }
   }
 
   const handleLoadedMetadata = () => {
-    if (audioRef.current) {
-      setDuration(audioRef.current.duration)
+    const activeAudio = getActiveAudio()
+    if (activeAudio) {
+      setDuration(activeAudio.duration)
       setIsLoading(false)
     }
   }
 
   const handleEnded = () => {
-    // Reset fade state before next track starts
-    cancelFade()
-    isFadingOutRef.current = false
-    setIsFading(false)
+    // Track ended without crossfade (no next track was in queue, or very short track)
+    cancelCrossfade()
+    isCrossfadingRef.current = false
+    crossfadeTriggeredRef.current = false
+    setIsCrossfading(false)
     setIsPlaying(false)
     // Animate queue item out before calling playNext
     animateQueuePopThenPlay(onTrackEnd)
   }
 
-  // Handle skip with quick fade out (faster than natural end)
+  // Handle skip with quick crossfade
   const handleSkipNext = () => {
     if (!onNext) return
+
+    const activeAudio = getActiveAudio()
 
     // Start queue item exit animation immediately
     const firstItem = queueRef.current[0]
@@ -758,12 +810,12 @@ export default function AudioPlayer({
       setRemovingItems(prev => new Set(prev).add(uniqueKey))
     }
 
-    // If already fading out or nearly at end, just skip immediately
-    if (isFadingOutRef.current || (audioRef.current && duration - currentTime < 1)) {
-      cancelFade()
-      isFadingOutRef.current = false
-      setIsFading(false)
-      // Wait for queue animation then call onNext
+    // If already crossfading or nearly at end, just skip immediately
+    if (isCrossfadingRef.current || (activeAudio && duration - currentTime < 1)) {
+      cancelCrossfade()
+      isCrossfadingRef.current = false
+      crossfadeTriggeredRef.current = false
+      setIsCrossfading(false)
       setTimeout(() => {
         if (uniqueKey) {
           setRemovingItems(prev => {
@@ -777,21 +829,19 @@ export default function AudioPlayer({
       return
     }
 
-    // Quick fade out (500ms) before skipping
-    if (audioRef.current) {
-      cancelFade()
-      isFadingOutRef.current = true
-      setIsFading(true)
+    // Quick fade out (300ms) before skipping
+    if (activeAudio) {
+      cancelCrossfade()
+      setIsCrossfading(true)
 
       const startTime = performance.now()
-      const startVolume = audioRef.current.volume
-      const quickFadeDuration = 300 // Quick fade for skips
+      const startVolume = activeAudio.volume
+      const quickFadeDuration = 300
 
       const animate = (currentTime: number) => {
-        if (!audioRef.current) {
-          isFadingOutRef.current = false
-          setIsFading(false)
-          // Clear animation state and call onNext
+        const audio = getActiveAudio()
+        if (!audio) {
+          setIsCrossfading(false)
           if (uniqueKey) {
             setRemovingItems(prev => {
               const next = new Set(prev)
@@ -805,15 +855,13 @@ export default function AudioPlayer({
 
         const elapsed = currentTime - startTime
         const progress = Math.min(elapsed / quickFadeDuration, 1)
-        audioRef.current.volume = startVolume * (1 - progress)
+        audio.volume = startVolume * (1 - progress)
 
         if (progress < 1) {
-          fadeAnimationRef.current = requestAnimationFrame(animate)
+          crossfadeAnimationRef.current = requestAnimationFrame(animate)
         } else {
-          setIsFading(false)
-          isFadingOutRef.current = false
-          fadeAnimationRef.current = null
-          // Clear animation state and call onNext
+          setIsCrossfading(false)
+          crossfadeAnimationRef.current = null
           if (uniqueKey) {
             setRemovingItems(prev => {
               const next = new Set(prev)
@@ -825,9 +873,8 @@ export default function AudioPlayer({
         }
       }
 
-      fadeAnimationRef.current = requestAnimationFrame(animate)
+      crossfadeAnimationRef.current = requestAnimationFrame(animate)
     } else {
-      // Wait for queue animation then call onNext
       setTimeout(() => {
         if (uniqueKey) {
           setRemovingItems(prev => {
@@ -844,20 +891,22 @@ export default function AudioPlayer({
   const handleSkipPrevious = () => {
     if (!onPrevious) return
 
-    // Quick volume drop for previous (instant for responsiveness)
-    cancelFade()
-    isFadingOutRef.current = false
-    setIsFading(false)
-    if (audioRef.current) {
-      audioRef.current.volume = 0
+    const activeAudio = getActiveAudio()
+    cancelCrossfade()
+    isCrossfadingRef.current = false
+    crossfadeTriggeredRef.current = false
+    setIsCrossfading(false)
+    if (activeAudio) {
+      activeAudio.volume = 0
     }
     onPrevious()
   }
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const time = parseFloat(e.target.value)
-    if (audioRef.current) {
-      audioRef.current.currentTime = time
+    const activeAudio = getActiveAudio()
+    if (activeAudio) {
+      activeAudio.currentTime = time
       setCurrentTime(time)
     }
   }
@@ -977,35 +1026,58 @@ export default function AudioPlayer({
           </div>
         </div>
 
-      {/* Hidden audio element */}
+      {/* Two hidden audio elements for true crossfade */}
       <div className="p-4">
         <audio
-          ref={audioRef}
-          onTimeUpdate={handleTimeUpdate}
-          onLoadedMetadata={handleLoadedMetadata}
+          ref={audioARef}
+          onTimeUpdate={() => activeAudioRef.current === 'A' && handleTimeUpdate()}
+          onLoadedMetadata={() => activeAudioRef.current === 'A' && handleLoadedMetadata()}
           onPlay={() => {
-            setIsPlaying(true)
-            setPendingAutoplay(false) // Clear pending state when playback starts
-            // Fade in on resume from pause (not for new tracks - those use onCanPlay)
-            if (!isFadingOutRef.current && audioRef.current && !needsFadeInRef.current) {
-              fadeIn()
+            if (activeAudioRef.current === 'A') {
+              setIsPlaying(true)
+              setPendingAutoplay(false)
+              // Fade in for new tracks
+              if (!isCrossfadingRef.current) {
+                fadeInActive()
+              }
             }
           }}
-          onPause={() => setIsPlaying(false)}
-          onEnded={handleEnded}
+          onPause={() => activeAudioRef.current === 'A' && setIsPlaying(false)}
+          onEnded={() => activeAudioRef.current === 'A' && handleEnded()}
           onCanPlay={() => {
-            setIsLoading(false)
-            setHasError(false)
-            // Reset consecutive error counter on successful load
-            consecutiveErrorsRef.current = 0
-            // Trigger fade in when audio is ready and we need it
-            if (needsFadeInRef.current && audioRef.current && !isFadingOutRef.current) {
-              needsFadeInRef.current = false
-              fadeIn()
+            if (activeAudioRef.current === 'A') {
+              setIsLoading(false)
+              setHasError(false)
+              consecutiveErrorsRef.current = 0
             }
           }}
-          onWaiting={() => setIsLoading(true)}
-          onError={handleError}
+          onWaiting={() => activeAudioRef.current === 'A' && setIsLoading(true)}
+          onError={() => activeAudioRef.current === 'A' && handleError()}
+        />
+        <audio
+          ref={audioBRef}
+          onTimeUpdate={() => activeAudioRef.current === 'B' && handleTimeUpdate()}
+          onLoadedMetadata={() => activeAudioRef.current === 'B' && handleLoadedMetadata()}
+          onPlay={() => {
+            if (activeAudioRef.current === 'B') {
+              setIsPlaying(true)
+              setPendingAutoplay(false)
+              if (!isCrossfadingRef.current) {
+                fadeInActive()
+              }
+            }
+          }}
+          onPause={() => activeAudioRef.current === 'B' && setIsPlaying(false)}
+          onEnded={() => activeAudioRef.current === 'B' && handleEnded()}
+          onCanPlay={() => {
+            if (activeAudioRef.current === 'B') {
+              setIsLoading(false)
+              setHasError(false)
+              consecutiveErrorsRef.current = 0
+            }
+          }}
+          onWaiting={() => activeAudioRef.current === 'B' && setIsLoading(true)}
+          onError={() => activeAudioRef.current === 'B' && handleError()}
         />
 
         <div className="flex items-center gap-4">
