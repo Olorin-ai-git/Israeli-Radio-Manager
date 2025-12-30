@@ -272,6 +272,34 @@ export const api = {
     client.post('/admin/server/restart').then((r) => r.data),
   clearCache: (keepRecentDays?: number, includeLogs?: boolean) =>
     client.post('/admin/storage/cache/clear', null, { params: { keep_recent_days: keepRecentDays, include_logs: includeLogs } }).then((r) => r.data),
+
+  // Users - Current User
+  getCurrentUser: () =>
+    client.get('/users/me').then((r) => r.data),
+  updateCurrentUser: (data: { display_name?: string; photo_url?: string }) =>
+    client.patch('/users/me', data).then((r) => r.data),
+  updateUserPreferences: (preferences: {
+    language?: string;
+    theme?: string;
+    notifications?: { email_enabled?: boolean; push_enabled?: boolean; sms_enabled?: boolean };
+  }) =>
+    client.patch('/users/me/preferences', preferences).then((r) => r.data),
+
+  // Users - Admin Management
+  listUsers: (params?: { skip?: number; limit?: number; role?: string; include_inactive?: boolean }) =>
+    client.get('/users/', { params }).then((r) => r.data),
+  getUserStats: () =>
+    client.get('/users/stats').then((r) => r.data),
+  getUser: (firebaseUid: string) =>
+    client.get(`/users/${firebaseUid}`).then((r) => r.data),
+  updateUser: (firebaseUid: string, data: { display_name?: string; photo_url?: string }) =>
+    client.patch(`/users/${firebaseUid}`, data).then((r) => r.data),
+  setUserRole: (firebaseUid: string, role: 'admin' | 'editor' | 'viewer') =>
+    client.patch(`/users/${firebaseUid}/role`, { role }).then((r) => r.data),
+  deactivateUser: (firebaseUid: string) =>
+    client.delete(`/users/${firebaseUid}`).then((r) => r.data),
+  reactivateUser: (firebaseUid: string) =>
+    client.post(`/users/${firebaseUid}/reactivate`).then((r) => r.data),
 }
 
 export default api

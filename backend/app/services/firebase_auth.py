@@ -2,18 +2,13 @@
 
 import firebase_admin
 from firebase_admin import credentials, auth
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Dict, Optional
 import os
+import logging
 
-# Admin email whitelist
-ADMIN_EMAILS = {
-    "gil@olorin.ai",
-    "admin@olorin.ai",
-    "gil.klainert@gmail.com",
-    "music909023@gmail.com"
-}
+logger = logging.getLogger(__name__)
 
 
 class FirebaseAuth:
@@ -23,9 +18,6 @@ class FirebaseAuth:
         """Initialize Firebase Admin SDK with service account or Application Default Credentials."""
         self._initialized = False
         self.security = HTTPBearer()
-
-        import logging
-        logger = logging.getLogger(__name__)
 
         # Check if Firebase is already initialized
         if firebase_admin._apps:
@@ -105,19 +97,32 @@ class FirebaseAuth:
                 detail=f"Authentication error: {str(e)}"
             )
 
-    def get_user_role(self, email: Optional[str]) -> str:
+    async def get_user_role_from_db(self, db, firebase_uid: str) -> str:
         """
-        Determine user role based on email.
+        Get user role from database.
 
         Args:
-            email: User email address
+            db: MongoDB database instance
+            firebase_uid: Firebase user ID
 
         Returns:
-            "admin" if email is in admin whitelist, otherwise "viewer"
+            User role string ("admin", "editor", "viewer")
         """
-        if not email:
-            return "viewer"
-        return "admin" if email in ADMIN_EMAILS else "viewer"
+        user = await db.users.find_one(
+            {"firebase_uid": firebase_uid},
+            {"role": 1, "is_active": 1}
+        )
+
+        if not user:
+            return "viewer"  # Default for new users
+
+        if not user.get("is_active", True):
+            raise HTTPException(
+                status_code=403,
+                detail="Your account has been deactivated"
+            )
+
+        return user.get("role", "viewer")
 
     async def require_auth(
         self,
@@ -126,11 +131,14 @@ class FirebaseAuth:
         """
         Dependency to require any authenticated user.
 
+        Note: This returns token info only. For role-based access,
+        use require_auth_with_role() in endpoints.
+
         Args:
             credentials: HTTP Bearer token credentials
 
         Returns:
-            Dictionary with uid, email, and role
+            Dictionary with uid, email from token
 
         Raises:
             HTTPException: If authentication fails
@@ -139,17 +147,51 @@ class FirebaseAuth:
         return {
             "uid": token["uid"],
             "email": token.get("email"),
-            "role": self.get_user_role(token.get("email"))
+            "name": token.get("name"),
+            "picture": token.get("picture")
+        }
+
+    async def require_auth_with_role(
+        self,
+        request: Request,
+        credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())
+    ) -> Dict:
+        """
+        Dependency to require authenticated user with role from database.
+
+        Args:
+            request: FastAPI request (to access app.state.db)
+            credentials: HTTP Bearer token credentials
+
+        Returns:
+            Dictionary with uid, email, and role from database
+
+        Raises:
+            HTTPException: If authentication fails
+        """
+        token = await self.verify_token(credentials)
+
+        db = request.app.state.db
+        role = await self.get_user_role_from_db(db, token["uid"])
+
+        return {
+            "uid": token["uid"],
+            "email": token.get("email"),
+            "name": token.get("name"),
+            "picture": token.get("picture"),
+            "role": role
         }
 
     async def require_admin(
         self,
+        request: Request,
         credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())
     ) -> Dict:
         """
         Dependency to require admin role.
 
         Args:
+            request: FastAPI request (to access app.state.db)
             credentials: HTTP Bearer token credentials
 
         Returns:
@@ -158,11 +200,39 @@ class FirebaseAuth:
         Raises:
             HTTPException: If user is not authenticated or not an admin
         """
-        user = await self.require_auth(credentials)
+        user = await self.require_auth_with_role(request, credentials)
+
         if user["role"] != "admin":
             raise HTTPException(
                 status_code=403,
                 detail="Admin access required. You do not have permission to access this resource."
+            )
+        return user
+
+    async def require_editor(
+        self,
+        request: Request,
+        credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())
+    ) -> Dict:
+        """
+        Dependency to require editor or admin role.
+
+        Args:
+            request: FastAPI request (to access app.state.db)
+            credentials: HTTP Bearer token credentials
+
+        Returns:
+            Dictionary with uid, email, and role
+
+        Raises:
+            HTTPException: If user is not authenticated or doesn't have editor/admin role
+        """
+        user = await self.require_auth_with_role(request, credentials)
+
+        if user["role"] not in ("admin", "editor"):
+            raise HTTPException(
+                status_code=403,
+                detail="Editor access required. You do not have permission to modify this resource."
             )
         return user
 

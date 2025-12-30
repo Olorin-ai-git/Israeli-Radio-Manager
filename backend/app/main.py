@@ -9,7 +9,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 
 from app.config import settings
-from app.routers import content, schedule, playback, upload, agent, websocket, calendar, flows, settings as settings_router, admin
+from app.routers import content, schedule, playback, upload, agent, websocket, calendar, flows, settings as settings_router, admin, users
 from app.services.audio_player import AudioPlayerService
 from app.services.notifications import NotificationService
 from app.services.google_drive import GoogleDriveService
@@ -23,6 +23,7 @@ from app.services.flow_monitor import FlowMonitorService
 from app.services.playback_monitor import PlaybackMonitorService
 from app.services.content_sync_scheduler import ContentSyncScheduler
 from app.services.health_monitor import HealthMonitorService
+from app.services.user_service import UserService
 
 # Configure logging
 logging.basicConfig(
@@ -59,6 +60,11 @@ async def lifespan(app: FastAPI):
         admin_phone=settings.admin_phone
     )
     logger.info("Notification service initialized")
+
+    # Initialize user service
+    app.state.user_service = UserService(db=app.state.db)
+    await app.state.user_service.ensure_admin_exists()
+    logger.info("User service initialized")
 
     # Load saved admin contacts from database (override defaults)
     saved_settings = await app.state.db.settings.find_one({"_id": "app_settings"})
@@ -115,8 +121,12 @@ async def lifespan(app: FastAPI):
     )
     # Try to authenticate (may fail if no credentials)
     try:
-        await app.state.calendar_service.authenticate()
-        logger.info("Google Calendar service initialized and authenticated")
+        auth_success = await app.state.calendar_service.authenticate()
+        if auth_success:
+            logger.info("Google Calendar service initialized and authenticated")
+        else:
+            logger.warning("Google Calendar authentication returned False. Calendar features will be unavailable.")
+            app.state.calendar_service = None
     except Exception as e:
         logger.warning(f"Google Calendar authentication failed: {e}. Calendar features will be unavailable.")
         app.state.calendar_service = None
@@ -276,6 +286,12 @@ async def init_database(db):
     await db.push_subscriptions.create_index("endpoint", unique=True)
     await db.push_subscriptions.create_index("created_at")
 
+    # Users collection indexes
+    await db.users.create_index("firebase_uid", unique=True)
+    await db.users.create_index("email", unique=True)
+    await db.users.create_index("role")
+    await db.users.create_index("is_active")
+
     logger.info("Database indexes created")
 
 
@@ -307,6 +323,7 @@ app.include_router(calendar.router, prefix="/api/calendar", tags=["Calendar"])
 app.include_router(flows.router, prefix="/api/flows", tags=["Auto Flows"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(users.router, prefix="/api/users", tags=["Users"])
 
 
 @app.get("/")
