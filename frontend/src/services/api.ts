@@ -36,6 +36,7 @@ export const api = {
   getCommercials: () => client.get('/content/commercials').then((r) => r.data),
   getJingles: () => client.get('/content/jingles').then((r) => r.data),
   getSamples: () => client.get('/content/samples').then((r) => r.data),
+  getNewsflashes: () => client.get('/content/newsflashes').then((r) => r.data),
   getGenres: () => client.get('/content/genres').then((r) => r.data),
   getContentById: (id: string) => client.get(`/content/${id}`).then((r) => r.data),
   updateContent: (id: string, data: any) =>

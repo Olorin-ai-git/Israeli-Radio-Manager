@@ -29,6 +29,8 @@ services:
     environment:
       - MONGODB_URI=mongodb://mongodb:27017
       - MONGODB_DB=israeli_radio
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - ELEVENLABS_MODEL_ID=eleven_v3
     depends_on:
       - mongodb
     # Note: For audio playback, run backend outside Docker

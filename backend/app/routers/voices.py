@@ -315,6 +315,68 @@ async def preview_text(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/elevenlabs/synthesize")
+async def elevenlabs_synthesize(
+    request: Request,
+    text: str = Form(..., description="Text to synthesize"),
+    voice_id: str = Form(default=None, description="ElevenLabs voice ID"),
+):
+    """
+    Generate speech audio using ElevenLabs API.
+
+    Returns MP3 audio file.
+    """
+    from app.services.elevenlabs_tts import ElevenLabsService
+
+    elevenlabs = ElevenLabsService()
+
+    if not elevenlabs.is_available:
+        raise HTTPException(
+            status_code=503,
+            detail="ElevenLabs API key not configured"
+        )
+
+    try:
+        audio_data = await elevenlabs.synthesize(text=text, voice_id=voice_id)
+
+        if not audio_data:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to generate audio"
+            )
+
+        # Return audio as streaming response
+        from fastapi.responses import Response
+        return Response(
+            content=audio_data,
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "attachment; filename=speech.mp3"}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"ElevenLabs synthesis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/elevenlabs/voices")
+async def get_elevenlabs_voices():
+    """Get available ElevenLabs voices."""
+    from app.services.elevenlabs_tts import ElevenLabsService
+
+    elevenlabs = ElevenLabsService()
+
+    if not elevenlabs.is_available:
+        raise HTTPException(
+            status_code=503,
+            detail="ElevenLabs API key not configured"
+        )
+
+    voices = await elevenlabs.get_voices()
+    return {"voices": voices}
+
+
 @router.get("/status")
 async def get_tts_status(request: Request):
     """Get the status of the TTS service."""

@@ -91,9 +91,13 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
   const [overlapError, setOverlapError] = useState<{ message: string; conflictingFlows: any[] } | null>(null)
   const [runningFlowIds, setRunningFlowIds] = useState<Set<string>>(new Set())
 
-  // Drag and drop sensors
+  // Drag and drop sensors - activation constraint prevents accidental drags
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // 8px movement required before drag starts
+      },
+    }),
     useSensor(KeyboardSensor)
   )
 

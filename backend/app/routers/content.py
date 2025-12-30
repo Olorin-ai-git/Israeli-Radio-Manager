@@ -131,6 +131,22 @@ async def list_samples(request: Request, limit: int = Query(default=50, le=200))
     return items
 
 
+@router.get("/newsflashes", response_model=List[dict])
+async def list_newsflashes(request: Request, limit: int = Query(default=50, le=200)):
+    """List all newsflashes."""
+    db = request.app.state.db
+
+    query = {"type": ContentType.NEWSFLASH.value, "active": True}
+    cursor = db.content.find(query).limit(limit)
+
+    items = []
+    async for item in cursor:
+        item["_id"] = str(item["_id"])
+        items.append(item)
+
+    return items
+
+
 @router.get("/genres", response_model=List[str])
 async def list_genres(request: Request):
     """Get list of all unique genres."""

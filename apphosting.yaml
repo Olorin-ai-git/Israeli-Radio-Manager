@@ -14,3 +14,7 @@ env:
     value: production
   - variable: LOG_LEVEL
     value: INFO
+  - variable: ELEVENLABS_API_KEY
+    secret: ELEVENLABS_API_KEY
+  - variable: ELEVENLABS_MODEL_ID
+    value: eleven_v3

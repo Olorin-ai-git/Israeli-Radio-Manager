@@ -31,6 +31,9 @@ pywebpush>=1.14.0
 # Background Tasks
 APScheduler>=3.10.4
 
+# HTTP Client
+aiohttp>=3.9.0
+
 # Utilities
 python-dotenv>=1.0.0
 pydantic>=2.6.0

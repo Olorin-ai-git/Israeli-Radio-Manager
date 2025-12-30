@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Music, Radio, Megaphone, Search, Play, Plus,
   Clock, BarChart2, Calendar, Disc3, RefreshCw, ListPlus, X as XIcon, FolderSync,
-  AudioLines, Layers
+  AudioLines, Layers, Newspaper
 } from 'lucide-react'
 import { api } from '../services/api'
 import { usePlayerStore } from '../store/playerStore'
@@ -20,6 +20,7 @@ function AlbumCover({ contentId, isPlaying, type }: { contentId: string; isPlayi
     : type === 'show' ? Radio
     : type === 'jingle' ? AudioLines
     : type === 'sample' ? Layers
+    : type === 'newsflash' ? Newspaper
     : Disc3
 
   if (hasError) {
@@ -44,7 +45,7 @@ function AlbumCover({ contentId, isPlaying, type }: { contentId: string; isPlayi
   )
 }
 
-type ContentTab = 'songs' | 'shows' | 'commercials' | 'jingles' | 'samples'
+type ContentTab = 'songs' | 'shows' | 'commercials' | 'jingles' | 'samples' | 'newsflashes'
 
 export default function Library() {
   const { i18n } = useTranslation()
@@ -66,6 +67,7 @@ export default function Library() {
       queryClient.invalidateQueries({ queryKey: ['commercials'] })
       queryClient.invalidateQueries({ queryKey: ['jingles'] })
       queryClient.invalidateQueries({ queryKey: ['samples'] })
+      queryClient.invalidateQueries({ queryKey: ['newsflashes'] })
 
       toast.success(
         isRTL
@@ -98,6 +100,7 @@ export default function Library() {
       queryClient.invalidateQueries({ queryKey: ['commercials'] })
       queryClient.invalidateQueries({ queryKey: ['jingles'] })
       queryClient.invalidateQueries({ queryKey: ['samples'] })
+      queryClient.invalidateQueries({ queryKey: ['newsflashes'] })
       queryClient.invalidateQueries({ queryKey: ['genres'] })
 
       const stats = data.stats || {}
@@ -146,6 +149,11 @@ export default function Library() {
     queryFn: api.getSamples,
   })
 
+  const { data: newsflashes, isLoading: loadingNewsflashes } = useQuery({
+    queryKey: ['newsflashes'],
+    queryFn: api.getNewsflashes,
+  })
+
   const { data: genres } = useQuery({
     queryKey: ['genres'],
     queryFn: api.getGenres,
@@ -163,6 +171,8 @@ export default function Library() {
         return Array.isArray(jingles) ? jingles : []
       case 'samples':
         return Array.isArray(samples) ? samples : []
+      case 'newsflashes':
+        return Array.isArray(newsflashes) ? newsflashes : []
       default:
         return []
     }
@@ -172,7 +182,8 @@ export default function Library() {
     : activeTab === 'shows' ? loadingShows
     : activeTab === 'commercials' ? loadingCommercials
     : activeTab === 'jingles' ? loadingJingles
-    : loadingSamples
+    : activeTab === 'samples' ? loadingSamples
+    : loadingNewsflashes
 
   const content = getContent()
 
@@ -243,6 +254,7 @@ export default function Library() {
     { id: 'commercials' as const, label: isRTL ? 'פרסומות' : 'Commercials', icon: Megaphone, count: commercials?.length || 0 },
     { id: 'jingles' as const, label: isRTL ? "ג'ינגלים" : 'Jingles', icon: AudioLines, count: jingles?.length || 0 },
     { id: 'samples' as const, label: isRTL ? 'סמפלים' : 'Samples', icon: Layers, count: samples?.length || 0 },
+    { id: 'newsflashes' as const, label: isRTL ? 'חדשות' : 'News', icon: Newspaper, count: newsflashes?.length || 0 },
   ]
 
   const formatDuration = (seconds: number): string => {

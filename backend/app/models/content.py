@@ -14,6 +14,7 @@ class ContentType(str, Enum):
     COMMERCIAL = "commercial"
     JINGLE = "jingle"
     SAMPLE = "sample"
+    NEWSFLASH = "newsflash"
 
 
 class AIClassification(BaseModel):

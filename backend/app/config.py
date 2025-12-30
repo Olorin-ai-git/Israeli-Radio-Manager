@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     chatterbox_default_voice: str = Field(default="default")
     chatterbox_enabled: bool = Field(default=True)  # Enable/disable TTS feature
 
+    # ElevenLabs TTS
+    elevenlabs_api_key: str = Field(default="")
+    elevenlabs_voice_id: str = Field(default="56AoDkrOh6qfVPDXZ7Pt")  # Cassidy - Crisp, Direct and Clear
+    elevenlabs_model_id: str = Field(default="eleven_v3")  # Eleven V3 (Alpha)
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
