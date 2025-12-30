@@ -11,6 +11,7 @@ import CalendarPlaylist from './pages/CalendarPlaylist'
 import ActionsStudio from './pages/ActionsStudio'
 import Admin from './pages/Admin'
 import Login from './pages/Login'
+import VoiceManagement from './pages/VoiceManagement'
 import ProtectedRoute from './components/Auth/ProtectedRoute'
 import ToastContainer from './components/Toast/ToastContainer'
 import { useAuth } from './contexts/AuthContext'
@@ -64,6 +65,14 @@ function App() {
                   <Route path="/upload" element={<Upload />} />
                   <Route path="/agent" element={<AgentControl />} />
                   <Route path="/settings" element={<Settings />} />
+                  <Route
+                    path="/voices"
+                    element={
+                      <ProtectedRoute requireAdmin>
+                        <VoiceManagement />
+                      </ProtectedRoute>
+                    }
+                  />
                   <Route path="/actions-studio" element={<ActionsStudio />} />
                   <Route path="/actions-studio/:flowId" element={<ActionsStudio />} />
                   <Route

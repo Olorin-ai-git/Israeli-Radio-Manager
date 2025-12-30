@@ -25,6 +25,8 @@ import {
   Play,
   Loader2,
   AlertCircle,
+  Hand,
+  Wand2,
 } from 'lucide-react'
 import { useActionsStudioStore, FlowActionType, StudioAction, getActionDisplayName } from '../store/actionsStudioStore'
 import BlocksPalette from '../components/ActionsStudio/BlocksPalette'
@@ -41,6 +43,11 @@ export default function ActionsStudio() {
   const { i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
   const { addToast } = useToastStore()
+
+  // Build mode state
+  const [buildMode, setBuildMode] = useState<'manual' | 'ai'>('manual')
+  const [aiDescription, setAiDescription] = useState('')
+  const [isParsingAI, setIsParsingAI] = useState(false)
 
   // Drag state
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null)
@@ -64,7 +71,32 @@ export default function ActionsStudio() {
     removeAction,
     reorderActions,
     selectBlock,
+    setActions,
+    clearActions,
   } = useActionsStudioStore()
+
+  // AI mode: Parse description to actions
+  useEffect(() => {
+    if (buildMode !== 'ai' || !aiDescription.trim()) {
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setIsParsingAI(true)
+      try {
+        const result = await api.parseNaturalFlow(aiDescription)
+        if (result.actions && Array.isArray(result.actions)) {
+          setActions(result.actions)
+        }
+      } catch (error) {
+        console.error('Failed to parse flow description:', error)
+      } finally {
+        setIsParsingAI(false)
+      }
+    }, 600)
+
+    return () => clearTimeout(timer)
+  }, [aiDescription, buildMode, setActions])
 
   // DnD sensors
   const sensors = useSensors(
@@ -320,6 +352,44 @@ export default function ActionsStudio() {
             )}
           </div>
 
+          {/* Build Mode Toggle */}
+          <div className="flex items-center gap-1 p-1 bg-dark-800/50 rounded-lg">
+            <button
+              type="button"
+              onClick={() => {
+                if (buildMode !== 'manual') {
+                  setBuildMode('manual')
+                  setAiDescription('')
+                }
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all text-sm ${
+                buildMode === 'manual'
+                  ? 'bg-primary-500 text-white'
+                  : 'text-dark-300 hover:bg-dark-700'
+              }`}
+            >
+              <Hand size={14} />
+              <span>{isRTL ? 'ידני' : 'Manual'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (buildMode !== 'ai') {
+                  setBuildMode('ai')
+                  clearActions()
+                }
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all text-sm ${
+                buildMode === 'ai'
+                  ? 'bg-purple-500 text-white'
+                  : 'text-dark-300 hover:bg-dark-700'
+              }`}
+            >
+              <Wand2 size={14} />
+              <span>AI</span>
+            </button>
+          </div>
+
           {/* Action Buttons */}
           <div className="flex items-center gap-2">
             <button
@@ -349,8 +419,38 @@ export default function ActionsStudio() {
 
         {/* Main Content */}
         <div className="flex-1 flex gap-4 p-4 min-h-0 overflow-hidden">
-          {/* Blocks Palette */}
-          <BlocksPalette isRTL={isRTL} />
+          {/* Blocks Palette (Manual mode) or AI Input (AI mode) */}
+          {buildMode === 'manual' ? (
+            <BlocksPalette isRTL={isRTL} />
+          ) : (
+            <div className="w-64 flex-shrink-0 glass-card p-4 flex flex-col">
+              <div className="flex items-center gap-2 mb-3">
+                <Wand2 size={16} className="text-purple-400" />
+                <h3 className="font-medium text-dark-100 text-sm">
+                  {isRTL ? 'תיאור AI' : 'AI Description'}
+                </h3>
+                {isParsingAI && (
+                  <Loader2 size={14} className="animate-spin text-purple-400 ml-auto" />
+                )}
+              </div>
+              <textarea
+                value={aiDescription}
+                onChange={(e) => setAiDescription(e.target.value)}
+                placeholder={
+                  isRTL
+                    ? 'תאר את הזרימה בשפה טבעית...\n\nלדוגמה:\nנגן מזרחי שמח 30 דקות, אז 2 פרסומות, אז חסידי 20 דקות'
+                    : 'Describe the flow in natural language...\n\nExample:\nPlay happy mizrahi for 30 minutes, then 2 commercials, then hasidi for 20 minutes'
+                }
+                className="flex-1 glass-input text-sm resize-none"
+                dir="auto"
+              />
+              <p className="text-xs text-dark-400 mt-2">
+                {isRTL
+                  ? 'השתמש ב"אז" או "then" להפרדה בין פעולות'
+                  : 'Use "then" to separate actions'}
+              </p>
+            </div>
+          )}
 
           {/* Canvas */}
           <div className="flex-1 flex flex-col min-w-0">

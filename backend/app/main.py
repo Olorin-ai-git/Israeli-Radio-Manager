@@ -9,8 +9,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 
 from app.config import settings
-from app.routers import content, schedule, playback, upload, agent, websocket, calendar, flows, settings as settings_router, admin, users
+from app.routers import content, schedule, playback, upload, agent, websocket, calendar, flows, settings as settings_router, admin, users, voices
 from app.services.audio_player import AudioPlayerService
+from app.services.chatterbox import ChatterboxService
 from app.services.notifications import NotificationService
 from app.services.google_drive import GoogleDriveService
 from app.services.content_sync import ContentSyncService
@@ -241,10 +242,35 @@ async def lifespan(app: FastAPI):
     await app.state.health_monitor.start()
     logger.info("Health monitor started - monitoring server metrics")
 
+    # Initialize Chatterbox TTS service
+    app.state.chatterbox_service = None
+    if settings.chatterbox_enabled:
+        try:
+            app.state.chatterbox_service = ChatterboxService(
+                db=app.state.db,
+                model_name=settings.chatterbox_model,
+                device=settings.chatterbox_device,
+                cache_dir=settings.chatterbox_cache_dir,
+                gcs_service=getattr(app.state.content_sync, 'gcs_service', None)
+            )
+            initialized = await app.state.chatterbox_service.initialize()
+            if initialized:
+                logger.info(f"Chatterbox TTS service initialized (model={settings.chatterbox_model}, device={settings.chatterbox_device})")
+            else:
+                logger.warning("Chatterbox TTS initialization returned False. TTS features will be unavailable.")
+                app.state.chatterbox_service = None
+        except Exception as e:
+            logger.warning(f"Chatterbox TTS initialization failed: {e}. TTS features will be unavailable.")
+            app.state.chatterbox_service = None
+    else:
+        logger.info("Chatterbox TTS is disabled in settings")
+
     yield
 
     # Shutdown
     logger.info("Shutting down Israeli Radio Manager...")
+    if hasattr(app.state, 'chatterbox_service') and app.state.chatterbox_service:
+        await app.state.chatterbox_service.cleanup()
     if hasattr(app.state, 'health_monitor'):
         await app.state.health_monitor.stop()
     if hasattr(app.state, 'playback_monitor'):
@@ -294,6 +320,10 @@ async def init_database(db):
     await db.users.create_index("role")
     await db.users.create_index("is_active")
 
+    # Voice presets collection indexes
+    await db.voice_presets.create_index("name", unique=True)
+    await db.voice_presets.create_index("is_default")
+
     logger.info("Database indexes created")
 
 
@@ -332,6 +362,7 @@ app.include_router(flows.router, prefix="/api/flows", tags=["Auto Flows"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
+app.include_router(voices.router, prefix="/api/voices", tags=["TTS Voices"])
 
 
 @app.get("/")

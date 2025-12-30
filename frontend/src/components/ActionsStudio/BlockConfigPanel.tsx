@@ -12,6 +12,9 @@ import {
   MessageSquare,
   Search,
   Check,
+  AudioLines,
+  VolumeX,
+  Timer,
 } from 'lucide-react'
 import { StudioAction, FlowActionType, useActionsStudioStore } from '../../store/actionsStudioStore'
 import { api } from '../../services/api'
@@ -28,9 +31,12 @@ const ACTION_ICONS: Record<FlowActionType, LucideIcon> = {
   play_content: FileAudio,
   play_commercials: Megaphone,
   play_show: RadioIcon,
+  play_jingle: AudioLines,
   wait: Clock,
   set_volume: Volume2,
+  fade_volume: VolumeX,
   announcement: MessageSquare,
+  time_check: Timer,
 }
 
 // Available genres

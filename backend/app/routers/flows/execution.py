@@ -3,7 +3,9 @@
 import asyncio
 import logging
 import random
+import uuid
 from datetime import datetime, timedelta
+from typing import Optional
 
 from bson import ObjectId
 
@@ -15,10 +17,16 @@ from app.services.flow_monitor import notify_playback_started
 logger = logging.getLogger(__name__)
 
 
-async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
+async def run_flow_actions(db, flow: dict, audio_player=None, chatterbox_service=None) -> int:
     """
     Execute flow actions. Returns the number of actions completed.
     This function can be called from both the run_flow endpoint and the calendar watcher.
+
+    Args:
+        db: MongoDB database
+        flow: Flow document with actions
+        audio_player: Optional VLC audio player
+        chatterbox_service: Optional ChatterboxService for TTS generation
     """
     actions = flow.get("actions", [])
     actions_completed = 0
@@ -66,7 +74,47 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
             await _execute_wait(action)
 
         elif action_type == FlowActionType.ANNOUNCEMENT.value:
-            await _execute_announcement(db, action, audio_player)
+            content = await _execute_announcement(db, action, audio_player, chatterbox_service)
+            if content:  # TTS generated audio
+                if is_first_playback_action:
+                    await broadcast_scheduled_playback(content)
+                    notify_playback_started(content, content.get("duration_seconds", 0))
+                    is_first_playback_action = False
+                else:
+                    add_to_backend_queue(content, position=0)
+                    await broadcast_queue_update(get_backend_queue())
+
+        elif action_type == FlowActionType.PLAY_JINGLE.value:
+            first_action_done = await _execute_play_jingle(
+                db, action, is_first_playback_action, audio_player
+            )
+            if first_action_done:
+                is_first_playback_action = False
+
+        elif action_type == FlowActionType.FADE_VOLUME.value:
+            await _execute_fade_volume(action, audio_player)
+
+        elif action_type == FlowActionType.TIME_CHECK.value:
+            content = await _execute_time_check(db, action, audio_player, chatterbox_service)
+            if content:  # TTS generated audio
+                if is_first_playback_action:
+                    await broadcast_scheduled_playback(content)
+                    notify_playback_started(content, content.get("duration_seconds", 0))
+                    is_first_playback_action = False
+                else:
+                    add_to_backend_queue(content, position=0)
+                    await broadcast_queue_update(get_backend_queue())
+
+        elif action_type == FlowActionType.GENERATE_JINGLE.value:
+            content = await _execute_generate_jingle(db, action, chatterbox_service)
+            if content:
+                if is_first_playback_action:
+                    await broadcast_scheduled_playback(content)
+                    notify_playback_started(content, content.get("duration_seconds", 0))
+                    is_first_playback_action = False
+                else:
+                    add_to_backend_queue(content, position=0)
+                    await broadcast_queue_update(get_backend_queue())
 
         actions_completed += 1
 
@@ -550,20 +598,89 @@ async def _execute_wait(action: dict) -> None:
 # Announcement Action
 # ============================================================================
 
-async def _execute_announcement(db, action: dict, audio_player=None) -> None:
+async def _execute_announcement(
+    db, action: dict, audio_player=None, chatterbox_service=None
+) -> Optional[dict]:
     """
-    Execute an announcement action - broadcasts announcement text to clients.
-    In a full implementation, this could integrate with TTS for audio playback.
+    Execute an announcement action - generates TTS audio or broadcasts text.
+
+    When TTS is enabled and available, generates spoken audio and returns
+    content data for queue insertion. Otherwise broadcasts text via WebSocket.
+
+    Returns:
+        Content dict if TTS generated audio, None if text-only broadcast
     """
     announcement_text = action.get("announcement_text", "")
+    use_tts = action.get("use_tts", True)
 
     if not announcement_text.strip():
         logger.warning("announcement action has no text")
-        return
+        return None
 
-    logger.info(f"Broadcasting announcement: {announcement_text[:50]}...")
+    # Check if TTS should be used
+    if use_tts and chatterbox_service and chatterbox_service.is_available:
+        logger.info(f"Generating TTS announcement: {announcement_text[:50]}...")
 
-    # Broadcast announcement to connected clients via WebSocket
+        # Get TTS parameters
+        voice_preset = action.get("voice_preset", "default")
+        tts_language = action.get("tts_language") or action.get("time_language", "he")
+        exaggeration = action.get("exaggeration", 1.0)
+
+        try:
+            # Import here to avoid circular imports
+            from app.services.chatterbox import get_audio_duration
+
+            # Generate speech audio
+            audio_path = await chatterbox_service.generate_speech(
+                text=announcement_text,
+                voice_preset=voice_preset,
+                language=tts_language,
+                exaggeration=exaggeration,
+                category="announcements"
+            )
+
+            if audio_path and audio_path.exists():
+                # Get audio duration
+                duration_seconds = get_audio_duration(audio_path)
+
+                # Create content entry for generated audio
+                content_doc = {
+                    "title": f"Announcement: {announcement_text[:30]}...",
+                    "type": "jingle",
+                    "local_cache_path": str(audio_path),
+                    "duration_seconds": duration_seconds,
+                    "created_at": datetime.utcnow(),
+                    "metadata": {
+                        "source": "tts",
+                        "original_text": announcement_text,
+                        "voice_preset": voice_preset,
+                        "language": tts_language
+                    }
+                }
+
+                # Save to database
+                result = await db.content.insert_one(content_doc)
+                content_doc["_id"] = str(result.inserted_id)
+
+                # Log the announcement
+                await db.announcements.insert_one({
+                    "text": announcement_text,
+                    "created_at": datetime.utcnow(),
+                    "source": "flow_action_tts",
+                    "content_id": str(result.inserted_id)
+                })
+
+                logger.info(f"TTS announcement generated: {audio_path} ({duration_seconds:.1f}s)")
+                return content_doc
+
+            else:
+                logger.warning("TTS generation returned no audio, falling back to text broadcast")
+
+        except Exception as e:
+            logger.error(f"TTS generation failed, falling back to text broadcast: {e}")
+
+    # Fallback: broadcast text via WebSocket (original behavior)
+    logger.info(f"Broadcasting text announcement: {announcement_text[:50]}...")
     await broadcast_announcement(announcement_text)
 
     # Log the announcement
@@ -575,6 +692,8 @@ async def _execute_announcement(db, action: dict, audio_player=None) -> None:
         })
     except Exception as e:
         logger.warning(f"Failed to log announcement: {e}")
+
+    return None
 
 
 # ============================================================================
@@ -607,3 +726,366 @@ def _add_content_to_vlc(audio_player, content: dict):
         content_type=content.get("type", "song")
     )
     audio_player.add_to_queue(track)
+
+
+# ============================================================================
+# Play Jingle Action
+# ============================================================================
+
+async def _execute_play_jingle(
+    db, action: dict, is_first_playback_action: bool, audio_player=None
+) -> bool:
+    """
+    Execute a play_jingle action - plays station jingles (station ID, bumper, transition).
+    Returns True if playback was triggered.
+    """
+    jingle_type = action.get("jingle_type", "station_id")  # station_id, bumper, transition
+
+    # Query for jingles by type
+    query = {
+        "type": "jingle",
+        "active": True
+    }
+
+    # If jingle_type is specified, filter by it (stored in metadata or genre field)
+    if jingle_type:
+        query["$or"] = [
+            {"metadata.jingle_type": jingle_type},
+            {"genre": jingle_type}
+        ]
+
+    jingles = await db.content.find(query).to_list(20)
+
+    # Fallback: get any jingle if specific type not found
+    if not jingles:
+        jingles = await db.content.find({
+            "type": "jingle",
+            "active": True
+        }).to_list(20)
+
+    if not jingles:
+        logger.warning(f"No jingles found for type: {jingle_type}")
+        return False
+
+    # Select a random jingle
+    import random
+    jingle = random.choice(jingles)
+
+    logger.info(f"Playing jingle: {jingle.get('title')} (type: {jingle_type})")
+
+    # Build content data for broadcast
+    content_data = {
+        "_id": str(jingle["_id"]),
+        "title": jingle.get("title", "Jingle"),
+        "artist": jingle.get("artist"),
+        "type": "jingle",
+        "duration_seconds": jingle.get("duration_seconds", 0),
+        "genre": jingle.get("genre"),
+        "metadata": jingle.get("metadata", {})
+    }
+
+    if is_first_playback_action:
+        # Play immediately
+        await broadcast_scheduled_playback(content_data)
+        notify_playback_started(content_data, jingle.get("duration_seconds", 0))
+    else:
+        # Insert at TOP of queue
+        add_to_backend_queue(_content_to_queue_item(jingle), position=0)
+        await broadcast_queue_update(get_backend_queue())
+
+    # Also add to VLC queue if available
+    if audio_player:
+        _add_content_to_vlc(audio_player, jingle)
+
+    return True
+
+
+# ============================================================================
+# Fade Volume Action
+# ============================================================================
+
+async def _execute_fade_volume(action: dict, audio_player=None) -> None:
+    """
+    Execute a fade_volume action - gradually changes volume over time.
+    Broadcasts volume change events to connected clients.
+    """
+    from app.routers.websocket import broadcast_volume_change
+
+    target_volume = action.get("target_volume", 80)
+    fade_duration_seconds = action.get("fade_duration_seconds", 5)
+
+    if target_volume is None or target_volume < 0 or target_volume > 100:
+        logger.warning(f"Invalid target_volume: {target_volume}")
+        return
+
+    if fade_duration_seconds is None or fade_duration_seconds < 1:
+        fade_duration_seconds = 1
+
+    logger.info(f"Fading volume to {target_volume}% over {fade_duration_seconds} seconds")
+
+    # Calculate steps (update every 100ms for smooth fade)
+    steps = max(fade_duration_seconds * 10, 1)
+    step_delay = fade_duration_seconds / steps
+
+    # Get current volume from audio_player if available, otherwise assume 80
+    current_volume = 80
+    if audio_player:
+        try:
+            current_volume = audio_player.get_volume()
+        except Exception:
+            pass
+
+    volume_delta = (target_volume - current_volume) / steps
+
+    # Perform the fade
+    for i in range(steps):
+        new_volume = int(current_volume + (volume_delta * (i + 1)))
+        new_volume = max(0, min(100, new_volume))  # Clamp to 0-100
+
+        if audio_player:
+            try:
+                audio_player.set_volume(new_volume)
+            except Exception as e:
+                logger.warning(f"Failed to set volume: {e}")
+
+        # Broadcast volume change to clients
+        await broadcast_volume_change(new_volume)
+
+        await asyncio.sleep(step_delay)
+
+    # Ensure final volume is exactly the target
+    if audio_player:
+        try:
+            audio_player.set_volume(target_volume)
+        except Exception:
+            pass
+    await broadcast_volume_change(target_volume)
+
+    logger.info(f"Volume fade complete: {target_volume}%")
+
+
+# ============================================================================
+# Time Check Action
+# ============================================================================
+
+async def _execute_time_check(
+    db, action: dict, audio_player=None, chatterbox_service=None
+) -> Optional[dict]:
+    """
+    Execute a time_check action - announces the current time via TTS or text.
+
+    When TTS is enabled and available, generates spoken audio and returns
+    content data for queue insertion. Otherwise broadcasts text via WebSocket.
+
+    Returns:
+        Content dict if TTS generated audio, None if text-only broadcast
+    """
+    time_format = action.get("time_format", "24h")  # "12h" or "24h"
+    time_language = action.get("time_language", "he")  # "en" or "he"
+    use_tts = action.get("use_tts", True)
+
+    # Get current time in configured timezone (default: Miami/Eastern Time)
+    try:
+        import pytz
+        from app.config import settings
+        tz = pytz.timezone(settings.timezone)
+        now = datetime.now(tz)
+    except ImportError:
+        # Fallback if pytz not available
+        now = datetime.utcnow()
+
+    hour = now.hour
+    minute = now.minute
+
+    # Format the time announcement
+    announcement_text = _format_time_text(hour, minute, time_language, time_format)
+
+    logger.info(f"Time check: {announcement_text}")
+
+    # Check if TTS should be used
+    if use_tts and chatterbox_service and chatterbox_service.is_available:
+        logger.info(f"Generating TTS time check...")
+
+        # Get TTS parameters
+        voice_preset = action.get("voice_preset", "default")
+        exaggeration = action.get("exaggeration", 1.0)
+
+        try:
+            from app.services.chatterbox import get_audio_duration
+
+            # Generate speech audio
+            audio_path = await chatterbox_service.generate_speech(
+                text=announcement_text,
+                voice_preset=voice_preset,
+                language=time_language,
+                exaggeration=exaggeration,
+                category="time_checks"
+            )
+
+            if audio_path and audio_path.exists():
+                duration_seconds = get_audio_duration(audio_path)
+
+                content_doc = {
+                    "title": f"Time: {hour}:{minute:02d}",
+                    "type": "jingle",
+                    "local_cache_path": str(audio_path),
+                    "duration_seconds": duration_seconds,
+                    "created_at": datetime.utcnow(),
+                    "metadata": {
+                        "source": "tts_time_check",
+                        "original_text": announcement_text,
+                        "voice_preset": voice_preset,
+                        "language": time_language,
+                        "time_format": time_format
+                    }
+                }
+
+                result = await db.content.insert_one(content_doc)
+                content_doc["_id"] = str(result.inserted_id)
+
+                await db.announcements.insert_one({
+                    "text": announcement_text,
+                    "created_at": datetime.utcnow(),
+                    "source": "time_check_tts",
+                    "content_id": str(result.inserted_id)
+                })
+
+                logger.info(f"TTS time check generated: {audio_path} ({duration_seconds:.1f}s)")
+                return content_doc
+
+            else:
+                logger.warning("TTS generation returned no audio, falling back to text broadcast")
+
+        except Exception as e:
+            logger.error(f"TTS time check failed, falling back to text broadcast: {e}")
+
+    # Fallback: broadcast text via WebSocket
+    await broadcast_announcement(announcement_text)
+
+    try:
+        await db.announcements.insert_one({
+            "text": announcement_text,
+            "created_at": datetime.utcnow(),
+            "source": "time_check"
+        })
+    except Exception as e:
+        logger.warning(f"Failed to log time check: {e}")
+
+    return None
+
+
+def _format_time_text(hour: int, minute: int, language: str, fmt: str) -> str:
+    """Format time as spoken text."""
+    if language == "he":
+        if fmt == "12h":
+            period = "בבוקר" if hour < 12 else "אחר הצהריים" if hour < 18 else "בערב"
+            display_hour = hour if hour <= 12 else hour - 12
+            if display_hour == 0:
+                display_hour = 12
+            return f"השעה היא {display_hour}:{minute:02d} {period}"
+        else:
+            return f"השעה היא {hour}:{minute:02d}"
+    else:
+        if fmt == "12h":
+            period = "AM" if hour < 12 else "PM"
+            display_hour = hour if hour <= 12 else hour - 12
+            if display_hour == 0:
+                display_hour = 12
+            return f"The time is {display_hour}:{minute:02d} {period}"
+        else:
+            return f"The time is {hour}:{minute:02d}"
+
+
+# ============================================================================
+# Generate Jingle Action (TTS)
+# ============================================================================
+
+async def _execute_generate_jingle(
+    db, action: dict, chatterbox_service=None
+) -> Optional[dict]:
+    """
+    Execute a generate_jingle action - generates a spoken jingle via TTS.
+
+    Creates audio for station IDs, bumpers, transitions, and promos.
+    Optionally saves to content library for future use.
+
+    Returns:
+        Content dict if generated successfully, None otherwise
+    """
+    jingle_text = action.get("jingle_text", "")
+    jingle_style = action.get("jingle_style", "station_id")
+    save_as_content = action.get("save_as_content", False)
+
+    if not jingle_text.strip():
+        logger.warning("generate_jingle action has no text")
+        return None
+
+    if not chatterbox_service or not chatterbox_service.is_available:
+        logger.warning("Chatterbox not available - cannot generate jingle")
+        return None
+
+    logger.info(f"Generating TTS jingle ({jingle_style}): {jingle_text[:50]}...")
+
+    # Get TTS parameters
+    voice_preset = action.get("voice_preset", "default")
+    tts_language = action.get("tts_language", "he")
+
+    # Apply style-specific exaggeration if not explicitly set
+    style_settings = {
+        "station_id": {"exaggeration": 1.3},      # Energetic
+        "bumper": {"exaggeration": 1.1},          # Moderate
+        "transition": {"exaggeration": 0.9},      # Smooth
+        "promo": {"exaggeration": 1.5}            # Very energetic
+    }
+    settings = style_settings.get(jingle_style, {})
+    exaggeration = action.get("exaggeration") or settings.get("exaggeration", 1.0)
+
+    try:
+        from app.services.chatterbox import get_audio_duration
+
+        audio_path = await chatterbox_service.generate_speech(
+            text=jingle_text,
+            voice_preset=voice_preset,
+            language=tts_language,
+            exaggeration=exaggeration,
+            category="jingles"
+        )
+
+        if not audio_path or not audio_path.exists():
+            logger.error("Jingle generation failed - no audio returned")
+            return None
+
+        duration_seconds = get_audio_duration(audio_path)
+
+        content_doc = {
+            "title": jingle_text[:50],
+            "type": "jingle",
+            "jingle_type": jingle_style,
+            "local_cache_path": str(audio_path),
+            "duration_seconds": duration_seconds,
+            "created_at": datetime.utcnow(),
+            "active": save_as_content,  # Only active if saved permanently
+            "metadata": {
+                "source": "tts_generated",
+                "original_text": jingle_text,
+                "style": jingle_style,
+                "voice_preset": voice_preset,
+                "language": tts_language
+            }
+        }
+
+        if save_as_content:
+            # Permanent save to content library
+            result = await db.content.insert_one(content_doc)
+            content_doc["_id"] = str(result.inserted_id)
+            logger.info(f"Jingle saved to library: {content_doc['_id']}")
+        else:
+            # Temporary - generate unique ID for queue
+            content_doc["_id"] = f"temp_{uuid.uuid4().hex[:8]}"
+
+        logger.info(f"TTS jingle generated: {audio_path} ({duration_seconds:.1f}s)")
+        return content_doc
+
+    except Exception as e:
+        logger.error(f"Jingle generation failed: {e}", exc_info=True)
+        return None

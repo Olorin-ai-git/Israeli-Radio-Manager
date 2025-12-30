@@ -109,6 +109,24 @@ export const COLORS = {
       text: 'text-amber-400',
       icon: 'text-amber-400',
     },
+    play_jingle: {
+      bg: 'bg-pink-500/20',
+      border: 'border-pink-500/30',
+      text: 'text-pink-400',
+      icon: 'text-pink-400',
+    },
+    fade_volume: {
+      bg: 'bg-teal-500/20',
+      border: 'border-teal-500/30',
+      text: 'text-teal-400',
+      icon: 'text-teal-400',
+    },
+    time_check: {
+      bg: 'bg-indigo-500/20',
+      border: 'border-indigo-500/30',
+      text: 'text-indigo-400',
+      icon: 'text-indigo-400',
+    },
   },
 } as const
 

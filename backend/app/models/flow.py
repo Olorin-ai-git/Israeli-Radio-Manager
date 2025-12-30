@@ -13,9 +13,13 @@ class FlowActionType(str, Enum):
     PLAY_CONTENT = "play_content"
     PLAY_COMMERCIALS = "play_commercials"
     PLAY_SHOW = "play_show"
+    PLAY_JINGLE = "play_jingle"
     WAIT = "wait"
     SET_VOLUME = "set_volume"
+    FADE_VOLUME = "fade_volume"
     ANNOUNCEMENT = "announcement"
+    TIME_CHECK = "time_check"
+    GENERATE_JINGLE = "generate_jingle"  # Generate jingle via TTS
 
 
 class FlowAction(BaseModel):
@@ -42,8 +46,30 @@ class FlowAction(BaseModel):
     # For set_volume
     volume_level: Optional[int] = None
 
+    # For fade_volume
+    target_volume: Optional[int] = None
+    fade_duration_seconds: Optional[int] = None
+
     # For announcement
     announcement_text: Optional[str] = None
+
+    # For play_jingle
+    jingle_type: Optional[str] = None  # "station_id", "bumper", "transition"
+
+    # For time_check
+    time_format: Optional[str] = None  # "12h" or "24h"
+    time_language: Optional[str] = None  # "en" or "he"
+
+    # TTS fields (for announcement, time_check, generate_jingle)
+    voice_preset: Optional[str] = None  # Voice preset to use
+    tts_language: Optional[str] = None  # "he" or "en" for TTS
+    exaggeration: Optional[float] = None  # 0.5-2.0 expressiveness level
+    use_tts: Optional[bool] = True  # Enable/disable TTS (default: True)
+
+    # For generate_jingle
+    jingle_text: Optional[str] = None  # Text for the jingle (e.g., "Radio Kol Chai!")
+    jingle_style: Optional[str] = None  # "station_id", "bumper", "transition", "promo"
+    save_as_content: Optional[bool] = None  # Save to content library as jingle type
 
     # Description for display
     description: Optional[str] = None

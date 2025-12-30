@@ -8,7 +8,7 @@ import { X, Plus } from 'lucide-react'
 import { Input, Select, Slider, Textarea } from '../../Form'
 import { api } from '../../../services/api'
 import { FlowAction } from '../types'
-import { FLOW_GENRES, ACTION_TYPE_OPTIONS } from '../constants'
+import { FLOW_GENRES, ACTION_TYPE_OPTIONS, JINGLE_TYPE_OPTIONS, JINGLE_STYLE_OPTIONS, TIME_FORMAT_OPTIONS, TIME_LANGUAGE_OPTIONS, TTS_LANGUAGE_OPTIONS } from '../constants'
 
 interface AddActionModalProps {
   isOpen: boolean
@@ -42,12 +42,40 @@ export default function AddActionModal({
   const [announcementText, setAnnouncementText] = useState('')
   const [songCount, setSongCount] = useState(0)
   const [useDuration, setUseDuration] = useState(true)
+  // New action states
+  const [jingleType, setJingleType] = useState('station_id')
+  const [targetVolume, setTargetVolume] = useState(80)
+  const [fadeDurationSeconds, setFadeDurationSeconds] = useState(5)
+  const [timeFormat, setTimeFormat] = useState('24h')
+  const [timeLanguage, setTimeLanguage] = useState('he')
+  // TTS states
+  const [voicePreset, setVoicePreset] = useState('default')
+  const [ttsLanguage, setTtsLanguage] = useState<'he' | 'en'>('he')
+  const [exaggeration, setExaggeration] = useState(1.0)
+  const [useTts, setUseTts] = useState(true)
+  // Generate jingle states
+  const [jingleText, setJingleText] = useState('')
+  const [jingleStyle, setJingleStyle] = useState<'station_id' | 'bumper' | 'transition' | 'promo'>('station_id')
+  const [saveAsContent, setSaveAsContent] = useState(false)
 
   // Fetch commercials for selection
   const { data: commercials } = useQuery({
     queryKey: ['commercials'],
     queryFn: api.getCommercials,
     enabled: isOpen && selectedActionType === 'play_commercials'
+  })
+
+  // Fetch voice presets for TTS actions
+  const { data: voicePresets } = useQuery({
+    queryKey: ['voicePresets'],
+    queryFn: async () => {
+      const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      const baseUrl = isLocalDev ? '' : 'https://israeli-radio-manager-534446777606.us-east1.run.app'
+      const response = await fetch(`${baseUrl}/api/voices/`)
+      if (!response.ok) return []
+      return response.json()
+    },
+    enabled: isOpen && ['announcement', 'time_check', 'generate_jingle'].includes(selectedActionType)
   })
 
   // Reset form when modal opens
@@ -63,6 +91,20 @@ export default function AddActionModal({
       setAnnouncementText('')
       setSongCount(0)
       setUseDuration(true)
+      // Reset new action states
+      setJingleType('station_id')
+      setTargetVolume(80)
+      setFadeDurationSeconds(5)
+      setTimeFormat('24h')
+      setTimeLanguage('he')
+      // Reset TTS states
+      setVoicePreset('default')
+      setTtsLanguage('he')
+      setExaggeration(1.0)
+      setUseTts(true)
+      setJingleText('')
+      setJingleStyle('station_id')
+      setSaveAsContent(false)
     }
   }, [isOpen])
 
@@ -97,6 +139,31 @@ export default function AddActionModal({
         break
       case 'announcement':
         action.announcement_text = announcementText
+        action.voice_preset = voicePreset
+        action.tts_language = ttsLanguage
+        action.exaggeration = exaggeration
+        action.use_tts = useTts
+        break
+      case 'play_jingle':
+        action.jingle_type = jingleType
+        break
+      case 'fade_volume':
+        action.target_volume = targetVolume
+        action.fade_duration_seconds = fadeDurationSeconds
+        break
+      case 'time_check':
+        action.time_format = timeFormat
+        action.time_language = timeLanguage
+        action.voice_preset = voicePreset
+        action.use_tts = useTts
+        break
+      case 'generate_jingle':
+        action.jingle_text = jingleText
+        action.jingle_style = jingleStyle
+        action.voice_preset = voicePreset
+        action.tts_language = ttsLanguage
+        action.exaggeration = exaggeration
+        action.save_as_content = saveAsContent
         break
     }
 
@@ -116,6 +183,14 @@ export default function AddActionModal({
         return `Set volume to ${volumeLevel}%`
       case 'announcement':
         return 'Announcement'
+      case 'play_jingle':
+        return `Play ${jingleType.replace('_', ' ')} jingle`
+      case 'fade_volume':
+        return `Fade volume to ${targetVolume}% over ${fadeDurationSeconds}s`
+      case 'time_check':
+        return `Announce time (${timeFormat}, ${timeLanguage === 'he' ? 'Hebrew' : 'English'})`
+      case 'generate_jingle':
+        return `Generate ${jingleStyle.replace('_', ' ')} jingle`
       default:
         return selectedActionType
     }
@@ -278,14 +353,216 @@ export default function AddActionModal({
 
           {/* Announcement Fields */}
           {selectedActionType === 'announcement' && (
-            <Textarea
-              label={isRTL ? 'טקסט ההכרזה' : 'Announcement text'}
-              value={announcementText}
-              onChange={(e) => setAnnouncementText(e.target.value)}
-              placeholder={isRTL ? 'הזן את טקסט ההכרזה...' : 'Enter announcement text...'}
-              rows={4}
-              showCount
+            <>
+              <Textarea
+                label={isRTL ? 'טקסט ההכרזה' : 'Announcement text'}
+                value={announcementText}
+                onChange={(e) => setAnnouncementText(e.target.value)}
+                placeholder={isRTL ? 'הזן את טקסט ההכרזה...' : 'Enter announcement text...'}
+                rows={4}
+                showCount
+              />
+              {/* TTS Options */}
+              <div className="flex items-center gap-2 p-3 bg-dark-800/30 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="useTts"
+                  checked={useTts}
+                  onChange={(e) => setUseTts(e.target.checked)}
+                  className="text-primary-500"
+                />
+                <label htmlFor="useTts" className="text-sm text-dark-300 cursor-pointer">
+                  {isRTL ? 'השתמש ב-TTS (יצירת קול)' : 'Use TTS (generate audio)'}
+                </label>
+              </div>
+              {useTts && (
+                <>
+                  <Select
+                    label={isRTL ? 'קול' : 'Voice'}
+                    value={voicePreset}
+                    onChange={setVoicePreset}
+                    options={[
+                      { value: 'default', label: isRTL ? 'ברירת מחדל' : 'Default' },
+                      ...(voicePresets || []).map((v: { name: string; display_name?: string }) => ({
+                        value: v.name,
+                        label: v.display_name || v.name,
+                      })),
+                    ]}
+                  />
+                  <Select
+                    label={isRTL ? 'שפה' : 'Language'}
+                    value={ttsLanguage}
+                    onChange={(val) => setTtsLanguage(val as 'he' | 'en')}
+                    options={TTS_LANGUAGE_OPTIONS.map(opt => ({
+                      value: opt.value,
+                      label: isRTL ? opt.label_he : opt.label,
+                    }))}
+                  />
+                  <Slider
+                    label={isRTL ? 'אקספרסיביות' : 'Expressiveness'}
+                    value={exaggeration}
+                    onChange={setExaggeration}
+                    min={0.5}
+                    max={2.0}
+                    step={0.1}
+                    unit=""
+                  />
+                </>
+              )}
+            </>
+          )}
+
+          {/* Play Jingle Fields */}
+          {selectedActionType === 'play_jingle' && (
+            <Select
+              label={isRTL ? 'סוג ג\'ינגל' : 'Jingle Type'}
+              value={jingleType}
+              onChange={setJingleType}
+              options={JINGLE_TYPE_OPTIONS.map(opt => ({
+                value: opt.value,
+                label: isRTL ? opt.label_he : opt.label,
+              }))}
             />
+          )}
+
+          {/* Fade Volume Fields */}
+          {selectedActionType === 'fade_volume' && (
+            <>
+              <Slider
+                label={isRTL ? 'עוצמה סופית' : 'Target volume'}
+                value={targetVolume}
+                onChange={setTargetVolume}
+                min={0}
+                max={100}
+                step={1}
+                unit="%"
+              />
+              <Slider
+                label={isRTL ? 'משך דעיכה (שניות)' : 'Fade duration (seconds)'}
+                value={fadeDurationSeconds}
+                onChange={setFadeDurationSeconds}
+                min={1}
+                max={30}
+                step={1}
+                unit={isRTL ? 'שניות' : 'sec'}
+              />
+            </>
+          )}
+
+          {/* Time Check Fields */}
+          {selectedActionType === 'time_check' && (
+            <>
+              <Select
+                label={isRTL ? 'פורמט שעה' : 'Time Format'}
+                value={timeFormat}
+                onChange={setTimeFormat}
+                options={TIME_FORMAT_OPTIONS.map(opt => ({
+                  value: opt.value,
+                  label: isRTL ? opt.label_he : opt.label,
+                }))}
+              />
+              <Select
+                label={isRTL ? 'שפה' : 'Language'}
+                value={timeLanguage}
+                onChange={setTimeLanguage}
+                options={TIME_LANGUAGE_OPTIONS.map(opt => ({
+                  value: opt.value,
+                  label: isRTL ? opt.label_he : opt.label,
+                }))}
+              />
+              {/* TTS Options */}
+              <div className="flex items-center gap-2 p-3 bg-dark-800/30 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="useTtsTime"
+                  checked={useTts}
+                  onChange={(e) => setUseTts(e.target.checked)}
+                  className="text-primary-500"
+                />
+                <label htmlFor="useTtsTime" className="text-sm text-dark-300 cursor-pointer">
+                  {isRTL ? 'השתמש ב-TTS (יצירת קול)' : 'Use TTS (generate audio)'}
+                </label>
+              </div>
+              {useTts && (
+                <Select
+                  label={isRTL ? 'קול' : 'Voice'}
+                  value={voicePreset}
+                  onChange={setVoicePreset}
+                  options={[
+                    { value: 'default', label: isRTL ? 'ברירת מחדל' : 'Default' },
+                    ...(voicePresets || []).map((v: { name: string; display_name?: string }) => ({
+                      value: v.name,
+                      label: v.display_name || v.name,
+                    })),
+                  ]}
+                />
+              )}
+            </>
+          )}
+
+          {/* Generate Jingle (TTS) Fields */}
+          {selectedActionType === 'generate_jingle' && (
+            <>
+              <Textarea
+                label={isRTL ? 'טקסט הג\'ינגל' : 'Jingle text'}
+                value={jingleText}
+                onChange={(e) => setJingleText(e.target.value)}
+                placeholder={isRTL ? 'רדיו קול חי - המוזיקה שלך!' : 'Radio Kol Chai - Your Music!'}
+                rows={3}
+                showCount
+              />
+              <Select
+                label={isRTL ? 'סגנון' : 'Style'}
+                value={jingleStyle}
+                onChange={(val) => setJingleStyle(val as 'station_id' | 'bumper' | 'transition' | 'promo')}
+                options={JINGLE_STYLE_OPTIONS.map(opt => ({
+                  value: opt.value,
+                  label: isRTL ? opt.label_he : opt.label,
+                }))}
+              />
+              <Select
+                label={isRTL ? 'קול' : 'Voice'}
+                value={voicePreset}
+                onChange={setVoicePreset}
+                options={[
+                  { value: 'default', label: isRTL ? 'ברירת מחדל' : 'Default' },
+                  ...(voicePresets || []).map((v: { name: string; display_name?: string }) => ({
+                    value: v.name,
+                    label: v.display_name || v.name,
+                  })),
+                ]}
+              />
+              <Select
+                label={isRTL ? 'שפה' : 'Language'}
+                value={ttsLanguage}
+                onChange={(val) => setTtsLanguage(val as 'he' | 'en')}
+                options={TTS_LANGUAGE_OPTIONS.map(opt => ({
+                  value: opt.value,
+                  label: isRTL ? opt.label_he : opt.label,
+                }))}
+              />
+              <Slider
+                label={isRTL ? 'אקספרסיביות' : 'Expressiveness'}
+                value={exaggeration}
+                onChange={setExaggeration}
+                min={0.5}
+                max={2.0}
+                step={0.1}
+                unit=""
+              />
+              <div className="flex items-center gap-2 p-3 bg-dark-800/30 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="saveAsContent"
+                  checked={saveAsContent}
+                  onChange={(e) => setSaveAsContent(e.target.checked)}
+                  className="text-primary-500"
+                />
+                <label htmlFor="saveAsContent" className="text-sm text-dark-300 cursor-pointer">
+                  {isRTL ? 'שמור בספריית התוכן' : 'Save to content library'}
+                </label>
+              </div>
+            </>
           )}
 
           {/* Buttons */}

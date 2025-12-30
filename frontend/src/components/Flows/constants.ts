@@ -92,7 +92,44 @@ export const ACTION_TYPE_OPTIONS = [
   { value: 'play_commercials', label: 'Play Commercials', label_he: 'נגן פרסומות' },
   { value: 'play_content', label: 'Play Content', label_he: 'נגן תוכן' },
   { value: 'play_show', label: 'Play Show', label_he: 'נגן תוכנית' },
+  { value: 'play_jingle', label: 'Play Jingle', label_he: 'נגן ג\'ינגל' },
+  { value: 'generate_jingle', label: 'Generate Jingle (TTS)', label_he: 'יצירת ג\'ינגל (TTS)' },
   { value: 'wait', label: 'Wait', label_he: 'המתן' },
   { value: 'set_volume', label: 'Set Volume', label_he: 'קבע עוצמה' },
+  { value: 'fade_volume', label: 'Fade Volume', label_he: 'דעיכת עוצמה' },
   { value: 'announcement', label: 'Announcement', label_he: 'הכרזה' },
+  { value: 'time_check', label: 'Time Check', label_he: 'הכרזת שעה' },
+]
+
+// Jingle type options (for play_jingle - existing jingles)
+export const JINGLE_TYPE_OPTIONS = [
+  { value: 'station_id', label: 'Station ID', label_he: 'זיהוי תחנה' },
+  { value: 'bumper', label: 'Bumper', label_he: 'באמפר' },
+  { value: 'transition', label: 'Transition', label_he: 'מעבר' },
+]
+
+// Jingle style options (for generate_jingle - TTS generated)
+export const JINGLE_STYLE_OPTIONS = [
+  { value: 'station_id', label: 'Station ID', label_he: 'זיהוי תחנה' },
+  { value: 'bumper', label: 'Bumper', label_he: 'באמפר' },
+  { value: 'transition', label: 'Transition', label_he: 'מעבר' },
+  { value: 'promo', label: 'Promo', label_he: 'פרומו' },
+]
+
+// TTS Language options
+export const TTS_LANGUAGE_OPTIONS = [
+  { value: 'he', label: 'Hebrew', label_he: 'עברית' },
+  { value: 'en', label: 'English', label_he: 'אנגלית' },
+]
+
+// Time format options
+export const TIME_FORMAT_OPTIONS = [
+  { value: '24h', label: '24 Hour', label_he: '24 שעות' },
+  { value: '12h', label: '12 Hour (AM/PM)', label_he: '12 שעות' },
+]
+
+// Time language options
+export const TIME_LANGUAGE_OPTIONS = [
+  { value: 'he', label: 'Hebrew', label_he: 'עברית' },
+  { value: 'en', label: 'English', label_he: 'אנגלית' },
 ]

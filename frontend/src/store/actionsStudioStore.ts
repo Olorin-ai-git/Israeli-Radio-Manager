@@ -7,9 +7,12 @@ export type FlowActionType =
   | 'play_content'
   | 'play_commercials'
   | 'play_show'
+  | 'play_jingle'
   | 'wait'
   | 'set_volume'
+  | 'fade_volume'
   | 'announcement'
+  | 'time_check'
 
 export interface StudioAction {
   id: string // Client-side unique ID for drag-and-drop
@@ -24,6 +27,14 @@ export interface StudioAction {
   duration_minutes?: number
   volume_level?: number
   announcement_text?: string
+  // For fade_volume
+  target_volume?: number
+  fade_duration_seconds?: number
+  // For play_jingle
+  jingle_type?: string // "station_id", "bumper", "transition"
+  // For time_check
+  time_format?: string // "12h" or "24h"
+  time_language?: string // "en" or "he"
   // Display
   description?: string
   description_he?: string
@@ -85,6 +96,7 @@ interface ActionsStudioState {
   reorderActions: (fromIndex: number, toIndex: number) => void
   selectBlock: (id: string | null) => void
   clearActions: () => void
+  setActions: (actions: Omit<StudioAction, 'id' | 'isValid' | 'validationErrors'>[]) => void
 
   // Simulator actions
   startSimulation: () => void
@@ -142,6 +154,20 @@ const validateAction = (action: StudioAction): { isValid: boolean; errors: strin
         errors.push('Announcement text is required')
       }
       break
+    case 'play_jingle':
+      // jingle_type is optional, defaults to station_id
+      break
+    case 'fade_volume':
+      if (action.target_volume === undefined || action.target_volume < 0 || action.target_volume > 100) {
+        errors.push('Target volume must be between 0 and 100')
+      }
+      if (!action.fade_duration_seconds || action.fade_duration_seconds < 1) {
+        errors.push('Fade duration is required')
+      }
+      break
+    case 'time_check':
+      // time_format and time_language are optional, have defaults
+      break
   }
 
   return { isValid: errors.length === 0, errors }
@@ -166,6 +192,12 @@ export const getActionDuration = (action: StudioAction): number => {
     case 'announcement':
       // Estimate ~10 seconds per 100 characters
       return Math.max(10, ((action.announcement_text?.length || 0) / 100) * 10)
+    case 'play_jingle':
+      return 15 // Average jingle duration ~15 seconds
+    case 'fade_volume':
+      return action.fade_duration_seconds || 5
+    case 'time_check':
+      return 5 // Time announcement ~5 seconds
     default:
       return 0
   }
@@ -178,9 +210,12 @@ export const getActionDisplayName = (type: FlowActionType, isRTL: boolean = fals
     play_content: { en: 'Play Content', he: 'נגן תוכן' },
     play_commercials: { en: 'Play Commercials', he: 'נגן פרסומות' },
     play_show: { en: 'Play Show', he: 'נגן תוכנית' },
+    play_jingle: { en: 'Play Jingle', he: 'נגן ג\'ינגל' },
     wait: { en: 'Wait', he: 'המתן' },
     set_volume: { en: 'Set Volume', he: 'קבע עוצמה' },
+    fade_volume: { en: 'Fade Volume', he: 'דעיכת עוצמה' },
     announcement: { en: 'Announcement', he: 'הכרזה' },
+    time_check: { en: 'Time Check', he: 'הכרזת שעה' },
   }
   return isRTL ? names[type].he : names[type].en
 }
@@ -191,12 +226,15 @@ export const getActionCategory = (type: FlowActionType): 'playback' | 'control' 
     case 'play_genre':
     case 'play_content':
     case 'play_show':
+    case 'play_jingle':
       return 'playback'
     case 'play_commercials':
     case 'wait':
       return 'control'
     case 'set_volume':
+    case 'fade_volume':
     case 'announcement':
+    case 'time_check':
       return 'audio'
   }
 }
@@ -288,6 +326,20 @@ export const useActionsStudioStore = create<ActionsStudioState>((set, get) => ({
   selectBlock: (id) => set({ selectedBlockId: id }),
 
   clearActions: () => set({ actions: [], selectedBlockId: null, isDirty: true }),
+
+  setActions: (actionDataList) => {
+    const studioActions: StudioAction[] = actionDataList.map((actionData, index) => {
+      const id = `action-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`
+      const validation = validateAction({ ...actionData, id, isValid: true, validationErrors: [] } as StudioAction)
+      return {
+        ...actionData,
+        id,
+        isValid: validation.isValid,
+        validationErrors: validation.errors,
+      }
+    })
+    set({ actions: studioActions, selectedBlockId: null, isDirty: true })
+  },
 
   // Simulator
   startSimulation: () => {

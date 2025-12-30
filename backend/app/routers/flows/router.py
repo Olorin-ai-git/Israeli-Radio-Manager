@@ -395,6 +395,7 @@ async def run_flow(request: Request, flow_id: str):
     logger.info(f"=== RUN FLOW REQUESTED: {flow_id} ===")
     db = request.app.state.db
     audio_player = getattr(request.app.state, 'audio_player', None)
+    chatterbox_service = getattr(request.app.state, 'chatterbox_service', None)
 
     try:
         flow = await db.flows.find_one({"_id": ObjectId(flow_id)})
@@ -443,7 +444,7 @@ async def run_flow(request: Request, flow_id: str):
             # For looping flows: execute first batch immediately
             logger.info(f"Flow {flow_id} will loop until {end_time_str}")
             logger.info(f"Flow {flow_id} - Executing initial actions")
-            initial_actions = await run_flow_actions(db, flow, audio_player)
+            initial_actions = await run_flow_actions(db, flow, audio_player, chatterbox_service)
             logger.info(f"Flow {flow_id} - Initial actions completed: {initial_actions}")
 
             # Mark execution as running (flow_monitor will continue it)
@@ -460,7 +461,7 @@ async def run_flow(request: Request, flow_id: str):
             }
         else:
             # Single execution - run synchronously
-            total_actions_completed = await run_flow_actions(db, flow, audio_player)
+            total_actions_completed = await run_flow_actions(db, flow, audio_player, chatterbox_service)
 
             # Mark as completed
             await db.flow_executions.update_one(

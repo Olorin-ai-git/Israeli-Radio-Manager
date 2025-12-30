@@ -303,3 +303,13 @@ async def broadcast_announcement(text: str):
         "text": text,
         "timestamp": datetime.utcnow().isoformat()
     }, channel="all")
+
+
+async def broadcast_volume_change(volume: int):
+    """Broadcast a volume change to all connected clients."""
+    logger.info(f"Broadcasting volume_change: {volume}% to {len(manager.active_connections)} clients")
+    await manager.broadcast({
+        "type": "volume_change",
+        "volume": volume,
+        "timestamp": datetime.utcnow().isoformat()
+    }, channel="playback")

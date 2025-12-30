@@ -231,6 +231,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   playNext: async () => {
+    // Set isPlaying immediately to prevent race conditions with auto-play triggers
+    set({ isPlaying: true })
+
     // Call backend to get next track - this ensures server knows playback state
     try {
       const response = await api.getNextTrack()

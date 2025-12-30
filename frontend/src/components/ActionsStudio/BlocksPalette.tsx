@@ -13,6 +13,9 @@ import {
   ChevronRight,
   Search,
   GripVertical,
+  AudioLines,
+  VolumeX,
+  Timer,
 } from 'lucide-react'
 import { FlowActionType, getActionDisplayName } from '../../store/actionsStudioStore'
 import { Input } from '../Form'
@@ -32,9 +35,12 @@ const ACTION_ICONS: Record<FlowActionType, LucideIcon> = {
   play_content: FileAudio,
   play_commercials: Megaphone,
   play_show: Radio,
+  play_jingle: AudioLines,
   wait: Clock,
   set_volume: Volume2,
+  fade_volume: VolumeX,
   announcement: MessageSquare,
+  time_check: Timer,
 }
 
 const CATEGORY_LABELS = {
@@ -44,9 +50,9 @@ const CATEGORY_LABELS = {
 }
 
 const CATEGORIES: { id: 'playback' | 'control' | 'audio'; types: FlowActionType[] }[] = [
-  { id: 'playback', types: ['play_genre', 'play_content', 'play_show'] },
+  { id: 'playback', types: ['play_genre', 'play_content', 'play_show', 'play_jingle'] },
   { id: 'control', types: ['play_commercials', 'wait'] },
-  { id: 'audio', types: ['set_volume', 'announcement'] },
+  { id: 'audio', types: ['set_volume', 'fade_volume', 'announcement', 'time_check'] },
 ]
 
 function DraggableBlock({ actionType, isRTL }: DraggableBlockProps) {

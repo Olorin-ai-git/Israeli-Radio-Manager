@@ -9,6 +9,9 @@ import {
   MessageSquare,
   AlertCircle,
   GripVertical,
+  AudioLines,
+  VolumeX,
+  Timer,
 } from 'lucide-react'
 import { StudioAction, FlowActionType, getActionDisplayName, getActionDuration } from '../../store/actionsStudioStore'
 import { getActionTypeColors } from '../../theme/tokens'
@@ -27,9 +30,12 @@ const ACTION_ICONS: Record<FlowActionType, LucideIcon> = {
   play_content: FileAudio,
   play_commercials: Megaphone,
   play_show: Radio,
+  play_jingle: AudioLines,
   wait: Clock,
   set_volume: Volume2,
+  fade_volume: VolumeX,
   announcement: MessageSquare,
+  time_check: Timer,
 }
 
 function formatDuration(seconds: number): string {
@@ -86,6 +92,21 @@ function getActionSummary(action: StudioAction, isRTL: boolean): string {
         return preview + (action.announcement_text.length > 30 ? '...' : '')
       }
       return isRTL ? 'הזן טקסט' : 'Enter text'
+
+    case 'play_jingle':
+      return action.jingle_type
+        ? action.jingle_type.replace('_', ' ')
+        : isRTL ? 'זיהוי תחנה' : 'Station ID'
+
+    case 'fade_volume':
+      return action.target_volume !== undefined && action.fade_duration_seconds
+        ? `${action.target_volume}% • ${action.fade_duration_seconds}s`
+        : isRTL ? 'הגדר עוצמה' : 'Set volume'
+
+    case 'time_check':
+      const format = action.time_format || '24h'
+      const lang = action.time_language === 'en' ? 'English' : 'עברית'
+      return `${format} • ${lang}`
 
     default:
       return ''

@@ -12,6 +12,9 @@ import {
   Radio,
   Volume2,
   MessageSquare,
+  AudioLines,
+  VolumeX,
+  Timer,
 } from 'lucide-react'
 import {
   useActionsStudioStore,
@@ -31,9 +34,12 @@ const ACTION_SOLID_COLORS: Record<FlowActionType, string> = {
   play_content: 'bg-blue-500',
   play_commercials: 'bg-orange-500',
   play_show: 'bg-purple-500',
+  play_jingle: 'bg-pink-500',
   wait: 'bg-gray-500',
   set_volume: 'bg-emerald-500',
+  fade_volume: 'bg-teal-500',
   announcement: 'bg-amber-500',
+  time_check: 'bg-indigo-500',
 }
 
 const ACTION_ICONS: Record<FlowActionType, LucideIcon> = {
@@ -41,9 +47,12 @@ const ACTION_ICONS: Record<FlowActionType, LucideIcon> = {
   play_content: FileAudio,
   play_commercials: Megaphone,
   play_show: Radio,
+  play_jingle: AudioLines,
   wait: Clock,
   set_volume: Volume2,
+  fade_volume: VolumeX,
   announcement: MessageSquare,
+  time_check: Timer,
 }
 
 function formatTime(seconds: number): string {
@@ -81,6 +90,16 @@ function getActionPreviewText(action: StudioAction, isRTL: boolean): string {
         : `Setting volume to ${action.volume_level || 0}%`
     case 'announcement':
       return action.announcement_text?.substring(0, 50) || (isRTL ? 'הכרזה' : 'Announcement')
+    case 'play_jingle':
+      return isRTL
+        ? `מנגן ג'ינגל ${action.jingle_type?.replace('_', ' ') || 'זיהוי תחנה'}`
+        : `Playing ${action.jingle_type?.replace('_', ' ') || 'station ID'} jingle`
+    case 'fade_volume':
+      return isRTL
+        ? `דעיכה ל-${action.target_volume || 0}% במשך ${action.fade_duration_seconds || 0} שניות`
+        : `Fading to ${action.target_volume || 0}% over ${action.fade_duration_seconds || 0}s`
+    case 'time_check':
+      return isRTL ? 'מכריז את השעה' : 'Announcing current time'
     default:
       return ''
   }

@@ -14,7 +14,8 @@ import {
   Blocks,
   ChevronLeft,
   ChevronRight,
-  Shield
+  Shield,
+  Mic
 } from 'lucide-react'
 import ChatSidebar from '../Agent/ChatSidebar'
 import AudioPlayer from '../Player/AudioPlayer'
@@ -37,7 +38,7 @@ export default function Layout({ children }: LayoutProps) {
     const saved = localStorage.getItem('navCollapsed')
     return saved ? saved === 'true' : false
   })
-  const { currentTrack, queue, playNext, playNow, hasUserInteracted, setUserInteracted, fetchQueue } = usePlayerStore()
+  const { currentTrack, queue, isPlaying, playNext, playNow, hasUserInteracted, setUserInteracted, fetchQueue } = usePlayerStore()
   const wsRef = useRef<WebSocket | null>(null)
   const lastPlayedIdRef = useRef<string | null>(null) // Prevent duplicate playback
   const isAutoPlayingRef = useRef(false) // Prevent recursive auto-play
@@ -70,16 +71,28 @@ export default function Layout({ children }: LayoutProps) {
     // Only auto-play if user has interacted with the page (browser autoplay policy)
     if (!hasUserInteracted) return
 
-    if (!currentTrack && queue.length > 0) {
+    // Only auto-play if nothing is currently playing
+    if (currentTrack || isPlaying) return
+
+    if (queue.length > 0) {
       isAutoPlayingRef.current = true
       console.log('Auto-playing from queue - no current track but queue has items')
-      playNext()
-      // Reset guard after a short delay
-      setTimeout(() => {
-        isAutoPlayingRef.current = false
-      }, 100)
+
+      // Use async IIFE to properly await playNext before resetting the guard
+      ;(async () => {
+        try {
+          await playNext()
+        } catch (e) {
+          console.error('Auto-play error:', e)
+        } finally {
+          // Keep guard up for a bit longer to prevent race conditions with queue updates
+          setTimeout(() => {
+            isAutoPlayingRef.current = false
+          }, 500)
+        }
+      })()
     }
-  }, [currentTrack, queue.length, playNext, hasUserInteracted])
+  }, [currentTrack, isPlaying, queue.length, playNext, hasUserInteracted])
 
   // Periodically refresh queue from server
   useEffect(() => {
@@ -258,7 +271,10 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/upload', icon: Upload, label: t('nav.upload') },
     { path: '/agent', icon: Bot, label: t('nav.agent') },
     { path: '/settings', icon: Settings, label: t('nav.settings') },
-    ...(role === 'admin' ? [{ path: '/admin', icon: Shield, label: isRTL ? 'ניהול' : 'Admin' }] : []),
+    ...(role === 'admin' ? [
+      { path: '/voices', icon: Mic, label: isRTL ? 'סטודיו קולות' : 'Voice Studio' },
+      { path: '/admin', icon: Shield, label: isRTL ? 'ניהול' : 'Admin' }
+    ] : []),
   ]
 
   const toggleLanguage = () => {

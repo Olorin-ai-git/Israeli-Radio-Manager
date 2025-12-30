@@ -453,6 +453,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
           }}
           overlapError={overlapError}
           isPending={createMutation.isPending}
+          existingFlows={flows}
         />
       )}
 
@@ -482,6 +483,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
           }}
           overlapError={overlapError}
           isPending={updateMutation.isPending}
+          existingFlows={flows}
         />
       )}
 
@@ -640,6 +642,55 @@ function EmptyState({ isRTL }: { isRTL: boolean }) {
   )
 }
 
+// Helper function to validate actions
+function validateActions(actions: FlowAction[], isRTL: boolean): string[] {
+  const errors: string[] = []
+
+  actions.forEach((action, index) => {
+    const actionNum = index + 1
+
+    switch (action.action_type) {
+      case 'announcement':
+        if (!action.announcement_text?.trim()) {
+          errors.push(isRTL
+            ? `פעולה ${actionNum}: הכרזה חסרה טקסט`
+            : `Action ${actionNum}: Announcement missing text`)
+        }
+        break
+      case 'play_genre':
+        if (!action.genre && !action.duration_minutes && !action.song_count) {
+          errors.push(isRTL
+            ? `פעולה ${actionNum}: נגן ז'אנר חסר פרטים`
+            : `Action ${actionNum}: Play genre missing details`)
+        }
+        break
+      case 'play_content':
+        if (!action.content_id && !action.content_title) {
+          errors.push(isRTL
+            ? `פעולה ${actionNum}: נגן תוכן חסר בחירת תוכן`
+            : `Action ${actionNum}: Play content missing selection`)
+        }
+        break
+      case 'set_volume':
+        if (action.volume_level === undefined || action.volume_level === null) {
+          errors.push(isRTL
+            ? `פעולה ${actionNum}: הגדרת עוצמה חסרה ערך`
+            : `Action ${actionNum}: Set volume missing level`)
+        }
+        break
+      case 'wait':
+        if (!action.duration_minutes) {
+          errors.push(isRTL
+            ? `פעולה ${actionNum}: המתנה חסרה משך זמן`
+            : `Action ${actionNum}: Wait missing duration`)
+        }
+        break
+    }
+  })
+
+  return errors
+}
+
 // Flow Form Modal component (for both create and edit)
 function FlowFormModal({
   mode,
@@ -662,6 +713,7 @@ function FlowFormModal({
   onAddAction,
   overlapError,
   isPending,
+  existingFlows,
 }: {
   mode: 'create' | 'edit'
   flow?: Flow
@@ -683,11 +735,46 @@ function FlowFormModal({
   onAddAction: () => void
   overlapError: { message: string; conflictingFlows: any[] } | null
   isPending: boolean
+  existingFlows?: Flow[]
 }) {
+  const [flowName, setFlowName] = useState(flow?.name || '')
   const isCreate = mode === 'create'
   const title = isCreate
     ? (isRTL ? 'זרימה חדשה' : 'New Flow')
     : (isRTL ? 'עריכת זרימה' : 'Edit Flow')
+
+  // Validation
+  const actionErrors = validateActions(previewActions, isRTL)
+
+  const isNameTaken = existingFlows?.some(
+    f => f.name.toLowerCase() === flowName.toLowerCase() && f._id !== flow?._id
+  ) || false
+
+  const validationErrors: string[] = []
+
+  if (previewActions.length === 0) {
+    validationErrors.push(
+      buildMode === 'ai'
+        ? (isRTL ? 'אנא הזן תיאור זרימה תקף כדי להמשיך' : 'Please enter a valid flow description to continue')
+        : (isRTL ? 'אנא הוסף לפחות פעולה אחת' : 'Please add at least one action')
+    )
+  }
+
+  if (actionErrors.length > 0) {
+    validationErrors.push(...actionErrors)
+  }
+
+  if (!flowName.trim()) {
+    validationErrors.push(isRTL ? 'שם הזרימה נדרש' : 'Flow name is required')
+  } else if (isNameTaken) {
+    validationErrors.push(isRTL ? 'שם זרימה זה כבר קיים' : 'This flow name is already taken')
+  }
+
+  if (overlapError) {
+    validationErrors.push(isRTL ? 'חפיפה בלוח זמנים עם זרימות אחרות' : 'Schedule overlaps with other flows')
+  }
+
+  const isValid = validationErrors.length === 0 && !isPending
   const submitText = isCreate
     ? (isRTL ? 'צור' : 'Create')
     : (isRTL ? 'שמור' : 'Save')
@@ -703,13 +790,17 @@ function FlowFormModal({
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
-          <Input
-            name="name"
-            label={isRTL ? 'שם' : 'Name'}
-            placeholder={isRTL ? 'לדוגמה: תוכנית בוקר' : 'e.g., Morning Show'}
-            defaultValue={flow?.name}
-            required
-          />
+          <div>
+            <Input
+              name="name"
+              label={isRTL ? 'שם' : 'Name'}
+              placeholder={isRTL ? 'לדוגמה: תוכנית בוקר' : 'e.g., Morning Show'}
+              value={flowName}
+              onChange={(e) => setFlowName(e.target.value)}
+              required
+              error={isNameTaken ? (isRTL ? 'שם זה כבר קיים' : 'Name already exists') : undefined}
+            />
+          </div>
 
           {/* Build Mode Toggle */}
           <div className="p-3 bg-dark-800/30 rounded-lg">
@@ -891,7 +982,7 @@ function FlowFormModal({
             <div className="tooltip-trigger flex-1">
               <button
                 type="submit"
-                disabled={isPending || previewActions.length === 0}
+                disabled={!isValid}
                 className="w-full glass-button-primary py-2 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isPending ? (
@@ -903,15 +994,20 @@ function FlowFormModal({
                 )}
                 <span>{submitText}</span>
               </button>
-              {(isPending || previewActions.length === 0) && (
-                <div className="tooltip tooltip-top">
-                  {isPending
-                    ? (isRTL ? 'מעבד...' : 'Processing...')
-                    : previewActions.length === 0
-                    ? (buildMode === 'ai'
-                      ? (isRTL ? 'אנא הזן תיאור זרימה תקף כדי להמשיך' : 'Please enter a valid flow description to continue')
-                      : (isRTL ? 'אנא הוסף לפחות פעולה אחת' : 'Please add at least one action'))
-                    : ''}
+              {!isValid && (
+                <div className="tooltip tooltip-top" style={{ maxWidth: '280px' }}>
+                  {isPending ? (
+                    isRTL ? 'מעבד...' : 'Processing...'
+                  ) : (
+                    <ul className="text-left space-y-1">
+                      {validationErrors.map((error, idx) => (
+                        <li key={idx} className="flex items-start gap-1">
+                          <span className="text-red-400">•</span>
+                          <span>{error}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
             </div>

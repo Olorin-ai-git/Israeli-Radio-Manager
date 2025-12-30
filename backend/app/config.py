@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     commercial_interval_minutes: int = Field(default=15)
     max_song_repeat_hours: int = Field(default=4)
 
+    # Chatterbox TTS
+    chatterbox_model: str = Field(default="multilingual")  # "turbo" or "multilingual"
+    chatterbox_device: str = Field(default="cpu")  # "cuda" or "cpu"
+    chatterbox_cache_dir: str = Field(default="./tts_cache")
+    chatterbox_default_voice: str = Field(default="default")
+    chatterbox_enabled: bool = Field(default=True)  # Enable/disable TTS feature
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
