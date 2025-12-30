@@ -485,6 +485,20 @@ async def get_quality_issues(
     duplicates = await content_collection.aggregate(pipeline).to_list(length=100)
     issues["duplicates"] = duplicates
 
+    # Convert ObjectIds to strings for JSON serialization
+    def convert_objectids(items: List[Dict]) -> List[Dict]:
+        for item in items:
+            if "_id" in item:
+                item["_id"] = str(item["_id"])
+            if "ids" in item:
+                item["ids"] = [str(id) for id in item["ids"]]
+        return items
+
+    issues["missing_metadata"] = convert_objectids(issues["missing_metadata"])
+    issues["low_quality"] = convert_objectids(issues["low_quality"])
+    issues["short_duration"] = convert_objectids(issues["short_duration"])
+    issues["duplicates"] = convert_objectids(issues["duplicates"])
+
     return issues
 
 
