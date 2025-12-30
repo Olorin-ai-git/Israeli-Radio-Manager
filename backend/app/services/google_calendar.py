@@ -95,7 +95,8 @@ class GoogleCalendarService:
         credentials_file: str = "credentials.json",
         token_file: str = "token.json",
         calendar_id: Optional[str] = None,
-        service_account_file: Optional[str] = None
+        service_account_file: Optional[str] = None,
+        timezone: str = "America/New_York"
     ):
         """
         Initialize Google Calendar service.
@@ -105,11 +106,13 @@ class GoogleCalendarService:
             token_file: Path to store access token
             calendar_id: Google Calendar ID (defaults to primary)
             service_account_file: Path to service account JSON (preferred for server deployments)
+            timezone: Default timezone for events (e.g., America/New_York)
         """
         self._credentials_file = Path(credentials_file)
         self._token_file = Path(token_file)
         self._calendar_id = calendar_id or "primary"
         self._service_account_file = Path(service_account_file) if service_account_file else None
+        self._timezone = timezone
         self._service = None
         self._creds = None
 
@@ -239,22 +242,9 @@ class GoogleCalendarService:
         """
         self._ensure_authenticated()
 
-        # Auto-detect timezone if not provided - use local system timezone
+        # Use configured timezone if not provided
         if not timezone:
-            try:
-                import os
-                # On macOS/Linux, read the timezone from /etc/localtime symlink
-                if os.path.islink('/etc/localtime'):
-                    tz_path = os.readlink('/etc/localtime')
-                    # Extract timezone name from path like /var/db/timezone/zoneinfo/Asia/Jerusalem
-                    if 'zoneinfo/' in tz_path:
-                        timezone = tz_path.split('zoneinfo/')[-1]
-                    else:
-                        timezone = 'UTC'
-                else:
-                    timezone = 'UTC'
-            except:
-                timezone = 'UTC'
+            timezone = self._timezone
 
         # Default end time to start + 1 hour
         if not end_time:
@@ -426,21 +416,7 @@ class GoogleCalendarService:
                 event["location"] = kwargs["location"]
             if "start_time" in kwargs:
                 start = kwargs["start_time"]
-                timezone = kwargs.get("timezone")
-                if not timezone:
-                    # Auto-detect local system timezone
-                    try:
-                        import os
-                        if os.path.islink('/etc/localtime'):
-                            tz_path = os.readlink('/etc/localtime')
-                            if 'zoneinfo/' in tz_path:
-                                timezone = tz_path.split('zoneinfo/')[-1]
-                            else:
-                                timezone = 'UTC'
-                        else:
-                            timezone = 'UTC'
-                    except:
-                        timezone = 'UTC'
+                timezone = kwargs.get("timezone") or self._timezone
                 if kwargs.get("all_day"):
                     event["start"] = {"date": start.strftime("%Y-%m-%d")}
                 else:
@@ -450,21 +426,7 @@ class GoogleCalendarService:
                     }
             if "end_time" in kwargs:
                 end = kwargs["end_time"]
-                timezone = kwargs.get("timezone")
-                if not timezone:
-                    # Auto-detect local system timezone
-                    try:
-                        import os
-                        if os.path.islink('/etc/localtime'):
-                            tz_path = os.readlink('/etc/localtime')
-                            if 'zoneinfo/' in tz_path:
-                                timezone = tz_path.split('zoneinfo/')[-1]
-                            else:
-                                timezone = 'UTC'
-                        else:
-                            timezone = 'UTC'
-                    except:
-                        timezone = 'UTC'
+                timezone = kwargs.get("timezone") or self._timezone
                 if kwargs.get("all_day"):
                     event["end"] = {"date": end.strftime("%Y-%m-%d")}
                 else:

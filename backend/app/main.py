@@ -118,7 +118,8 @@ async def lifespan(app: FastAPI):
         credentials_file=settings.google_credentials_file,
         token_file=settings.google_token_file,
         calendar_id=settings.google_calendar_id,
-        service_account_file=settings.google_service_account_file
+        service_account_file=settings.google_service_account_file,
+        timezone=settings.timezone
     )
     # Try to authenticate (may fail if no credentials)
     try:

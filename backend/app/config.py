@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
     cache_dir: str = Field(default="./cache")
     max_cache_size_gb: int = Field(default=10)
+    timezone: str = Field(default="America/New_York")  # US Eastern for Miami broadcasts
 
     # Google Cloud Storage
     gcs_bucket_name: str = Field(default="israeli-radio-475c9-audio")
