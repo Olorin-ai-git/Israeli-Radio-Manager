@@ -90,6 +90,13 @@ export const api = {
   getEmergencyPlaylist: () => client.get('/playback/emergency-playlist').then((r) => r.data),
   generateEmergencyPlaylist: (count?: number) =>
     client.post('/playback/emergency-playlist/generate', null, { params: { count } }).then((r) => r.data),
+  // Convert relative emergency URL to absolute
+  getEmergencyStreamUrl: (relativeUrl: string) => {
+    // relativeUrl is like /api/playback/stream/emergency/filename.mp3
+    // We need to prepend the backend base URL
+    const backendBase = isLocalDev ? '' : 'https://israeli-radio-manager-534446777606.us-east1.run.app'
+    return `${backendBase}${relativeUrl}`
+  },
   logPlayStart: (contentId: string) =>
     client.post(`/playback/log-play/${contentId}`).then((r) => r.data),
 

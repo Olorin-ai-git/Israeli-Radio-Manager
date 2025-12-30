@@ -577,17 +577,25 @@ export default function AudioPlayer({
   }
 
   // Play a song from the emergency playlist
+  const lastEmergencyToastRef = useRef<number>(0)
   const playEmergencySong = (index: number, playlist: Array<{name: string, url: string}>) => {
     if (!audioRef.current || playlist.length === 0) return
 
     const song = playlist[index % playlist.length]
-    audioRef.current.src = song.url
+    // Convert relative URL to absolute URL with backend base
+    const absoluteUrl = api.getEmergencyStreamUrl(song.url)
+    audioRef.current.src = absoluteUrl
     audioRef.current.volume = isMuted ? 0 : volume / 100
     audioRef.current.play().catch(console.error)
     setIsPlaying(true)
     setHasError(false)
 
-    toast.info(isRTL ? `מצב חירום: ${song.name}` : `Emergency: ${song.name}`)
+    // Rate limit toasts - only show once every 10 seconds
+    const now = Date.now()
+    if (now - lastEmergencyToastRef.current > 10000) {
+      lastEmergencyToastRef.current = now
+      toast.info(isRTL ? `מצב חירום: ${song.name}` : `Emergency: ${song.name}`)
+    }
   }
 
   // Exit emergency mode and resume normal playback
