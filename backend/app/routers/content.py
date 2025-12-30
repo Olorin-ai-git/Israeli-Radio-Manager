@@ -99,6 +99,38 @@ async def list_commercials(request: Request, limit: int = Query(default=50, le=2
     return items
 
 
+@router.get("/jingles", response_model=List[dict])
+async def list_jingles(request: Request, limit: int = Query(default=50, le=200)):
+    """List all jingles."""
+    db = request.app.state.db
+
+    query = {"type": ContentType.JINGLE.value, "active": True}
+    cursor = db.content.find(query).limit(limit)
+
+    items = []
+    async for item in cursor:
+        item["_id"] = str(item["_id"])
+        items.append(item)
+
+    return items
+
+
+@router.get("/samples", response_model=List[dict])
+async def list_samples(request: Request, limit: int = Query(default=50, le=200)):
+    """List all samples."""
+    db = request.app.state.db
+
+    query = {"type": ContentType.SAMPLE.value, "active": True}
+    cursor = db.content.find(query).limit(limit)
+
+    items = []
+    async for item in cursor:
+        item["_id"] = str(item["_id"])
+        items.append(item)
+
+    return items
+
+
 @router.get("/genres", response_model=List[str])
 async def list_genres(request: Request):
     """Get list of all unique genres."""

@@ -41,6 +41,10 @@ class ContentSyncService:
         "תוכניות": "show",
         "commercials": "commercial",
         "פרסומות": "commercial",
+        "jingles": "jingle",
+        "ג'ינגלים": "jingle",
+        "samples": "sample",
+        "סמפלים": "sample",
     }
 
     def __init__(
@@ -459,7 +463,7 @@ class ContentSyncService:
         """Get current sync status."""
         total = await self.db.content.count_documents({})
         by_type = {}
-        for content_type in ["song", "show", "commercial"]:
+        for content_type in ["song", "show", "commercial", "jingle", "sample"]:
             by_type[content_type] = await self.db.content.count_documents({"type": content_type})
 
         cached = await self.db.content.count_documents({"local_cache_path": {"$ne": None}})

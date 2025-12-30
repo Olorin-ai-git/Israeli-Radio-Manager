@@ -12,6 +12,8 @@ class ContentType(str, Enum):
     SONG = "song"
     SHOW = "show"
     COMMERCIAL = "commercial"
+    JINGLE = "jingle"
+    SAMPLE = "sample"
 
 
 class AIClassification(BaseModel):
