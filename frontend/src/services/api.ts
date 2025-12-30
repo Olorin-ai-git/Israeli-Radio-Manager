@@ -45,6 +45,8 @@ export const api = {
   startSync: (downloadFiles?: boolean) =>
     client.post('/content/sync/start', null, { params: { download_files: downloadFiles } }).then((r) => r.data),
   refreshMetadata: () => client.post('/content/sync/refresh-metadata').then((r) => r.data),
+  getSyncSchedulerStatus: () => client.get('/content/sync/scheduler/status').then((r) => r.data),
+  triggerGcsSync: () => client.post('/content/sync/scheduler/trigger').then((r) => r.data),
 
   // Schedule
   getSchedule: () => client.get('/schedule/').then((r) => r.data),

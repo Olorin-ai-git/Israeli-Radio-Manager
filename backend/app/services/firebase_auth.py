@@ -20,9 +20,12 @@ class FirebaseAuth:
     """Firebase authentication service."""
 
     def __init__(self):
-        """Initialize Firebase Admin SDK with service account."""
+        """Initialize Firebase Admin SDK with service account or Application Default Credentials."""
         self._initialized = False
         self.security = HTTPBearer()
+
+        import logging
+        logger = logging.getLogger(__name__)
 
         # Check if Firebase is already initialized
         if firebase_admin._apps:
@@ -32,19 +35,28 @@ class FirebaseAuth:
         # Get service account file path from environment or use default
         service_account_path = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "service-account.json")
 
-        # Try to initialize Firebase Admin SDK (graceful if file doesn't exist)
-        try:
-            if os.path.exists(service_account_path):
+        # Try to initialize Firebase Admin SDK
+        # First, try with service account file
+        if os.path.exists(service_account_path):
+            try:
                 cred = credentials.Certificate(service_account_path)
                 firebase_admin.initialize_app(cred)
                 self._initialized = True
-            else:
-                # Try default credentials (works on GCP with attached service account)
-                firebase_admin.initialize_app()
-                self._initialized = True
+                logger.info(f"Firebase Auth initialized with service account file: {service_account_path}")
+                return
+            except Exception as e:
+                logger.warning(f"Failed to initialize with service account file: {e}")
+
+        # Second, try with Application Default Credentials (works in Cloud Run, GKE, etc.)
+        try:
+            firebase_admin.initialize_app()
+            self._initialized = True
+            logger.info("Firebase Auth initialized with Application Default Credentials")
+            return
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f"Firebase Auth not available: {e}")
+            logger.warning(f"Failed to initialize with Application Default Credentials: {e}")
+
+        logger.error("Firebase Auth could not be initialized - admin endpoints will be unavailable")
 
     @property
     def is_available(self) -> bool:

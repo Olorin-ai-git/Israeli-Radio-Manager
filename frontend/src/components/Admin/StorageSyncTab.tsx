@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { HardDrive, RefreshCw, Trash2, AlertTriangle, Cloud, FolderOpen } from 'lucide-react'
+import { HardDrive, RefreshCw, Trash2, AlertTriangle, Cloud, FolderOpen, Upload, Clock, CheckCircle } from 'lucide-react'
 import api from '../../services/api'
 import { toast } from '../../store/toastStore'
 
@@ -16,8 +16,23 @@ const formatBytes = (bytes: number): string => {
   return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i]
 }
 
-export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
+// Helper function to format time ago
+const formatTimeAgo = (isoString: string | null): string => {
+  if (!isoString) return 'Never'
+  const date = new Date(isoString)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
 
+  if (diffMins < 1) return 'Just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours < 24) return `${diffHours}h ago`
+  const diffDays = Math.floor(diffHours / 24)
+  return `${diffDays}d ago`
+}
+
+export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
   const { data: storageStats, isLoading, error, refetch } = useQuery({
     queryKey: ['admin', 'storage', 'stats'],
     queryFn: api.getAdminStorageStats,
@@ -28,6 +43,13 @@ export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
   const { data: orphanedFiles } = useQuery({
     queryKey: ['admin', 'storage', 'orphaned'],
     queryFn: api.getAdminOrphanedFiles,
+    retry: false
+  })
+
+  const { data: syncSchedulerStatus, refetch: refetchSyncStatus } = useQuery({
+    queryKey: ['admin', 'sync', 'scheduler', 'status'],
+    queryFn: api.getSyncSchedulerStatus,
+    refetchInterval: 10000, // Refresh every 10 seconds
     retry: false
   })
 
@@ -56,6 +78,17 @@ export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
     }
   })
 
+  const gcsSyncMutation = useMutation({
+    mutationFn: api.triggerGcsSync,
+    onSuccess: () => {
+      toast.success(isRTL ? 'סנכרון GCS החל' : 'GCS sync started')
+      refetchSyncStatus()
+    },
+    onError: (error: any) => {
+      toast.error(isRTL ? 'שגיאה בסנכרון GCS' : `Error starting GCS sync: ${error.response?.data?.detail || error.message}`)
+    }
+  })
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -65,16 +98,30 @@ export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
   }
 
   if (error) {
+    const axiosError = error as any
+    const status = axiosError?.response?.status
+    const detail = axiosError?.response?.data?.detail || axiosError?.message || 'Unknown error'
+    const isAuthError = status === 401 || status === 403
+
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-center">
           <AlertTriangle className="mx-auto mb-4 text-amber-400" size={48} />
           <h3 className="text-lg font-semibold text-dark-100 mb-2">
-            {isRTL ? 'נדרשת הרשאת מנהל' : 'Admin Authorization Required'}
+            {isAuthError
+              ? (isRTL ? 'נדרשת הרשאת מנהל' : 'Admin Authorization Required')
+              : (isRTL ? 'שגיאה בטעינת נתונים' : 'Error Loading Data')
+            }
           </h3>
           <p className="text-sm text-dark-400">
-            {isRTL ? 'עליך להתחבר עם חשבון מנהל כדי לצפות בדף זה' : 'Please sign in with an admin account to view this page'}
+            {isAuthError
+              ? (isRTL ? 'עליך להתחבר עם חשבון מנהל כדי לצפות בדף זה' : 'Please sign in with an admin account to view this page')
+              : detail
+            }
           </p>
+          {!isAuthError && status && (
+            <p className="text-xs text-dark-500 mt-2">Status: {status}</p>
+          )}
         </div>
       </div>
     )
@@ -155,6 +202,115 @@ export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
           </div>
         </div>
       </div>
+
+      {/* GCS Sync Status */}
+      {syncSchedulerStatus && (
+        <div className="glass-card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-dark-100">
+              {isRTL ? 'סנכרון לאחסון ענן (GCS)' : 'Cloud Storage Sync (GCS)'}
+            </h3>
+            <div className="flex items-center gap-2">
+              {syncSchedulerStatus.running ? (
+                <span className="flex items-center gap-1 text-xs text-emerald-400">
+                  <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
+                  {isRTL ? 'פעיל' : 'Active'}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-xs text-amber-400">
+                  <span className="w-2 h-2 bg-amber-400 rounded-full"></span>
+                  {isRTL ? 'מושבת' : 'Disabled'}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* GCS Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div className="bg-dark-700/50 rounded-lg p-3">
+              <div className="text-xs text-dark-400 mb-1">{isRTL ? 'סה"כ תוכן' : 'Total Content'}</div>
+              <div className="text-lg font-semibold text-dark-100">
+                {syncSchedulerStatus.gcs_stats?.total_content || 0}
+              </div>
+            </div>
+            <div className="bg-dark-700/50 rounded-lg p-3">
+              <div className="text-xs text-dark-400 mb-1">{isRTL ? 'מסונכרן ל-GCS' : 'Synced to GCS'}</div>
+              <div className="text-lg font-semibold text-emerald-400">
+                {syncSchedulerStatus.gcs_stats?.with_gcs_path || 0}
+              </div>
+            </div>
+            <div className="bg-dark-700/50 rounded-lg p-3">
+              <div className="text-xs text-dark-400 mb-1">{isRTL ? 'ממתין להעלאה' : 'Pending Upload'}</div>
+              <div className="text-lg font-semibold text-amber-400">
+                {syncSchedulerStatus.gcs_stats?.pending_upload || 0}
+              </div>
+            </div>
+            <div className="bg-dark-700/50 rounded-lg p-3">
+              <div className="text-xs text-dark-400 mb-1">{isRTL ? 'אחוז סינכרון' : 'Sync %'}</div>
+              <div className="text-lg font-semibold text-dark-100">
+                {syncSchedulerStatus.gcs_stats?.percent_synced || 0}%
+              </div>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="mb-4">
+            <div className="h-2 bg-dark-600 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500"
+                style={{ width: `${syncSchedulerStatus.gcs_stats?.percent_synced || 0}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Last Sync Info */}
+          <div className="flex items-center justify-between text-sm text-dark-400 mb-4">
+            <div className="flex items-center gap-2">
+              <Clock size={14} />
+              <span>
+                {isRTL ? 'סנכרון אחרון:' : 'Last sync:'}{' '}
+                {formatTimeAgo(syncSchedulerStatus.last_sync_time)}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span>{isRTL ? 'מרווח:' : 'Interval:'} {Math.round(syncSchedulerStatus.sync_interval_seconds / 60)}m</span>
+            </div>
+          </div>
+
+          {/* Sync Button */}
+          <button
+            onClick={() => gcsSyncMutation.mutate(undefined)}
+            disabled={gcsSyncMutation.isPending}
+            className="w-full glass-button flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-500/30 disabled:opacity-50"
+          >
+            <Upload size={18} className={gcsSyncMutation.isPending ? 'animate-pulse' : ''} />
+            {gcsSyncMutation.isPending
+              ? (isRTL ? 'מסנכרן ל-GCS...' : 'Syncing to GCS...')
+              : (isRTL ? 'סנכרון ידני ל-GCS' : 'Manual Sync to GCS')
+            }
+          </button>
+
+          {/* Last Sync Result */}
+          {syncSchedulerStatus.last_sync_result && (
+            <div className="mt-4 p-3 bg-dark-700/50 rounded-lg">
+              <div className="text-xs text-dark-400 mb-2">{isRTL ? 'תוצאת סנכרון אחרון:' : 'Last sync result:'}</div>
+              {syncSchedulerStatus.last_sync_result.error ? (
+                <div className="text-sm text-red-400">{syncSchedulerStatus.last_sync_result.error}</div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-emerald-400">
+                  <CheckCircle size={14} />
+                  <span>
+                    {syncSchedulerStatus.last_sync_result.total_synced || 0} {isRTL ? 'פריטים סונכרנו' : 'items synced'}
+                    {syncSchedulerStatus.last_sync_result.gcs_uploaded > 0 && (
+                      <>, {syncSchedulerStatus.last_sync_result.gcs_uploaded} {isRTL ? 'הועלו ל-GCS' : 'uploaded to GCS'}</>
+                    )}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Sync Actions */}
       <div className="glass-card p-6">

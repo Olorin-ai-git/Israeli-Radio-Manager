@@ -571,7 +571,7 @@ class ContentSyncService:
         Get the emergency playlist from GCS.
 
         Returns:
-            List of emergency song info with signed URLs
+            List of emergency song info with public URLs
         """
         try:
             files = await self.gcs.list_files(prefix="emergency/")
@@ -579,12 +579,13 @@ class ContentSyncService:
             playlist = []
             for file in files:
                 if file.get("name", "").endswith(('.mp3', '.wav', '.m4a', '.ogg')):
-                    signed_url = self.gcs.get_signed_url(file["gcs_path"])
-                    if signed_url:
+                    # Use public URL (bucket has public read access)
+                    public_url = self.gcs.get_public_url(file["gcs_path"])
+                    if public_url:
                         playlist.append({
                             "name": file["name"].split("/")[-1],
                             "gcs_path": file["gcs_path"],
-                            "url": signed_url,
+                            "url": public_url,
                             "size": file.get("size", 0)
                         })
 

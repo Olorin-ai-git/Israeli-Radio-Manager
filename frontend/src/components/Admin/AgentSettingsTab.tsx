@@ -54,16 +54,30 @@ export default function AgentSettingsTab({ isRTL }: AgentSettingsTabProps) {
   }
 
   if (error) {
+    const axiosError = error as any
+    const status = axiosError?.response?.status
+    const detail = axiosError?.response?.data?.detail || axiosError?.message || 'Unknown error'
+    const isAuthError = status === 401 || status === 403
+
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-center">
           <Bot className="mx-auto mb-4 text-amber-400" size={48} />
           <h3 className="text-lg font-semibold text-dark-100 mb-2">
-            {isRTL ? 'נדרשת הרשאת מנהל' : 'Admin Authorization Required'}
+            {isAuthError
+              ? (isRTL ? 'נדרשת הרשאת מנהל' : 'Admin Authorization Required')
+              : (isRTL ? 'שגיאה בטעינת הגדרות' : 'Error Loading Settings')
+            }
           </h3>
           <p className="text-sm text-dark-400">
-            {isRTL ? 'עליך להתחבר עם חשבון מנהל כדי לצפות בדף זה' : 'Please sign in with an admin account to view this page'}
+            {isAuthError
+              ? (isRTL ? 'עליך להתחבר עם חשבון מנהל כדי לצפות בדף זה' : 'Please sign in with an admin account to view this page')
+              : detail
+            }
           </p>
+          {!isAuthError && status && (
+            <p className="text-xs text-dark-500 mt-2">Status: {status}</p>
+          )}
         </div>
       </div>
     )

@@ -391,3 +391,65 @@ async def refresh_metadata(request: Request):
         "message": "Metadata refresh completed",
         "stats": stats
     }
+
+
+@router.get("/sync/scheduler/status")
+async def get_sync_scheduler_status(request: Request):
+    """
+    Get the status of the content sync scheduler.
+
+    Returns scheduler state, last sync time, and results.
+    """
+    if not hasattr(request.app.state, 'content_sync_scheduler'):
+        return {
+            "enabled": False,
+            "running": False,
+            "error": "Sync scheduler not initialized"
+        }
+
+    scheduler = request.app.state.content_sync_scheduler
+    status = scheduler.get_status()
+
+    # Add GCS stats
+    db = request.app.state.db
+
+    total_content = await db.content.count_documents({"active": True})
+    with_gcs = await db.content.count_documents({"active": True, "gcs_path": {"$exists": True, "$ne": None}})
+
+    status["gcs_stats"] = {
+        "total_content": total_content,
+        "with_gcs_path": with_gcs,
+        "pending_upload": total_content - with_gcs,
+        "percent_synced": round((with_gcs / total_content * 100) if total_content > 0 else 0, 1)
+    }
+
+    return status
+
+
+@router.post("/sync/scheduler/trigger")
+async def trigger_sync_scheduler(request: Request):
+    """
+    Manually trigger a content sync (GCS upload).
+
+    This bypasses the scheduler interval and runs a sync immediately.
+    """
+    if not hasattr(request.app.state, 'content_sync_scheduler'):
+        raise HTTPException(
+            status_code=503,
+            detail="Sync scheduler not initialized"
+        )
+
+    scheduler = request.app.state.content_sync_scheduler
+
+    # Run sync in background
+    import asyncio
+
+    async def run_sync():
+        await scheduler.trigger_sync()
+
+    asyncio.create_task(run_sync())
+
+    return {
+        "message": "Sync triggered in background",
+        "status": "running"
+    }

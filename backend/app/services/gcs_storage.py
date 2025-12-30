@@ -206,6 +206,43 @@ class GCSStorageService:
             logger.error(f"Failed to generate signed URL for {gcs_path}: {e}")
             return None
 
+    def get_public_url(self, gcs_path: str) -> Optional[str]:
+        """
+        Get the public URL for a GCS file.
+
+        This works for publicly accessible buckets (allUsers have read access).
+        No signing required.
+
+        Args:
+            gcs_path: GCS path (gs://bucket/path or just path)
+
+        Returns:
+            Public URL string, or None if unavailable
+        """
+        if not self.is_available:
+            return None
+
+        try:
+            # Extract blob path from gs:// URL if needed
+            if gcs_path.startswith('gs://'):
+                parts = gcs_path.replace('gs://', '').split('/', 1)
+                if len(parts) < 2:
+                    return None
+                blob_path = parts[1]
+            else:
+                blob_path = gcs_path
+
+            # URL encode the path for special characters (Hebrew, spaces)
+            from urllib.parse import quote
+            encoded_path = quote(blob_path, safe='/')
+
+            # Public URL format
+            return f"https://storage.googleapis.com/{self.bucket_name}/{encoded_path}"
+
+        except Exception as e:
+            logger.error(f"Failed to get public URL for {gcs_path}: {e}")
+            return None
+
     async def delete_file(self, gcs_path: str) -> bool:
         """
         Delete a file from GCS.
