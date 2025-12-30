@@ -294,7 +294,7 @@ export default function ServerManagementTab({ isRTL }: ServerManagementTabProps)
           ) : (
             <button
               onClick={() => setShowRestartConfirm(true)}
-              className="w-full btn bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/20 flex items-center justify-center gap-2"
+              className="w-full px-4 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 flex items-center justify-center gap-2 transition-colors"
             >
               <Power size={18} />
               {isRTL ? 'אתחל שרת' : 'Restart Server'}
