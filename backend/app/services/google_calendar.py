@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any, List
 from enum import Enum
 
 from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -92,7 +93,8 @@ class GoogleCalendarService:
         self,
         credentials_file: str = "credentials.json",
         token_file: str = "token.json",
-        calendar_id: Optional[str] = None
+        calendar_id: Optional[str] = None,
+        service_account_file: Optional[str] = None
     ):
         """
         Initialize Google Calendar service.
@@ -101,21 +103,38 @@ class GoogleCalendarService:
             credentials_file: Path to OAuth2 credentials JSON
             token_file: Path to store access token
             calendar_id: Google Calendar ID (defaults to primary)
+            service_account_file: Path to service account JSON (preferred for server deployments)
         """
         self._credentials_file = Path(credentials_file)
         self._token_file = Path(token_file)
         self._calendar_id = calendar_id or "primary"
+        self._service_account_file = Path(service_account_file) if service_account_file else None
         self._service = None
         self._creds = None
 
     async def authenticate(self) -> bool:
         """
-        Authenticate with Google Calendar API using OAuth2.
+        Authenticate with Google Calendar API.
+
+        Tries service account first (preferred for server deployments),
+        then falls back to OAuth2.
 
         Returns:
             True if authentication successful
         """
         try:
+            # Try service account first (preferred for server apps)
+            if self._service_account_file and self._service_account_file.exists():
+                logger.info(f"Using service account for Calendar: {self._service_account_file}")
+                self._creds = service_account.Credentials.from_service_account_file(
+                    str(self._service_account_file),
+                    scopes=self.SCOPES
+                )
+                self._service = build('calendar', 'v3', credentials=self._creds)
+                logger.info("Google Calendar authentication successful (service account)")
+                return True
+
+            # Fall back to OAuth2
             # Check for existing token
             if self._token_file.exists():
                 self._creds = Credentials.from_authorized_user_file(
@@ -145,7 +164,7 @@ class GoogleCalendarService:
 
             # Build service
             self._service = build('calendar', 'v3', credentials=self._creds)
-            logger.info("Google Calendar authentication successful")
+            logger.info("Google Calendar authentication successful (OAuth)")
             return True
 
         except Exception as e:

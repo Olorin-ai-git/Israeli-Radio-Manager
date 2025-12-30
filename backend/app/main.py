@@ -117,7 +117,8 @@ async def lifespan(app: FastAPI):
     app.state.calendar_service = GoogleCalendarService(
         credentials_file=settings.google_credentials_file,
         token_file=settings.google_token_file,
-        calendar_id=settings.google_calendar_id
+        calendar_id=settings.google_calendar_id,
+        service_account_file=settings.google_service_account_file
     )
     # Try to authenticate (may fail if no credentials)
     try:
