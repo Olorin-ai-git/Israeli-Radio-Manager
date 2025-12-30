@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useEffect, useRef } from 'react'
 import { LucideIcon } from 'lucide-react'
 import {
   Play,
@@ -143,6 +143,28 @@ export default function PreviewPanel({ isRTL }: PreviewPanelProps) {
 
   const currentAction = actions[currentSimStep]
   const hasActions = actions.length > 0
+
+  // Auto-advance simulation when playing
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    if (simulatorState === 'playing' && currentAction) {
+      // Get duration for current action (use a scaled-down time for preview)
+      const actionDuration = getActionDuration(currentAction)
+      // Scale: 1 second of real time = 10 seconds of simulated time (or minimum 1 second)
+      const scaledDuration = Math.max(1000, (actionDuration / 10) * 1000)
+
+      intervalRef.current = setTimeout(() => {
+        stepSimulation()
+      }, scaledDuration)
+
+      return () => {
+        if (intervalRef.current) {
+          clearTimeout(intervalRef.current)
+        }
+      }
+    }
+  }, [simulatorState, currentSimStep, currentAction, stepSimulation])
 
   return (
     <div className="w-80 flex-shrink-0 glass-sidebar flex flex-col h-full rounded-2xl overflow-hidden">

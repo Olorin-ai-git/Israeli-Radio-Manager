@@ -358,15 +358,21 @@ export const useActionsStudioStore = create<ActionsStudioState>((set, get) => ({
   stepSimulation: () => {
     const { actions, currentSimStep: currentStep } = get()
     if (currentStep < actions.length - 1) {
+      // Advance to next step
       const currentAction = actions[currentStep]
       const duration = getActionDuration(currentAction)
       set((state) => ({
         currentSimStep: state.currentSimStep + 1,
         simulatedTime: state.simulatedTime + duration,
-        simulatorState: state.currentSimStep + 1 >= actions.length - 1 ? 'finished' : state.simulatorState,
       }))
     } else {
-      set({ simulatorState: 'finished' })
+      // At or past the last step - mark as finished
+      const currentAction = actions[currentStep]
+      const duration = currentAction ? getActionDuration(currentAction) : 0
+      set((state) => ({
+        simulatorState: 'finished',
+        simulatedTime: state.simulatedTime + duration,
+      }))
     }
   },
 
