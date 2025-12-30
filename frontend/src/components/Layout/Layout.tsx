@@ -112,11 +112,11 @@ export default function Layout({ children }: LayoutProps) {
   // WebSocket connection for real-time updates (scheduled playback)
   // Only connect if backend is available
   useEffect(() => {
-    // Use Cloud Run backend in production (Firebase Hosting)
-    const isProduction = window.location.hostname.includes('web.app') || window.location.hostname.includes('firebaseapp.com')
-    const wsUrl = isProduction
-      ? 'wss://israeli-radio-manager-534446777606.europe-west1.run.app/ws/'
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/`
+    // Use Cloud Run backend in production, local proxy in development
+    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    const wsUrl = isLocalDev
+      ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/`
+      : 'wss://israeli-radio-manager-534446777606.us-east1.run.app/ws/'
 
     console.log('WebSocket URL:', wsUrl)
     let reconnectAttempts = 0
@@ -316,7 +316,7 @@ export default function Layout({ children }: LayoutProps) {
   }, [flowsPanelWidth, chatPanelWidth])
 
   return (
-    <div className="h-screen bg-dark-950">
+    <div className="h-screen bg-dark-950 overflow-hidden">
       {/* Background gradient overlay */}
       <div className="fixed inset-0 bg-gradient-dark pointer-events-none z-0" />
 
@@ -452,7 +452,7 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Chat Sidebar Toggle Button - Always on right edge */}
-      <div className={`tooltip-trigger fixed right-0 top-1/2 -translate-y-1/2 z-40 ${chatExpanded ? 'opacity-0 pointer-events-none' : 'opacity-100'} transition-all duration-300`}>
+      <div className={`tooltip-trigger !fixed right-0 top-1/2 -translate-y-1/2 z-40 ${chatExpanded ? 'opacity-0 pointer-events-none' : 'opacity-100'} transition-all duration-300`}>
         <button
           onClick={() => setChatExpanded(!chatExpanded)}
           className="rounded-l-xl glass-button-primary p-3 shadow-glow flex items-center gap-2"
