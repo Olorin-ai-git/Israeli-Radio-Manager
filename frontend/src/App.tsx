@@ -13,10 +13,29 @@ import Admin from './pages/Admin'
 import Login from './pages/Login'
 import ProtectedRoute from './components/Auth/ProtectedRoute'
 import ToastContainer from './components/Toast/ToastContainer'
+import { useAuth } from './contexts/AuthContext'
 
 function App() {
   const { i18n } = useTranslation()
+  const { dbUser } = useAuth()
   const [dir, setDir] = useState<'ltr' | 'rtl'>('ltr')
+
+  // Apply user preferences when logged in
+  useEffect(() => {
+    if (dbUser?.preferences) {
+      // Apply language preference
+      const userLang = dbUser.preferences.language
+      if (userLang && userLang !== i18n.language) {
+        i18n.changeLanguage(userLang)
+      }
+
+      // Apply theme preference (add class to document for CSS targeting)
+      const theme = dbUser.preferences.theme || 'dark'
+      document.documentElement.setAttribute('data-theme', theme)
+      document.body.classList.remove('theme-dark', 'theme-light')
+      document.body.classList.add(`theme-${theme}`)
+    }
+  }, [dbUser, i18n])
 
   useEffect(() => {
     // Set direction based on language

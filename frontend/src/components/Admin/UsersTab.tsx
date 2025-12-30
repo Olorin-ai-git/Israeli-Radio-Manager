@@ -11,7 +11,10 @@ import {
   Search,
   ChevronDown,
   Clock,
-  Mail
+  Mail,
+  Pencil,
+  X,
+  Save
 } from 'lucide-react'
 import api from '../../services/api'
 
@@ -29,6 +32,11 @@ interface User {
   is_active: boolean
   created_at: string
   last_login: string
+}
+
+interface EditFormData {
+  display_name: string
+  photo_url: string
 }
 
 const roleColors = {
@@ -55,6 +63,8 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
   const [roleFilter, setRoleFilter] = useState<string>('')
   const [showInactive, setShowInactive] = useState(false)
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
+  const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [editForm, setEditForm] = useState<EditFormData>({ display_name: '', photo_url: '' })
 
   // Fetch users
   const { data: usersData, isLoading, error } = useQuery({
@@ -99,6 +109,16 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
     }
   })
 
+  // Update user mutation
+  const updateUserMutation = useMutation({
+    mutationFn: ({ uid, data }: { uid: string; data: { display_name?: string; photo_url?: string } }) =>
+      api.updateUser(uid, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
+      setEditingUser(null)
+    }
+  })
+
   // Filter users by search query
   const users: User[] = usersData?.users || []
   const filteredUsers = users.filter(user =>
@@ -119,6 +139,27 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
+    })
+  }
+
+  const openEditModal = (user: User) => {
+    setEditForm({
+      display_name: user.display_name,
+      photo_url: user.photo_url || ''
+    })
+    setEditingUser(user)
+  }
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingUser) return
+
+    updateUserMutation.mutate({
+      uid: editingUser.firebase_uid,
+      data: {
+        display_name: editForm.display_name,
+        photo_url: editForm.photo_url || undefined
+      }
     })
   }
 
@@ -383,27 +424,40 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
 
                       {/* Actions */}
                       <td className="px-6 py-4">
-                        {user.is_active ? (
+                        <div className="flex items-center gap-2">
+                          {/* Edit Button */}
                           <button
-                            onClick={() => deactivateMutation.mutate(user.firebase_uid)}
-                            disabled={deactivateMutation.isPending}
-                            className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                            title={isRTL ? 'השבת משתמש' : 'Deactivate User'}
+                            onClick={() => openEditModal(user)}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm text-primary-400 hover:bg-primary-500/10 rounded-lg transition-colors"
+                            title={isRTL ? 'ערוך משתמש' : 'Edit User'}
                           >
-                            <UserX size={16} />
-                            <span>{isRTL ? 'השבת' : 'Deactivate'}</span>
+                            <Pencil size={16} />
+                            <span>{isRTL ? 'ערוך' : 'Edit'}</span>
                           </button>
-                        ) : (
-                          <button
-                            onClick={() => reactivateMutation.mutate(user.firebase_uid)}
-                            disabled={reactivateMutation.isPending}
-                            className="flex items-center gap-2 px-3 py-1.5 text-sm text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
-                            title={isRTL ? 'הפעל משתמש' : 'Reactivate User'}
-                          >
-                            <UserCheck size={16} />
-                            <span>{isRTL ? 'הפעל' : 'Reactivate'}</span>
-                          </button>
-                        )}
+
+                          {/* Deactivate/Reactivate Button */}
+                          {user.is_active ? (
+                            <button
+                              onClick={() => deactivateMutation.mutate(user.firebase_uid)}
+                              disabled={deactivateMutation.isPending}
+                              className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                              title={isRTL ? 'השבת משתמש' : 'Deactivate User'}
+                            >
+                              <UserX size={16} />
+                              <span>{isRTL ? 'השבת' : 'Deactivate'}</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => reactivateMutation.mutate(user.firebase_uid)}
+                              disabled={reactivateMutation.isPending}
+                              className="flex items-center gap-2 px-3 py-1.5 text-sm text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
+                              title={isRTL ? 'הפעל משתמש' : 'Reactivate User'}
+                            >
+                              <UserCheck size={16} />
+                              <span>{isRTL ? 'הפעל' : 'Reactivate'}</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
@@ -421,6 +475,103 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
           }
         </div>
       </div>
+
+      {/* Edit User Modal */}
+      {editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-dark-800 border border-dark-600 rounded-xl shadow-2xl w-full max-w-md mx-4">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dark-600">
+              <h3 className="text-lg font-semibold text-dark-100">
+                {isRTL ? 'עריכת משתמש' : 'Edit User'}
+              </h3>
+              <button
+                onClick={() => setEditingUser(null)}
+                className="p-2 text-dark-400 hover:text-dark-200 hover:bg-white/10 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
+              {/* User Info Header */}
+              <div className="flex items-center gap-4 p-4 bg-dark-700/50 rounded-lg">
+                {editingUser.photo_url ? (
+                  <img
+                    src={editingUser.photo_url}
+                    alt={editingUser.display_name}
+                    className="w-12 h-12 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-primary-500/20 flex items-center justify-center">
+                    <span className="text-primary-400 font-semibold text-lg">
+                      {editingUser.display_name.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                )}
+                <div>
+                  <div className="text-sm text-dark-400">{editingUser.email}</div>
+                  <div className={`inline-flex items-center gap-1 px-2 py-0.5 mt-1 rounded text-xs ${roleColors[editingUser.role]}`}>
+                    {roleLabels[editingUser.role][isRTL ? 'he' : 'en']}
+                  </div>
+                </div>
+              </div>
+
+              {/* Display Name */}
+              <div>
+                <label className="block text-sm font-medium text-dark-300 mb-2">
+                  {isRTL ? 'שם תצוגה' : 'Display Name'}
+                </label>
+                <input
+                  type="text"
+                  value={editForm.display_name}
+                  onChange={(e) => setEditForm({ ...editForm, display_name: e.target.value })}
+                  required
+                  className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-dark-100 placeholder-dark-400 focus:outline-none focus:border-primary-500"
+                  placeholder={isRTL ? 'הכנס שם תצוגה' : 'Enter display name'}
+                />
+              </div>
+
+              {/* Photo URL */}
+              <div>
+                <label className="block text-sm font-medium text-dark-300 mb-2">
+                  {isRTL ? 'כתובת URL לתמונה' : 'Photo URL'}
+                </label>
+                <input
+                  type="url"
+                  value={editForm.photo_url}
+                  onChange={(e) => setEditForm({ ...editForm, photo_url: e.target.value })}
+                  className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-dark-100 placeholder-dark-400 focus:outline-none focus:border-primary-500"
+                  placeholder={isRTL ? 'https://example.com/photo.jpg' : 'https://example.com/photo.jpg'}
+                />
+                <p className="text-xs text-dark-400 mt-1">
+                  {isRTL ? 'השאר ריק לשימוש באות ראשונה כאווטאר' : 'Leave empty to use initials as avatar'}
+                </p>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setEditingUser(null)}
+                  className="px-4 py-2 text-sm text-dark-300 hover:text-dark-100 hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  {isRTL ? 'ביטול' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={updateUserMutation.isPending || !editForm.display_name.trim()}
+                  className="flex items-center gap-2 px-4 py-2 text-sm bg-primary-500 text-white rounded-lg hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Save size={16} />
+                  <span>{updateUserMutation.isPending ? (isRTL ? 'שומר...' : 'Saving...') : (isRTL ? 'שמור' : 'Save')}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

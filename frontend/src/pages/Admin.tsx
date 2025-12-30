@@ -13,15 +13,15 @@ export default function Admin() {
   const { i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
   const { user, signOut } = useAuth()
-  const [activeTab, setActiveTab] = useState('system')
+  const [activeTab, setActiveTab] = useState('users')
 
   const tabs = [
+    { id: 'users', label: isRTL ? 'משתמשים' : 'Users', icon: Users },
     { id: 'system', label: isRTL ? 'הגדרות מערכת' : 'System Config', icon: Settings },
     { id: 'agent', label: isRTL ? 'הגדרות AI' : 'AI Agent', icon: Bot },
     { id: 'storage', label: isRTL ? 'אחסון וסנכרון' : 'Storage & Sync', icon: HardDrive },
     { id: 'content', label: isRTL ? 'ניהול תוכן' : 'Content Management', icon: FileText },
     { id: 'server', label: isRTL ? 'ניהול שרת' : 'Server Management', icon: Activity },
-    { id: 'users', label: isRTL ? 'משתמשים' : 'Users', icon: Users },
   ]
 
   return (
