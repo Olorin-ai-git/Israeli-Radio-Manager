@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from google.cloud import storage
 
 from app.services.firebase_auth import firebase_auth
 from app.services.google_drive import GoogleDriveService
@@ -184,20 +183,26 @@ async def get_storage_stats(
 
     # GCS bucket statistics
     try:
-        storage_client = storage.Client()
-        bucket = storage_client.bucket(env_settings.gcs_bucket_name)
+        # Try to get GCS service from app state if available
+        gcs_service = getattr(request.app.state, 'content_sync', None)
+        gcs_service = getattr(gcs_service, 'gcs', None) if gcs_service else None
 
-        total_size = 0
-        file_count = 0
-        for blob in bucket.list_blobs():
-            total_size += blob.size
-            file_count += 1
-
-        stats["gcs"] = {
-            "size_bytes": total_size,
-            "file_count": file_count,
-            "bucket_name": env_settings.gcs_bucket_name
-        }
+        if gcs_service and gcs_service.is_available:
+            files = await gcs_service.list_files()
+            total_size = sum(f.get("size", 0) for f in files)
+            file_count = len(files)
+            stats["gcs"] = {
+                "size_bytes": total_size,
+                "file_count": file_count,
+                "bucket_name": env_settings.gcs_bucket_name
+            }
+        else:
+            stats["gcs"] = {
+                "size_bytes": 0,
+                "file_count": 0,
+                "bucket_name": env_settings.gcs_bucket_name or "Not configured",
+                "available": False
+            }
     except Exception as e:
         stats["gcs"] = {
             "error": str(e),
@@ -391,12 +396,16 @@ async def get_orphaned_files(
 
     # Check GCS bucket
     try:
-        storage_client = storage.Client()
-        bucket = storage_client.bucket(env_settings.gcs_bucket_name)
+        gcs_service = getattr(request.app.state, 'content_sync', None)
+        gcs_service = getattr(gcs_service, 'gcs', None) if gcs_service else None
 
-        for blob in bucket.list_blobs():
-            if blob.name not in db_files:
-                orphaned["gcs"].append(blob.name)
+        if gcs_service and gcs_service.is_available:
+            files = await gcs_service.list_files()
+            for f in files:
+                if f.get("name") not in db_files:
+                    orphaned["gcs"].append(f.get("name"))
+        else:
+            orphaned["gcs_error"] = "GCS not available"
     except Exception as e:
         orphaned["gcs_error"] = str(e)
 
@@ -494,6 +503,7 @@ async def get_content_stats(
     """
     Get overall content statistics:
     - Total songs/shows/commercials
+    - Jingles and voice presets counts
     - Content by genre
     - Average play count
     - Storage breakdown by type
@@ -535,12 +545,37 @@ async def get_content_stats(
     ]).to_list(length=1)
     avg_play_count = avg_play_count_result[0].get("avg_play_count", 0) if avg_play_count_result else 0
 
+    # Count voice presets from database
+    total_voice_presets = await db.voice_presets.count_documents({})
+
+    # Count jingles and other TTS cache files
+    tts_stats = {
+        "jingles": 0,
+        "announcements": 0,
+        "time_checks": 0
+    }
+
+    tts_cache_path = Path(env_settings.cache_dir) / "tts_cache" if env_settings.cache_dir else Path("./tts_cache")
+
+    # Also check direct tts_cache path (common location)
+    for base_path in [tts_cache_path, Path("./tts_cache")]:
+        if base_path.exists():
+            for category in ["jingles", "announcements", "time_checks"]:
+                category_path = base_path / category
+                if category_path.exists():
+                    tts_stats[category] = len(list(category_path.glob("*.wav")))
+            break  # Use first existing path
+
     return {
         "total_content": total_content,
         "by_type": {
             "songs": total_songs,
             "shows": total_shows,
-            "commercials": total_commercials
+            "commercials": total_commercials,
+            "jingles": tts_stats["jingles"],
+            "voice_presets": total_voice_presets,
+            "announcements": tts_stats["announcements"],
+            "time_checks": tts_stats["time_checks"]
         },
         "by_genre": by_genre,
         "breakdown_by_type": by_type,

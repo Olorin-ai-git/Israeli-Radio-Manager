@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, TrendingUp, Music, Tv, Radio } from 'lucide-react'
+import { AlertCircle, TrendingUp, Music, Tv, Radio, Mic, User, Clock, MessageSquare } from 'lucide-react'
 import api from '../../services/api'
 
 interface ContentManagementTabProps {
@@ -74,6 +74,10 @@ export default function ContentManagementTab({ isRTL }: ContentManagementTabProp
           </h3>
         </div>
 
+        {/* Main Content Types */}
+        <h4 className="text-sm font-medium text-dark-300 mb-3">
+          {isRTL ? 'תוכן ראשי' : 'Main Content'}
+        </h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           {/* Total Songs */}
           <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/30">
@@ -115,6 +119,72 @@ export default function ContentManagementTab({ isRTL }: ContentManagementTabProp
                 </div>
                 <div className="text-sm text-dark-400">
                   {isRTL ? 'פרסומות' : 'Commercials'}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* TTS & Generated Content */}
+        <h4 className="text-sm font-medium text-dark-300 mb-3">
+          {isRTL ? 'ג\'ינגלים וקולות' : 'Jingles & Voices'}
+        </h4>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          {/* Jingles */}
+          <div className="p-4 rounded-lg bg-pink-500/10 border border-pink-500/30">
+            <div className="flex items-center gap-3">
+              <Mic size={24} className="text-pink-400" />
+              <div>
+                <div className="text-2xl font-bold text-dark-100">
+                  {contentStats?.by_type?.jingles || 0}
+                </div>
+                <div className="text-sm text-dark-400">
+                  {isRTL ? "ג'ינגלים" : 'Jingles'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Voice Presets */}
+          <div className="p-4 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
+            <div className="flex items-center gap-3">
+              <User size={24} className="text-cyan-400" />
+              <div>
+                <div className="text-2xl font-bold text-dark-100">
+                  {contentStats?.by_type?.voice_presets || 0}
+                </div>
+                <div className="text-sm text-dark-400">
+                  {isRTL ? 'קולות' : 'Voices'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Announcements */}
+          <div className="p-4 rounded-lg bg-indigo-500/10 border border-indigo-500/30">
+            <div className="flex items-center gap-3">
+              <MessageSquare size={24} className="text-indigo-400" />
+              <div>
+                <div className="text-2xl font-bold text-dark-100">
+                  {contentStats?.by_type?.announcements || 0}
+                </div>
+                <div className="text-sm text-dark-400">
+                  {isRTL ? 'הכרזות' : 'Announcements'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Time Checks */}
+          <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/30">
+            <div className="flex items-center gap-3">
+              <Clock size={24} className="text-orange-400" />
+              <div>
+                <div className="text-2xl font-bold text-dark-100">
+                  {contentStats?.by_type?.time_checks || 0}
+                </div>
+                <div className="text-sm text-dark-400">
+                  {isRTL ? 'שעון' : 'Time Checks'}
                 </div>
               </div>
             </div>

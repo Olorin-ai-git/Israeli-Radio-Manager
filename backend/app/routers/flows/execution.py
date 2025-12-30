@@ -740,7 +740,6 @@ async def _execute_play_jingle(
     Returns True if playback was triggered.
     """
     jingle_type = action.get("jingle_type", "station_id")  # station_id, bumper, transition
-    logger.info(f"Looking for jingles of type: {jingle_type}")
 
     # Query for jingles by type
     query = {
@@ -755,19 +754,7 @@ async def _execute_play_jingle(
             {"genre": jingle_type}
         ]
 
-    logger.info(f"Jingle query: {query}")
-    logger.info(f"Database name: {db.name}")
-
-    # Debug: count all content
-    total_content = await db.content.count_documents({})
-    logger.info(f"Total content documents: {total_content}")
-
-    # Debug: count all jingles
-    jingle_count = await db.content.count_documents({"type": "jingle"})
-    logger.info(f"Total jingle documents: {jingle_count}")
-
     jingles = await db.content.find(query).to_list(20)
-    logger.info(f"Found {len(jingles)} jingles matching query")
 
     # Fallback: get any jingle if specific type not found
     if not jingles:
