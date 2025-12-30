@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Shield, LogOut, User, Settings, Bot, HardDrive, FileText, Activity } from 'lucide-react'
+import { Shield, LogOut, User, Settings, Bot, HardDrive, FileText, Activity, Users } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import SystemConfigTab from '../components/Admin/SystemConfigTab'
 import AgentSettingsTab from '../components/Admin/AgentSettingsTab'
 import StorageSyncTab from '../components/Admin/StorageSyncTab'
 import ContentManagementTab from '../components/Admin/ContentManagementTab'
 import ServerManagementTab from '../components/Admin/ServerManagementTab'
+import UsersTab from '../components/Admin/UsersTab'
 
 export default function Admin() {
   const { i18n } = useTranslation()
@@ -20,6 +21,7 @@ export default function Admin() {
     { id: 'storage', label: isRTL ? 'אחסון וסנכרון' : 'Storage & Sync', icon: HardDrive },
     { id: 'content', label: isRTL ? 'ניהול תוכן' : 'Content Management', icon: FileText },
     { id: 'server', label: isRTL ? 'ניהול שרת' : 'Server Management', icon: Activity },
+    { id: 'users', label: isRTL ? 'משתמשים' : 'Users', icon: Users },
   ]
 
   return (
@@ -85,6 +87,7 @@ export default function Admin() {
         {activeTab === 'storage' && <StorageSyncTab isRTL={isRTL} />}
         {activeTab === 'content' && <ContentManagementTab isRTL={isRTL} />}
         {activeTab === 'server' && <ServerManagementTab isRTL={isRTL} />}
+        {activeTab === 'users' && <UsersTab isRTL={isRTL} />}
       </div>
     </div>
   )
