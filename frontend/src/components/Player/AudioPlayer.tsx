@@ -191,6 +191,8 @@ export default function AudioPlayer({
   const [emergencyMode, setEmergencyMode] = useState(false) // Emergency fallback mode
   const [emergencyPlaylist, setEmergencyPlaylist] = useState<Array<{name: string, url: string}>>([])
   const emergencyIndexRef = useRef(0) // Current position in emergency playlist
+  const emergencyErrorsRef = useRef(0) // Track consecutive emergency errors
+  const MAX_EMERGENCY_ERRORS = 3 // Stop trying emergency songs after this many failures
   const emergencyRetryIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -586,7 +588,12 @@ export default function AudioPlayer({
     const absoluteUrl = api.getEmergencyStreamUrl(song.url)
     audioRef.current.src = absoluteUrl
     audioRef.current.volume = isMuted ? 0 : volume / 100
-    audioRef.current.play().catch(console.error)
+    audioRef.current.play()
+      .then(() => {
+        // Reset error counter on successful play
+        emergencyErrorsRef.current = 0
+      })
+      .catch(console.error)
     setIsPlaying(true)
     setHasError(false)
 
@@ -641,8 +648,22 @@ export default function AudioPlayer({
     setIsPlaying(false)
     needsFadeInRef.current = false // Don't try to fade in on error
 
-    // In emergency mode, skip to next emergency song
+    // In emergency mode, skip to next emergency song (but limit retries)
     if (emergencyMode) {
+      emergencyErrorsRef.current++
+      if (emergencyErrorsRef.current >= MAX_EMERGENCY_ERRORS) {
+        // Too many emergency failures - give up and show error
+        toast.error(isRTL
+          ? 'מצב חירום נכשל. בבקשה בדוק את החיבור לאינטרנט.'
+          : 'Emergency mode failed. Please check your internet connection.')
+        setEmergencyMode(false)
+        emergencyErrorsRef.current = 0
+        if (emergencyRetryIntervalRef.current) {
+          clearInterval(emergencyRetryIntervalRef.current)
+          emergencyRetryIntervalRef.current = null
+        }
+        return
+      }
       handleEmergencyTrackEnded()
       return
     }
