@@ -236,3 +236,13 @@ async def broadcast_calendar_update(action: str = "updated"):
         "action": action,
         "timestamp": datetime.utcnow().isoformat()
     }, channel="all")
+
+
+async def broadcast_announcement(text: str):
+    """Broadcast an announcement to all connected clients."""
+    logger.info(f"Broadcasting announcement: {text[:50]}... to {len(manager.active_connections)} clients")
+    await manager.broadcast({
+        "type": "announcement",
+        "text": text,
+        "timestamp": datetime.utcnow().isoformat()
+    }, channel="all")

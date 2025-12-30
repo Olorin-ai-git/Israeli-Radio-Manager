@@ -58,9 +58,17 @@ function getActionSummary(action: StudioAction, isRTL: boolean): string {
     case 'play_show':
       return action.content_title || (isRTL ? 'בחר תוכן' : 'Select content')
 
-    case 'play_commercials':
-      const count = action.commercial_count || 0
-      return `${count} ${isRTL ? 'פרסומות' : 'ads'}`
+    case 'play_commercials': {
+      const count = action.commercial_count || 1
+      const batchLetter = action.batch_number
+        ? String.fromCharCode(64 + action.batch_number) // 1->A, 2->B, etc.
+        : null
+      const batchText = batchLetter
+        ? (isRTL ? `באצ' ${batchLetter}` : `Batch ${batchLetter}`)
+        : (isRTL ? 'הכל' : 'All')
+      const repeatText = count > 1 ? ` × ${count}` : ''
+      return `${batchText}${repeatText}`
+    }
 
     case 'wait':
       return action.duration_minutes

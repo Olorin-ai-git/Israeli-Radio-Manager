@@ -39,6 +39,23 @@ const GENRES = [
   'mediterranean', 'classic', 'hebrew', 'mixed', 'all'
 ]
 
+// Commercial batch letters
+const BATCH_LETTERS = ['A', 'B', 'C', 'D', 'E'] as const
+type BatchLetter = typeof BATCH_LETTERS[number] | 'all'
+
+// Convert batch number to letter (1 -> A, 2 -> B, etc.)
+const batchNumberToLetter = (num: number | undefined): BatchLetter => {
+  if (!num || num < 1 || num > BATCH_LETTERS.length) return 'all'
+  return BATCH_LETTERS[num - 1]
+}
+
+// Convert batch letter to number (A -> 1, B -> 2, etc.)
+const batchLetterToNumber = (letter: BatchLetter): number | undefined => {
+  if (letter === 'all') return undefined
+  const index = BATCH_LETTERS.indexOf(letter as typeof BATCH_LETTERS[number])
+  return index >= 0 ? index + 1 : undefined
+}
+
 export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfigPanelProps) {
   const { updateAction } = useActionsStudioStore()
 
@@ -47,7 +64,8 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
   const [durationMinutes, setDurationMinutes] = useState(action.duration_minutes || 30)
   const [songCount, setSongCount] = useState(action.song_count || 0)
   const [useDuration, setUseDuration] = useState(!action.song_count)
-  const [commercialCount, setCommercialCount] = useState(action.commercial_count || 2)
+  const [commercialCount, setCommercialCount] = useState(action.commercial_count || 1)
+  const [batchLetter, setBatchLetter] = useState<BatchLetter>(batchNumberToLetter(action.batch_number))
   const [volumeLevel, setVolumeLevel] = useState(action.volume_level ?? 80)
   const [announcementText, setAnnouncementText] = useState(action.announcement_text || '')
   const [description, setDescription] = useState(action.description || '')
@@ -105,6 +123,7 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
         break
       case 'play_commercials':
         updates.commercial_count = commercialCount
+        updates.batch_number = batchLetterToNumber(batchLetter)
         break
       case 'wait':
         updates.duration_minutes = durationMinutes
@@ -263,14 +282,28 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
           {action.action_type === 'play_commercials' && (
             <>
               <ButtonGroup
-                label={isRTL ? 'מספר פרסומות' : 'Number of commercials'}
+                label={isRTL ? 'באצ\' פרסומות' : 'Commercial Batch'}
+                value={batchLetter}
+                onChange={(value) => setBatchLetter(value as BatchLetter)}
+                options={[
+                  { value: 'all', label: isRTL ? 'הכל' : 'All' },
+                  ...BATCH_LETTERS.map((letter) => ({ value: letter, label: letter }))
+                ]}
+              />
+              <ButtonGroup
+                label={isRTL ? 'מספר חזרות' : 'Repeat count'}
                 value={commercialCount}
                 onChange={setCommercialCount}
-                options={[1, 2, 3, 4, 5].map((n) => ({ value: n, label: n.toString() }))}
+                options={[1, 2, 3, 4, 5].map((n) => ({ value: n, label: `${n}x` }))}
               />
               {commercials && (
                 <p className="text-xs text-dark-400">
                   {commercials.length} {isRTL ? 'פרסומות זמינות' : 'commercials available'}
+                  {batchLetter !== 'all' && (
+                    <span className="text-primary-400">
+                      {' '}• {isRTL ? `באצ' ${batchLetter}` : `Batch ${batchLetter}`}
+                    </span>
+                  )}
                 </p>
               )}
             </>

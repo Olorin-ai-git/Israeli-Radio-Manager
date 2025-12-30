@@ -1,5 +1,6 @@
 """Flow execution logic."""
 
+import asyncio
 import logging
 import random
 from datetime import datetime, timedelta
@@ -7,7 +8,7 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 
 from app.models.flow import FlowActionType
-from app.routers.websocket import broadcast_scheduled_playback, broadcast_queue_update
+from app.routers.websocket import broadcast_scheduled_playback, broadcast_queue_update, broadcast_announcement
 from app.routers.playback import add_to_queue as add_to_backend_queue, get_queue as get_backend_queue
 
 logger = logging.getLogger(__name__)
@@ -40,10 +41,31 @@ async def run_flow_actions(db, flow: dict, audio_player=None) -> int:
             if first_action_done:
                 is_first_playback_action = False
 
+        elif action_type == FlowActionType.PLAY_CONTENT.value:
+            first_action_done = await _execute_play_content(
+                db, action, is_first_playback_action, audio_player
+            )
+            if first_action_done:
+                is_first_playback_action = False
+
+        elif action_type == FlowActionType.PLAY_SHOW.value:
+            first_action_done = await _execute_play_show(
+                db, action, is_first_playback_action, audio_player
+            )
+            if first_action_done:
+                is_first_playback_action = False
+
         elif action_type == FlowActionType.SET_VOLUME.value:
             volume = action.get("volume_level", 80)
+            logger.info(f"Setting volume to {volume}%")
             if audio_player:
                 audio_player.set_volume(volume)
+
+        elif action_type == FlowActionType.WAIT.value:
+            await _execute_wait(action)
+
+        elif action_type == FlowActionType.ANNOUNCEMENT.value:
+            await _execute_announcement(db, action, audio_player)
 
         actions_completed += 1
 
@@ -337,3 +359,246 @@ def _add_commercials_to_vlc(audio_player, commercials: list):
             content_type="commercial"
         )
         audio_player.add_to_queue(track)
+
+
+# ============================================================================
+# Play Content Action
+# ============================================================================
+
+async def _execute_play_content(
+    db, action: dict, is_first_playback_action: bool, audio_player=None
+) -> bool:
+    """
+    Execute a play_content action - plays specific content by ID.
+    Returns True if playback was triggered.
+    """
+    content_id = action.get("content_id")
+    content_title = action.get("content_title")
+
+    if not content_id and not content_title:
+        logger.warning("play_content action missing content_id and content_title")
+        return False
+
+    # Try to find content by ID first, then by title
+    content = None
+    if content_id:
+        try:
+            content = await db.content.find_one({
+                "_id": ObjectId(content_id),
+                "active": True
+            })
+        except Exception as e:
+            logger.warning(f"Failed to fetch content by ID {content_id}: {e}")
+
+    if not content and content_title:
+        # Search by title (case-insensitive)
+        content = await db.content.find_one({
+            "title": {"$regex": f"^{content_title}$", "$options": "i"},
+            "active": True
+        })
+
+    if not content:
+        logger.warning(f"Content not found: id={content_id}, title={content_title}")
+        return False
+
+    logger.info(f"Playing content: {content.get('title')} (type: {content.get('type')})")
+
+    # Update last_played
+    await db.content.update_one(
+        {"_id": content["_id"]},
+        {"$set": {"last_played": datetime.utcnow()}}
+    )
+
+    # Build content data for broadcast
+    content_data = {
+        "_id": str(content["_id"]),
+        "title": content.get("title", "Unknown"),
+        "artist": content.get("artist"),
+        "type": content.get("type", "song"),
+        "duration_seconds": content.get("duration_seconds", 0),
+        "genre": content.get("genre"),
+        "metadata": content.get("metadata", {})
+    }
+
+    if is_first_playback_action:
+        # Play immediately
+        await broadcast_scheduled_playback(content_data)
+    else:
+        # Add to queue
+        add_to_backend_queue(_content_to_queue_item(content))
+        await broadcast_queue_update(get_backend_queue())
+
+    # Also add to VLC queue if available
+    if audio_player:
+        _add_content_to_vlc(audio_player, content)
+
+    return True
+
+
+# ============================================================================
+# Play Show Action
+# ============================================================================
+
+async def _execute_play_show(
+    db, action: dict, is_first_playback_action: bool, audio_player=None
+) -> bool:
+    """
+    Execute a play_show action - plays a specific show by ID.
+    Returns True if playback was triggered.
+    """
+    content_id = action.get("content_id")
+    content_title = action.get("content_title")
+
+    if not content_id and not content_title:
+        logger.warning("play_show action missing content_id and content_title")
+        return False
+
+    # Try to find show by ID first, then by title
+    show = None
+    if content_id:
+        try:
+            show = await db.content.find_one({
+                "_id": ObjectId(content_id),
+                "type": "show",
+                "active": True
+            })
+        except Exception as e:
+            logger.warning(f"Failed to fetch show by ID {content_id}: {e}")
+
+    if not show and content_title:
+        # Search by title (case-insensitive)
+        show = await db.content.find_one({
+            "title": {"$regex": f"^{content_title}$", "$options": "i"},
+            "type": "show",
+            "active": True
+        })
+
+    # If still not found, try without type restriction (might be labeled differently)
+    if not show and content_title:
+        show = await db.content.find_one({
+            "title": {"$regex": f"^{content_title}$", "$options": "i"},
+            "active": True
+        })
+
+    if not show:
+        logger.warning(f"Show not found: id={content_id}, title={content_title}")
+        return False
+
+    logger.info(f"Playing show: {show.get('title')} (duration: {show.get('duration_seconds', 0)}s)")
+
+    # Update last_played
+    await db.content.update_one(
+        {"_id": show["_id"]},
+        {"$set": {"last_played": datetime.utcnow()}}
+    )
+
+    # Build content data for broadcast
+    content_data = {
+        "_id": str(show["_id"]),
+        "title": show.get("title", "Unknown Show"),
+        "artist": show.get("artist"),
+        "type": "show",
+        "duration_seconds": show.get("duration_seconds", 0),
+        "genre": show.get("genre"),
+        "metadata": show.get("metadata", {})
+    }
+
+    if is_first_playback_action:
+        # Play immediately
+        await broadcast_scheduled_playback(content_data)
+    else:
+        # Add to queue
+        add_to_backend_queue(_content_to_queue_item(show))
+        await broadcast_queue_update(get_backend_queue())
+
+    # Also add to VLC queue if available
+    if audio_player:
+        _add_content_to_vlc(audio_player, show)
+
+    return True
+
+
+# ============================================================================
+# Wait Action
+# ============================================================================
+
+async def _execute_wait(action: dict) -> None:
+    """
+    Execute a wait action - pauses flow execution for specified duration.
+    """
+    duration_minutes = action.get("duration_minutes", 0)
+
+    if duration_minutes <= 0:
+        logger.warning("wait action has no duration specified")
+        return
+
+    duration_seconds = duration_minutes * 60
+    logger.info(f"Waiting for {duration_minutes} minutes ({duration_seconds} seconds)...")
+
+    # Use asyncio.sleep for non-blocking wait
+    await asyncio.sleep(duration_seconds)
+
+    logger.info(f"Wait completed ({duration_minutes} minutes)")
+
+
+# ============================================================================
+# Announcement Action
+# ============================================================================
+
+async def _execute_announcement(db, action: dict, audio_player=None) -> None:
+    """
+    Execute an announcement action - broadcasts announcement text to clients.
+    In a full implementation, this could integrate with TTS for audio playback.
+    """
+    announcement_text = action.get("announcement_text", "")
+
+    if not announcement_text.strip():
+        logger.warning("announcement action has no text")
+        return
+
+    logger.info(f"Broadcasting announcement: {announcement_text[:50]}...")
+
+    # Broadcast announcement to connected clients via WebSocket
+    await broadcast_announcement(announcement_text)
+
+    # Log the announcement
+    try:
+        await db.announcements.insert_one({
+            "text": announcement_text,
+            "created_at": datetime.utcnow(),
+            "source": "flow_action"
+        })
+    except Exception as e:
+        logger.warning(f"Failed to log announcement: {e}")
+
+
+# ============================================================================
+# Additional Helper Functions
+# ============================================================================
+
+def _content_to_queue_item(content: dict) -> dict:
+    """Convert a content document to a queue item."""
+    return {
+        "_id": str(content["_id"]),
+        "title": content.get("title", "Unknown"),
+        "artist": content.get("artist"),
+        "type": content.get("type", "song"),
+        "duration_seconds": content.get("duration_seconds", 0),
+        "genre": content.get("genre"),
+        "metadata": content.get("metadata", {}),
+        "batches": content.get("batches", [])
+    }
+
+
+def _add_content_to_vlc(audio_player, content: dict):
+    """Add content to VLC audio player queue."""
+    from app.services.audio_player import TrackInfo
+    track = TrackInfo(
+        content_id=str(content["_id"]),
+        title=content.get("title", "Unknown"),
+        artist=content.get("artist"),
+        duration_seconds=content.get("duration_seconds", 0),
+        file_path=content.get("local_cache_path", ""),
+        content_type=content.get("type", "song")
+    )
+    audio_player.add_to_queue(track)
