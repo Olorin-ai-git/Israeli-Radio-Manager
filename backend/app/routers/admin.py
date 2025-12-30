@@ -206,7 +206,9 @@ async def get_storage_stats(
 
     # Google Drive statistics
     try:
-        drive_service = GoogleDriveService()
+        drive_service = GoogleDriveService(
+            service_account_file=env_settings.google_service_account_file
+        )
         drive_service.authenticate()  # Initialize the service
         # Get quota information from Drive API
         about = drive_service._service.about().get(fields="storageQuota").execute()

@@ -4,6 +4,7 @@ import logging
 from typing import List, Optional
 from pathlib import Path
 from datetime import datetime
+from io import BytesIO
 
 from fastapi import APIRouter, HTTPException, Request
 
