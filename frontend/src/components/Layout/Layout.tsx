@@ -406,6 +406,22 @@ export default function Layout({ children }: LayoutProps) {
                 </div>
               )
             })}
+
+            {/* Chat Toggle Button */}
+            <div className={navCollapsed ? 'tooltip-trigger' : ''}>
+              <button
+                onClick={() => setChatExpanded(!chatExpanded)}
+                className={`nav-item glass-button-primary ${navCollapsed ? 'justify-center px-2 mx-2' : 'mx-3'}`}
+              >
+                <MessageCircle size={20} />
+                {!navCollapsed && <span className="font-medium">{isRTL ? 'דבר עם הסוכן' : 'Chat with Agent'}</span>}
+              </button>
+              {navCollapsed && (
+                <div className="tooltip tooltip-left">
+                  {isRTL ? 'דבר עם הסוכן' : 'Chat with Agent'}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Language Toggle */}
@@ -449,22 +465,6 @@ export default function Layout({ children }: LayoutProps) {
             </p>
           </div>
         </main>
-      </div>
-
-      {/* Chat Sidebar Toggle Button - Always on right edge */}
-      <div className={`tooltip-trigger !fixed right-0 top-1/2 -translate-y-1/2 z-40 ${chatExpanded ? 'opacity-0 pointer-events-none' : 'opacity-100'} transition-all duration-300`}>
-        <button
-          onClick={() => setChatExpanded(!chatExpanded)}
-          className="rounded-l-xl glass-button-primary p-3 shadow-glow flex items-center gap-2"
-        >
-          <MessageCircle size={24} />
-          <span className="text-sm font-medium hidden md:inline">
-            {isRTL ? 'דבר עם הסוכן' : 'Chat'}
-          </span>
-        </button>
-        <div className="tooltip tooltip-left">
-          {t('chat.expand')}
-        </div>
       </div>
 
       {/* Chat Sidebar Backdrop */}
