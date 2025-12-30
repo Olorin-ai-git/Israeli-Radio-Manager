@@ -307,6 +307,10 @@ class TaskExecutor:
                 logger.info(f"Broadcasting playback to browser: {content.get('title')}")
                 await broadcast_scheduled_playback(content_data)
 
+                # Notify flow monitor about playback
+                from app.services.flow_monitor import notify_playback_started
+                notify_playback_started(content_data, content.get("duration_seconds", 0))
+
                 # Log playback
                 await self.db.playback_logs.insert_one({
                     "content_id": content["_id"],
@@ -488,7 +492,10 @@ class TaskExecutor:
         }
 
     async def _execute_add_queue(self, task: ParsedTask) -> Dict[str, Any]:
-        """Add content to queue."""
+        """Add content to queue at the TOP (position 0)."""
+        from app.routers.playback import add_to_queue, get_queue
+        from app.routers.websocket import broadcast_queue_update
+
         title = self._to_regex_string(task.parameters.get("title"))
 
         if not title:
@@ -507,16 +514,28 @@ class TaskExecutor:
         })
 
         if content:
-            await self.db.playback_queue.insert_one({
-                "content_id": content["_id"],
-                "priority": 50,
-                "requested_at": datetime.utcnow(),
-                "requested_by": "user_chat"
-            })
+            # Build queue item
+            queue_item = {
+                "_id": str(content["_id"]),
+                "title": content.get("title", "Unknown"),
+                "artist": content.get("artist"),
+                "type": content.get("type", "song"),
+                "duration_seconds": content.get("duration_seconds", 0),
+                "genre": content.get("genre"),
+                "metadata": content.get("metadata", {}),
+                "batches": content.get("batches", [])
+            }
+
+            # Insert at TOP of queue (position 0)
+            add_to_queue(queue_item, position=0)
+
+            # Broadcast queue update
+            await broadcast_queue_update(get_queue())
+
             return {
                 "success": True,
-                "message": f"✅ '{content['title']}' נוסף לתור",
-                "message_en": f"'{content['title']}' added to queue"
+                "message": f"✅ '{content['title']}' נוסף לראש התור",
+                "message_en": f"'{content['title']}' added to top of queue"
             }
 
         return {
@@ -639,6 +658,10 @@ class TaskExecutor:
             # Broadcast first song for immediate playback
             logger.info(f"Genre change: playing first song - {first_song.get('title')}")
             await broadcast_scheduled_playback(content_data)
+
+            # Notify flow monitor about playback
+            from app.services.flow_monitor import notify_playback_started
+            notify_playback_started(content_data, first_song.get("duration_seconds", 0))
 
             # Queue remaining songs
             from app.routers.websocket import broadcast_queue_tracks

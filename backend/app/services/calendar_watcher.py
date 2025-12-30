@@ -204,6 +204,7 @@ class CalendarWatcherService:
 
             # Broadcast to frontend via WebSocket for browser playback
             from app.routers.websocket import broadcast_scheduled_playback
+            from app.services.flow_monitor import notify_playback_started
             content_data = {
                 "_id": str(content["_id"]),
                 "title": content.get("title"),
@@ -215,6 +216,7 @@ class CalendarWatcherService:
             }
             logger.info(f"Broadcasting scheduled playback to frontend: {content.get('title')}")
             await broadcast_scheduled_playback(content_data)
+            notify_playback_started(content_data, content.get("duration_seconds", 0))
 
             # Log the playback
             await self.db.playback_logs.insert_one({
@@ -330,6 +332,7 @@ class CalendarWatcherService:
 
                 # Broadcast to frontend via WebSocket for browser playback
                 from app.routers.websocket import broadcast_scheduled_playback
+                from app.services.flow_monitor import notify_playback_started
                 content_data = {
                     "_id": str(content["_id"]),
                     "title": content.get("title"),
@@ -341,6 +344,7 @@ class CalendarWatcherService:
                 }
                 logger.info(f"Broadcasting scheduled playback from task: {content.get('title')}")
                 await broadcast_scheduled_playback(content_data)
+                notify_playback_started(content_data, content.get("duration_seconds", 0))
 
                 # Mark as completed
                 await self.db.scheduled_tasks.update_one(

@@ -10,6 +10,7 @@ from bson import ObjectId
 from app.models.flow import FlowActionType
 from app.routers.websocket import broadcast_scheduled_playback, broadcast_queue_update, broadcast_announcement
 from app.routers.playback import add_to_queue as add_to_backend_queue, get_queue as get_backend_queue
+from app.services.flow_monitor import notify_playback_started
 
 logger = logging.getLogger(__name__)
 
@@ -165,16 +166,17 @@ async def _execute_play_genre(
             "metadata": first_song.get("metadata", {})
         }
         await broadcast_scheduled_playback(content_data)
+        notify_playback_started(content_data, first_song.get("duration_seconds", 0))
 
-        # Queue remaining songs
+        # Queue remaining songs at the TOP of the queue
         if len(selected_songs) > 1:
-            for song in selected_songs[1:]:
-                add_to_backend_queue(_song_to_queue_item(song))
+            for idx, song in enumerate(selected_songs[1:]):
+                add_to_backend_queue(_song_to_queue_item(song), position=idx)
             await broadcast_queue_update(get_backend_queue())
     else:
-        # Subsequent actions: just queue all songs
-        for song in selected_songs:
-            add_to_backend_queue(_song_to_queue_item(song))
+        # Subsequent actions: insert all songs at TOP of queue
+        for idx, song in enumerate(selected_songs):
+            add_to_backend_queue(_song_to_queue_item(song), position=idx)
         await broadcast_queue_update(get_backend_queue())
 
     # Also add to VLC queue if available
@@ -241,16 +243,17 @@ async def _execute_play_commercials(
             "metadata": first_commercial.get("metadata", {})
         }
         await broadcast_scheduled_playback(content_data)
+        notify_playback_started(content_data, first_commercial.get("duration_seconds", 0))
 
-        # Queue remaining commercials
+        # Queue remaining commercials at the TOP of the queue
         if len(all_commercials) > 1:
-            for commercial in all_commercials[1:]:
-                add_to_backend_queue(_commercial_to_queue_item(commercial))
+            for idx, commercial in enumerate(all_commercials[1:]):
+                add_to_backend_queue(_commercial_to_queue_item(commercial), position=idx)
             await broadcast_queue_update(get_backend_queue())
     else:
-        # Subsequent actions: just queue all commercials
-        for commercial in all_commercials:
-            add_to_backend_queue(_commercial_to_queue_item(commercial))
+        # Subsequent actions: insert all commercials at TOP of queue
+        for idx, commercial in enumerate(all_commercials):
+            add_to_backend_queue(_commercial_to_queue_item(commercial), position=idx)
         await broadcast_queue_update(get_backend_queue())
 
     # Also add to VLC queue if available
@@ -423,9 +426,10 @@ async def _execute_play_content(
     if is_first_playback_action:
         # Play immediately
         await broadcast_scheduled_playback(content_data)
+        notify_playback_started(content_data, content.get("duration_seconds", 0))
     else:
-        # Add to queue
-        add_to_backend_queue(_content_to_queue_item(content))
+        # Insert at TOP of queue
+        add_to_backend_queue(_content_to_queue_item(content), position=0)
         await broadcast_queue_update(get_backend_queue())
 
     # Also add to VLC queue if available
@@ -506,9 +510,10 @@ async def _execute_play_show(
     if is_first_playback_action:
         # Play immediately
         await broadcast_scheduled_playback(content_data)
+        notify_playback_started(content_data, show.get("duration_seconds", 0))
     else:
-        # Add to queue
-        add_to_backend_queue(_content_to_queue_item(show))
+        # Insert at TOP of queue
+        add_to_backend_queue(_content_to_queue_item(show), position=0)
         await broadcast_queue_update(get_backend_queue())
 
     # Also add to VLC queue if available

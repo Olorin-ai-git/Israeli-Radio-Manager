@@ -252,6 +252,70 @@ async def skip_track(request: Request):
     return {"message": "No track to skip"}
 
 
+@router.post("/next")
+async def get_next_track(request: Request):
+    """
+    Get the next track from the queue for playback.
+
+    Called by the frontend when the current track ends.
+    Returns the next track to play and removes it from the queue.
+    If the queue is empty, returns null (queue maintenance will refill it).
+    """
+    from app.routers.websocket import broadcast_queue_update
+    from app.services.flow_monitor import notify_playback_started
+
+    db = request.app.state.db
+    queue = get_queue()
+
+    if not queue:
+        # Queue is empty - the flow monitor will refill it
+        # Return empty response, frontend should retry shortly
+        return {
+            "next_track": None,
+            "queue_length": 0,
+            "message": "Queue empty, will be refilled automatically"
+        }
+
+    # Get and remove the first item from the queue
+    next_track = queue[0]
+    remove_from_queue(0)
+
+    # Build response with full track data
+    track_data = {
+        "_id": next_track.get("_id"),
+        "title": next_track.get("title", "Unknown"),
+        "artist": next_track.get("artist"),
+        "type": next_track.get("type", "song"),
+        "duration_seconds": next_track.get("duration_seconds", 0),
+        "genre": next_track.get("genre"),
+        "metadata": next_track.get("metadata", {})
+    }
+
+    # Notify flow monitor that playback is starting
+    notify_playback_started(track_data, track_data.get("duration_seconds", 0))
+
+    # Broadcast queue update to all clients
+    await broadcast_queue_update(get_queue())
+
+    # Log the playback
+    try:
+        await db.playback_logs.insert_one({
+            "content_id": ObjectId(next_track.get("_id")) if next_track.get("_id") else None,
+            "title": next_track.get("title"),
+            "type": next_track.get("type"),
+            "started_at": datetime.utcnow(),
+            "triggered_by": "frontend_next"
+        })
+    except Exception as e:
+        logger.warning(f"Failed to log playback: {e}")
+
+    return {
+        "next_track": track_data,
+        "queue_length": len(get_queue()),
+        "message": "Next track retrieved"
+    }
+
+
 @router.post("/queue")
 async def add_to_queue_endpoint(request: Request, item: QueueItem):
     """Add a track to the playback queue."""

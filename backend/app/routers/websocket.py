@@ -84,6 +84,47 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+async def _get_next_track_for_playback(websocket: WebSocket = None) -> dict:
+    """
+    Get the next track from the queue for playback.
+
+    Used by both WebSocket handler and can be called from other places.
+    Returns the track data or None if queue is empty.
+    """
+    from app.routers.playback import get_queue, remove_from_queue
+    from app.services.flow_monitor import notify_playback_started
+
+    queue = get_queue()
+
+    if not queue:
+        return None
+
+    # Get and remove the first item from the queue
+    next_track = queue[0]
+    remove_from_queue(0)
+
+    # Build track data
+    track_data = {
+        "_id": next_track.get("_id"),
+        "title": next_track.get("title", "Unknown"),
+        "artist": next_track.get("artist"),
+        "type": next_track.get("type", "song"),
+        "duration_seconds": next_track.get("duration_seconds", 0),
+        "genre": next_track.get("genre"),
+        "metadata": next_track.get("metadata", {})
+    }
+
+    # Notify flow monitor that playback is starting
+    notify_playback_started(track_data, track_data.get("duration_seconds", 0))
+
+    # Broadcast queue update to all clients
+    await broadcast_queue_update(get_queue())
+
+    logger.info(f"Next track for playback: {track_data.get('title')}")
+
+    return track_data
+
+
 @router.websocket("/")
 async def websocket_endpoint(websocket: WebSocket):
     """Main WebSocket endpoint for real-time updates."""
@@ -142,6 +183,22 @@ async def websocket_endpoint(websocket: WebSocket):
                     "type": "subscriptions",
                     "channels": manager.get_subscriptions(websocket)
                 }, websocket)
+
+            elif message.get("type") == "track_ended":
+                # Frontend reporting that a track has ended - send next track
+                next_track = await _get_next_track_for_playback(websocket)
+                if next_track:
+                    await manager.send_personal({
+                        "type": "play_next",
+                        "data": next_track,
+                        "timestamp": datetime.utcnow().isoformat()
+                    }, websocket)
+                else:
+                    await manager.send_personal({
+                        "type": "queue_empty",
+                        "message": "Queue is empty, will be refilled",
+                        "timestamp": datetime.utcnow().isoformat()
+                    }, websocket)
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)

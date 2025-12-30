@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import random
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
@@ -9,6 +10,28 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 
 logger = logging.getLogger(__name__)
+
+# Queue maintenance constants
+QUEUE_MIN_SIZE = 20  # Minimum queue size - repopulate when below this
+
+# Global reference to the flow monitor instance for external notifications
+_flow_monitor_instance: Optional["FlowMonitorService"] = None
+
+
+def notify_playback_started(content: dict, duration_seconds: int = 0):
+    """
+    Notify the flow monitor that playback has started.
+
+    Call this when content starts playing from any source (flows, chat, calendar)
+    so the auto-play logic knows something is playing.
+
+    Args:
+        content: Content dict with title, _id, type, etc.
+        duration_seconds: Duration of the content in seconds
+    """
+    global _flow_monitor_instance
+    if _flow_monitor_instance:
+        _flow_monitor_instance.update_playback_state(content, duration_seconds)
 
 
 class FlowMonitorService:
@@ -56,15 +79,38 @@ class FlowMonitorService:
         # Track last commercial insertion times by batch
         self._last_commercial_by_batch: Dict[int, datetime] = {}
 
+        # Auto-play tracking
+        self._current_playback: Optional[Dict[str, Any]] = None  # Current playing content
+        self._playback_started_at: Optional[datetime] = None
+        self._playback_duration: int = 0  # seconds
+
     async def start(self):
         """Start the flow monitor background task."""
+        global _flow_monitor_instance
+
         if self._running:
             logger.warning("Flow monitor already running")
             return
 
         self._running = True
+        _flow_monitor_instance = self  # Register for external notifications
         self._task = asyncio.create_task(self._monitor_loop())
         logger.info(f"Flow monitor started (checking every {self.check_interval}s)")
+
+    def update_playback_state(self, content: dict, duration_seconds: int = 0):
+        """
+        Update the playback tracking state.
+
+        Called when content starts playing from any source.
+
+        Args:
+            content: Content dict with title, _id, type, etc.
+            duration_seconds: Duration of the content in seconds
+        """
+        self._current_playback = content
+        self._playback_started_at = datetime.now()
+        self._playback_duration = duration_seconds or content.get("duration_seconds", 0) or 180
+        logger.debug(f"Playback state updated: {content.get('title')} ({self._playback_duration}s)")
 
     async def stop(self):
         """Stop the flow monitor."""
@@ -81,12 +127,183 @@ class FlowMonitorService:
         """Main monitoring loop - runs continuously."""
         while self._running:
             try:
+                # Check if we need to auto-play next track
+                await self._check_auto_play()
+                # Check and maintain queue level
+                await self._check_queue_level()
+                # Check active flows
                 await self._check_active_flows()
                 self._last_check = datetime.now()
             except Exception as e:
                 logger.error(f"Error in flow monitor: {e}", exc_info=True)
 
             await asyncio.sleep(self.check_interval)
+
+    async def _check_auto_play(self):
+        """
+        Fallback auto-play check.
+
+        Primary method: Frontend calls POST /api/playback/next or sends WebSocket "track_ended"
+        Fallback: If no activity for duration + 60 seconds, assume frontend is not responding
+        and auto-advance to prevent dead air.
+        """
+        from app.routers.playback import get_queue, remove_from_queue
+        from app.routers.websocket import broadcast_scheduled_playback, broadcast_queue_update
+
+        now = datetime.now()
+
+        # Check if current playback has ended (with 60-second fallback buffer)
+        if self._playback_started_at and self._playback_duration > 0:
+            elapsed = (now - self._playback_started_at).total_seconds()
+            # Wait for duration + 60 seconds before fallback kicks in
+            # This gives the frontend plenty of time to request the next track
+            if elapsed < self._playback_duration + 60:
+                # Still within expected window, frontend should handle this
+                return
+
+            logger.warning(f"Fallback auto-play triggered - no frontend response after {elapsed:.0f}s")
+
+        # Playback has ended (or nothing was playing), check queue
+        queue = get_queue()
+        if not queue:
+            # Queue is empty, nothing to play
+            self._current_playback = None
+            self._playback_started_at = None
+            self._playback_duration = 0
+            return
+
+        # Get the first item from the queue
+        next_item = queue[0]
+
+        # Remove it from the queue
+        remove_from_queue(0)
+
+        # Broadcast for playback
+        content_data = {
+            "_id": next_item.get("_id"),
+            "title": next_item.get("title", "Unknown"),
+            "artist": next_item.get("artist"),
+            "type": next_item.get("type", "song"),
+            "duration_seconds": next_item.get("duration_seconds", 0),
+            "genre": next_item.get("genre"),
+            "metadata": next_item.get("metadata", {})
+        }
+
+        logger.info(f"Fallback auto-playing: {content_data.get('title')} ({content_data.get('duration_seconds')}s)")
+        await broadcast_scheduled_playback(content_data)
+
+        # Update tracking
+        self._current_playback = content_data
+        self._playback_started_at = now
+        self._playback_duration = next_item.get("duration_seconds", 0) or 180  # Default 3 min if unknown
+
+        # Broadcast queue update
+        await broadcast_queue_update(get_queue())
+
+        # Log playback
+        try:
+            await self.db.playback_logs.insert_one({
+                "content_id": ObjectId(next_item.get("_id")) if next_item.get("_id") else None,
+                "title": next_item.get("title"),
+                "type": next_item.get("type"),
+                "started_at": datetime.utcnow(),
+                "triggered_by": "fallback_auto_play"
+            })
+        except Exception as e:
+            logger.warning(f"Failed to log fallback auto-play: {e}")
+
+    async def _check_queue_level(self):
+        """
+        Check queue level and repopulate with random songs if needed.
+
+        Ensures the queue always has at least QUEUE_MIN_SIZE songs.
+        """
+        from app.routers.playback import get_queue
+
+        current_queue = get_queue()
+        total_count = len(current_queue)
+
+        if total_count < QUEUE_MIN_SIZE:
+            songs_needed = QUEUE_MIN_SIZE - total_count
+            logger.info(f"Queue level low ({total_count} items). Adding {songs_needed} songs to reach minimum of {QUEUE_MIN_SIZE}...")
+            await self._repopulate_queue(songs_needed)
+
+    async def _repopulate_queue(self, count: int):
+        """
+        Add random songs to the queue.
+
+        Args:
+            count: Number of songs to add
+        """
+        from app.routers.playback import get_queue, add_to_queue
+        from app.routers.websocket import broadcast_queue_update
+
+        # Get recently played song IDs to avoid repeats (last 2 hours)
+        two_hours_ago = datetime.utcnow() - timedelta(hours=2)
+
+        # Build exclusion list from recent plays and current queue
+        current_queue = get_queue()
+        current_ids = [item.get("_id") for item in current_queue if item.get("_id")]
+
+        try:
+            recent_plays = await self.db.playback_logs.find({
+                "started_at": {"$gte": two_hours_ago}
+            }).to_list(100)
+            recent_ids = [str(log.get("content_id")) for log in recent_plays if log.get("content_id")]
+        except Exception as e:
+            logger.warning(f"Could not fetch recent plays: {e}")
+            recent_ids = []
+
+        exclude_ids = set(current_ids + recent_ids)
+
+        # Fetch random songs not recently played
+        query = {
+            "type": "song",
+            "active": True
+        }
+
+        # Try to exclude recently played, but fall back if not enough songs
+        songs = await self.db.content.find(query).to_list(500)
+
+        # Filter out recently played/queued songs
+        available_songs = [
+            s for s in songs
+            if str(s.get("_id")) not in exclude_ids
+        ]
+
+        # If not enough songs after filtering, use all songs
+        if len(available_songs) < count:
+            logger.info(f"Not enough fresh songs ({len(available_songs)}), using all available songs")
+            available_songs = songs
+
+        if not available_songs:
+            logger.warning("No songs available to repopulate queue")
+            return
+
+        # Shuffle and select songs
+        random.shuffle(available_songs)
+        selected_songs = available_songs[:count]
+
+        # Add songs to the END of the queue (these are filler songs)
+        for song in selected_songs:
+            queue_item = {
+                "_id": str(song["_id"]),
+                "title": song.get("title", "Unknown"),
+                "artist": song.get("artist"),
+                "type": song.get("type", "song"),
+                "duration_seconds": song.get("duration_seconds", 0),
+                "genre": song.get("genre"),
+                "metadata": song.get("metadata", {}),
+                "batches": song.get("batches", []),
+                "auto_queued": True  # Mark as auto-queued for tracking
+            }
+            # Add to end of queue (no position = append)
+            add_to_queue(queue_item)
+
+        # Broadcast queue update
+        await broadcast_queue_update(get_queue())
+
+        logger.info(f"Added {len(selected_songs)} random songs to queue. Queue now has {len(get_queue())} items.")
 
     async def _check_active_flows(self):
         """Check active looping flows and manage their scheduling."""

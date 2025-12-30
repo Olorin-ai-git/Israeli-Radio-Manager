@@ -231,19 +231,31 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   playNext: async () => {
-    const { queue } = get()
-    if (queue.length > 0) {
-      const [next, ...rest] = queue
-      set({ currentTrack: next, queue: rest, isPlaying: true })
+    // Call backend to get next track - this ensures server knows playback state
+    try {
+      const response = await api.getNextTrack()
 
-      // Remove from backend queue
-      try {
-        await api.removeFromQueue(0)
-      } catch (error) {
-        console.error('Failed to remove played track from queue:', error)
+      if (response.next_track) {
+        // Server returned a track - play it
+        set({ currentTrack: response.next_track, isPlaying: true })
+        console.log('Playing next track from server:', response.next_track.title)
+      } else {
+        // Queue is empty on server - it will be refilled automatically
+        // For now, stop playback (server will broadcast when queue is ready)
+        console.log('Queue empty, waiting for server to refill...')
+        set({ currentTrack: null, isPlaying: false })
       }
-    } else {
-      set({ currentTrack: null, isPlaying: false })
+    } catch (error) {
+      console.error('Failed to get next track from server:', error)
+      // Fallback to local queue if server unavailable
+      const { queue } = get()
+      if (queue.length > 0) {
+        const [next, ...rest] = queue
+        set({ currentTrack: next, queue: rest, isPlaying: true })
+        console.log('Fallback: playing next from local queue:', next.title)
+      } else {
+        set({ currentTrack: null, isPlaying: false })
+      }
     }
   },
 

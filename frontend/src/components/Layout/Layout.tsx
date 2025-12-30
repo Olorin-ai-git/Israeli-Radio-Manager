@@ -187,6 +187,27 @@ export default function Layout({ children }: LayoutProps) {
               // Calendar was updated (event added/modified/deleted)
               console.log('Calendar update received, refreshing...')
               queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
+            } else if (message.type === 'play_next') {
+              // Server sending next track (response to track_ended WebSocket message)
+              const content = message.data
+              console.log('Play next received via WebSocket:', content.title)
+
+              const track = {
+                _id: content._id,
+                title: content.title,
+                artist: content.artist,
+                type: content.type,
+                duration_seconds: content.duration_seconds,
+                genre: content.genre,
+                metadata: content.metadata,
+              }
+
+              const { setCurrentTrack, setIsPlaying } = usePlayerStore.getState()
+              setCurrentTrack(track)
+              setIsPlaying(true)
+            } else if (message.type === 'queue_empty') {
+              // Queue is empty, server will refill it
+              console.log('Queue empty notification received, waiting for refill...')
             }
           } catch (e) {
             console.error('WebSocket message error:', e)

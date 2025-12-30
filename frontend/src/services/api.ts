@@ -74,6 +74,8 @@ export const api = {
   pause: () => client.post('/playback/pause').then((r) => r.data),
   stop: () => client.post('/playback/stop').then((r) => r.data),
   skip: () => client.post('/playback/skip').then((r) => r.data),
+  // Get next track from queue (called when current track ends)
+  getNextTrack: () => client.post('/playback/next').then((r) => r.data),
   setVolume: (level: number) =>
     client.post('/playback/volume', { level }).then((r) => r.data),
   getPlaybackHistory: (limit?: number) =>
