@@ -169,9 +169,9 @@ function SortableQueueItem({
 }
 
 // Fade duration constants
-const FADE_IN_DURATION = 2000 // 2 seconds fade in
-const FADE_OUT_DURATION = 3000 // 3 seconds fade out
-const FADE_OUT_BEFORE_END = 4 // Start fade out 4 seconds before track ends
+const FADE_IN_DURATION = 1000 // 1 second fade in
+const FADE_OUT_DURATION = 1000 // 1 second fade out
+const FADE_OUT_BEFORE_END = 1.5 // Start fade out 1.5 seconds before track ends
 
 export default function AudioPlayer({
   track,
@@ -785,7 +785,7 @@ export default function AudioPlayer({
 
       const startTime = performance.now()
       const startVolume = audioRef.current.volume
-      const quickFadeDuration = 500 // Quick fade for skips
+      const quickFadeDuration = 300 // Quick fade for skips
 
       const animate = (currentTime: number) => {
         if (!audioRef.current) {
