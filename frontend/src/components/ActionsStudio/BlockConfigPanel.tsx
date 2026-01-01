@@ -5,7 +5,6 @@ import {
   X,
   Music,
   FileAudio,
-  Megaphone,
   Radio as RadioIcon,
   Clock,
   Volume2,
@@ -15,7 +14,6 @@ import {
   AudioLines,
   VolumeX,
   Timer,
-  CalendarClock,
 } from 'lucide-react'
 import { StudioAction, FlowActionType, useActionsStudioStore } from '../../store/actionsStudioStore'
 import { api } from '../../services/api'
@@ -30,8 +28,6 @@ interface BlockConfigPanelProps {
 const ACTION_ICONS: Record<FlowActionType, LucideIcon> = {
   play_genre: Music,
   play_content: FileAudio,
-  play_commercials: Megaphone,
-  play_scheduled_commercials: CalendarClock,
   play_show: RadioIcon,
   play_jingle: AudioLines,
   wait: Clock,
@@ -47,23 +43,6 @@ const GENRES = [
   'mediterranean', 'classic', 'hebrew', 'mixed', 'all'
 ]
 
-// Commercial batch letters
-const BATCH_LETTERS = ['A', 'B', 'C', 'D', 'E'] as const
-type BatchLetter = typeof BATCH_LETTERS[number] | 'all'
-
-// Convert batch number to letter (1 -> A, 2 -> B, etc.)
-const batchNumberToLetter = (num: number | undefined): BatchLetter => {
-  if (!num || num < 1 || num > BATCH_LETTERS.length) return 'all'
-  return BATCH_LETTERS[num - 1]
-}
-
-// Convert batch letter to number (A -> 1, B -> 2, etc.)
-const batchLetterToNumber = (letter: BatchLetter): number | undefined => {
-  if (letter === 'all') return undefined
-  const index = BATCH_LETTERS.indexOf(letter as typeof BATCH_LETTERS[number])
-  return index >= 0 ? index + 1 : undefined
-}
-
 export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfigPanelProps) {
   const { updateAction } = useActionsStudioStore()
 
@@ -72,19 +51,12 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
   const [durationMinutes, setDurationMinutes] = useState(action.duration_minutes || 30)
   const [songCount, setSongCount] = useState(action.song_count || 0)
   const [useDuration, setUseDuration] = useState(!action.song_count)
-  const [commercialCount, setCommercialCount] = useState(action.commercial_count || 1)
-  const [batchLetter, setBatchLetter] = useState<BatchLetter>(batchNumberToLetter(action.batch_number))
   const [volumeLevel, setVolumeLevel] = useState(action.volume_level ?? 80)
   const [announcementText, setAnnouncementText] = useState(action.announcement_text || '')
   const [description, setDescription] = useState(action.description || '')
   const [contentSearch, setContentSearch] = useState('')
   const [selectedContentId, setSelectedContentId] = useState(action.content_id || '')
   const [selectedContentTitle, setSelectedContentTitle] = useState(action.content_title || '')
-  // For play_scheduled_commercials
-  const [maxCommercialDuration, setMaxCommercialDuration] = useState(action.max_commercial_duration_seconds || 0)
-  const [maxCommercialCount, setMaxCommercialCount] = useState(action.max_commercial_count || 0)
-  const [includeCampaignTypes, setIncludeCampaignTypes] = useState(action.include_campaign_types?.join(', ') || '')
-  const [excludeCampaignTypes, setExcludeCampaignTypes] = useState(action.exclude_campaign_types?.join(', ') || '')
 
   // Fetch content for content/show picker
   const { data: contentItems } = useQuery({
@@ -103,13 +75,6 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
       item.title?.toLowerCase().includes(searchLower) ||
       item.artist?.toLowerCase().includes(searchLower)
     )
-  })
-
-  // Fetch commercials
-  const { data: commercials } = useQuery({
-    queryKey: ['commercials'],
-    queryFn: api.getCommercials,
-    enabled: action.action_type === 'play_commercials',
   })
 
   // Fetch jingles for jingle picker
@@ -141,10 +106,6 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
         updates.content_id = selectedContentId || undefined
         updates.content_title = selectedContentTitle || undefined
         break
-      case 'play_commercials':
-        updates.commercial_count = commercialCount
-        updates.batch_number = batchLetterToNumber(batchLetter)
-        break
       case 'wait':
         updates.duration_minutes = durationMinutes
         break
@@ -157,16 +118,6 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
       case 'play_jingle':
         updates.content_id = selectedContentId || undefined
         updates.content_title = selectedContentTitle || undefined
-        break
-      case 'play_scheduled_commercials':
-        updates.max_commercial_duration_seconds = maxCommercialDuration > 0 ? maxCommercialDuration : undefined
-        updates.max_commercial_count = maxCommercialCount > 0 ? maxCommercialCount : undefined
-        updates.include_campaign_types = includeCampaignTypes.trim()
-          ? includeCampaignTypes.split(',').map(s => s.trim()).filter(Boolean)
-          : undefined
-        updates.exclude_campaign_types = excludeCampaignTypes.trim()
-          ? excludeCampaignTypes.split(',').map(s => s.trim()).filter(Boolean)
-          : undefined
         break
     }
 
@@ -312,37 +263,6 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
             </div>
           )}
 
-          {/* Play Commercials Config */}
-          {action.action_type === 'play_commercials' && (
-            <>
-              <ButtonGroup
-                label={isRTL ? 'באצ\' פרסומות' : 'Commercial Batch'}
-                value={batchLetter}
-                onChange={(value) => setBatchLetter(value as BatchLetter)}
-                options={[
-                  { value: 'all', label: isRTL ? 'הכל' : 'All' },
-                  ...BATCH_LETTERS.map((letter) => ({ value: letter, label: letter }))
-                ]}
-              />
-              <ButtonGroup
-                label={isRTL ? 'מספר חזרות' : 'Repeat count'}
-                value={commercialCount}
-                onChange={setCommercialCount}
-                options={[1, 2, 3, 4, 5].map((n) => ({ value: n, label: `${n}x` }))}
-              />
-              {commercials && (
-                <p className="text-xs text-dark-400">
-                  {commercials.length} {isRTL ? 'פרסומות זמינות' : 'commercials available'}
-                  {batchLetter !== 'all' && (
-                    <span className="text-primary-400">
-                      {' '}• {isRTL ? `באצ' ${batchLetter}` : `Batch ${batchLetter}`}
-                    </span>
-                  )}
-                </p>
-              )}
-            </>
-          )}
-
           {/* Wait Config */}
           {action.action_type === 'wait' && (
             <Slider
@@ -379,53 +299,6 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
               rows={4}
               showCount
             />
-          )}
-
-          {/* Play Scheduled Commercials Config */}
-          {action.action_type === 'play_scheduled_commercials' && (
-            <>
-              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
-                <p className="text-sm text-amber-400">
-                  {isRTL
-                    ? 'פעולה זו מנגנת פרסומות מקמפיינים פעילים לפי לוח הזמנים שהוגדר במנהל הקמפיינים.'
-                    : 'This action plays commercials from active campaigns based on the schedule defined in Campaign Manager.'}
-                </p>
-              </div>
-
-              <Input
-                type="number"
-                label={isRTL ? 'מקסימום משך (שניות)' : 'Max Duration (seconds)'}
-                value={maxCommercialDuration.toString()}
-                onChange={(e) => setMaxCommercialDuration(parseInt(e.target.value) || 0)}
-                placeholder={isRTL ? '0 = ללא הגבלה' : '0 = no limit'}
-                min={0}
-                max={600}
-              />
-
-              <Input
-                type="number"
-                label={isRTL ? 'מקסימום פרסומות' : 'Max Commercials'}
-                value={maxCommercialCount.toString()}
-                onChange={(e) => setMaxCommercialCount(parseInt(e.target.value) || 0)}
-                placeholder={isRTL ? '0 = ללא הגבלה' : '0 = no limit'}
-                min={0}
-                max={20}
-              />
-
-              <Input
-                label={isRTL ? 'כלול סוגי קמפיין (מופרדים בפסיק)' : 'Include Campaign Types (comma-separated)'}
-                value={includeCampaignTypes}
-                onChange={(e) => setIncludeCampaignTypes(e.target.value)}
-                placeholder={isRTL ? 'למשל: ספונסר, חג' : 'e.g., sponsor, holiday'}
-              />
-
-              <Input
-                label={isRTL ? 'החרג סוגי קמפיין (מופרדים בפסיק)' : 'Exclude Campaign Types (comma-separated)'}
-                value={excludeCampaignTypes}
-                onChange={(e) => setExcludeCampaignTypes(e.target.value)}
-                placeholder={isRTL ? 'למשל: בדיקה' : 'e.g., test'}
-              />
-            </>
           )}
 
           {/* Play Jingle Config */}

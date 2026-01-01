@@ -43,6 +43,7 @@ class CommercialSchedulerService:
         max_count: Optional[int] = None,
         include_campaign_types: Optional[List[str]] = None,
         exclude_campaign_types: Optional[List[str]] = None,
+        bypass_play_limit: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Get commercials to play for the current (or specified) time slot.
@@ -62,6 +63,7 @@ class CommercialSchedulerService:
             max_count: Cap number of commercials returned
             include_campaign_types: Only include these campaign types
             exclude_campaign_types: Exclude these campaign types
+            bypass_play_limit: If True, ignore already-played counts (for manual triggers)
 
         Returns:
             List of content dicts ready for playback
@@ -108,15 +110,19 @@ class CommercialSchedulerService:
                 continue
 
             # Check how many times already played today for this slot
-            already_played = await self.db.commercial_play_logs.count_documents({
-                "campaign_id": campaign_id,
-                "slot_date": target_date.isoformat(),
-                "slot_index": slot_index,
-            })
+            # (skip this check if bypassing play limit for manual triggers)
+            if bypass_play_limit:
+                remaining_plays = scheduled_plays
+            else:
+                already_played = await self.db.commercial_play_logs.count_documents({
+                    "campaign_id": campaign_id,
+                    "slot_date": target_date.isoformat(),
+                    "slot_index": slot_index,
+                })
 
-            remaining_plays = scheduled_plays - already_played
-            if remaining_plays <= 0:
-                continue
+                remaining_plays = scheduled_plays - already_played
+                if remaining_plays <= 0:
+                    continue
 
             # Get content for this campaign
             content_refs = campaign.get("content_refs", [])
@@ -124,38 +130,43 @@ class CommercialSchedulerService:
                 logger.warning(f"Campaign {campaign['name']} has no content")
                 continue
 
-            # Add commercials for the remaining plays
-            for i in range(remaining_plays):
-                # Rotate through content refs if multiple
-                content_ref = content_refs[i % len(content_refs)]
+            # Add ALL commercials for the campaign, repeated by remaining_plays
+            # play_count means "play all campaign commercials this many times"
+            hit_cap = False
+            for play_num in range(remaining_plays):
+                for content_ref in content_refs:
+                    # Resolve content
+                    content = await self._resolve_content_ref(content_ref)
+                    if not content:
+                        continue
 
-                # Resolve content
-                content = await self._resolve_content_ref(content_ref)
-                if not content:
-                    continue
+                    # Check duration cap
+                    content_duration = content.get("duration_seconds", 30)
+                    if max_duration_seconds and total_duration + content_duration > max_duration_seconds:
+                        logger.debug(f"Stopping: would exceed max duration of {max_duration_seconds}s")
+                        hit_cap = True
+                        break
 
-                # Check duration cap
-                content_duration = content.get("duration_seconds", 30)
-                if max_duration_seconds and total_duration + content_duration > max_duration_seconds:
-                    logger.debug(f"Stopping: would exceed max duration of {max_duration_seconds}s")
-                    break
+                    # Add to results
+                    commercials_to_play.append({
+                        "campaign_id": campaign_id,
+                        "campaign_name": campaign.get("name", "Unknown"),
+                        "campaign_type": campaign.get("campaign_type", ""),
+                        "priority": campaign.get("priority", 5),
+                        "content": content,
+                        "slot_index": slot_index,
+                        "slot_date": slot_date,
+                    })
 
-                # Add to results
-                commercials_to_play.append({
-                    "campaign_id": campaign_id,
-                    "campaign_name": campaign.get("name", "Unknown"),
-                    "campaign_type": campaign.get("campaign_type", ""),
-                    "priority": campaign.get("priority", 5),
-                    "content": content,
-                    "slot_index": slot_index,
-                    "slot_date": slot_date,
-                })
+                    total_duration += content_duration
 
-                total_duration += content_duration
+                    # Check count cap
+                    if max_count and len(commercials_to_play) >= max_count:
+                        logger.debug(f"Reached max count of {max_count}")
+                        hit_cap = True
+                        break
 
-                # Check count cap
-                if max_count and len(commercials_to_play) >= max_count:
-                    logger.debug(f"Reached max count of {max_count}")
+                if hit_cap:
                     break
 
             # Check if we've hit caps
@@ -427,6 +438,94 @@ class CommercialSchedulerService:
             "days_remaining": days_remaining,
             "completion_rate": round(today_plays / scheduled_today * 100, 1) if scheduled_today > 0 else 0,
         }
+
+    async def get_jingle_settings(self) -> Dict[str, Any]:
+        """
+        Get the global jingle settings for commercial playback.
+
+        Returns:
+            Dict with use_jingle and jingle_id settings
+        """
+        settings = await self.db.settings.find_one({"type": "commercial_jingle"})
+        if not settings:
+            return {"use_jingle": False, "jingle_id": None}
+        return {
+            "use_jingle": settings.get("use_jingle", False),
+            "jingle_id": settings.get("jingle_id"),
+        }
+
+    async def save_jingle_settings(self, use_jingle: bool, jingle_id: Optional[str]) -> None:
+        """
+        Save the global jingle settings for commercial playback.
+
+        Args:
+            use_jingle: Whether to add jingle before/after commercials
+            jingle_id: ID of the jingle to use
+        """
+        await self.db.settings.update_one(
+            {"type": "commercial_jingle"},
+            {"$set": {
+                "type": "commercial_jingle",
+                "use_jingle": use_jingle,
+                "jingle_id": jingle_id,
+                "updated_at": datetime.utcnow(),
+            }},
+            upsert=True
+        )
+
+    async def get_jingle_content(self, jingle_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch jingle content by ID.
+
+        Args:
+            jingle_id: ID of the jingle
+
+        Returns:
+            Jingle content dict or None
+        """
+        try:
+            jingle = await self.db.content.find_one({"_id": ObjectId(jingle_id)})
+            if jingle:
+                jingle["_id"] = str(jingle["_id"])
+                return jingle
+        except Exception as e:
+            logger.warning(f"Failed to fetch jingle {jingle_id}: {e}")
+        return None
+
+    def wrap_with_jingle(
+        self,
+        commercials: List[Dict[str, Any]],
+        jingle_content: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """
+        Wrap a list of commercial queue items with opening and closing jingles.
+
+        Args:
+            commercials: List of commercial queue items
+            jingle_content: Jingle content to add before and after
+
+        Returns:
+            List with jingle at start and end
+        """
+        if not jingle_content or not commercials:
+            return commercials
+
+        jingle_item = {
+            "_id": jingle_content["_id"],
+            "title": jingle_content.get("title", "Jingle"),
+            "artist": jingle_content.get("artist"),
+            "type": "jingle",
+            "duration_seconds": jingle_content.get("duration_seconds", 5),
+            "genre": jingle_content.get("genre"),
+            "metadata": jingle_content.get("metadata", {}),
+            "commercial_jingle": True,
+        }
+
+        return [
+            {**jingle_item, "jingle_position": "opening"},
+            *commercials,
+            {**jingle_item, "jingle_position": "closing"},
+        ]
 
 
 # Singleton instance

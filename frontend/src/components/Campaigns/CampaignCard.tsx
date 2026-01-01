@@ -10,6 +10,7 @@ import {
   CalendarPlus,
   BarChart2,
   FileText,
+  Copy,
 } from 'lucide-react'
 import { Campaign, CampaignStatus } from '../../store/campaignStore'
 
@@ -22,6 +23,7 @@ interface CampaignCardProps {
   onDelete?: () => void
   onToggleStatus?: () => void
   onSyncCalendar?: () => void
+  onClone?: () => void
 }
 
 // Priority color mapping
@@ -39,6 +41,7 @@ const StatusBadge = ({ status, isRTL }: { status: CampaignStatus; isRTL: boolean
     active: { label: 'Active', labelHe: 'פעיל', className: 'bg-green-500/20 text-green-400' },
     paused: { label: 'Paused', labelHe: 'מושהה', className: 'bg-yellow-500/20 text-yellow-400' },
     completed: { label: 'Completed', labelHe: 'הושלם', className: 'bg-dark-600/50 text-dark-400' },
+    deleted: { label: 'Deleted', labelHe: 'נמחק', className: 'bg-red-500/20 text-red-400' },
   }
   const { label, labelHe, className } = config[status]
   return (
@@ -57,6 +60,7 @@ export default function CampaignCard({
   onDelete,
   onToggleStatus,
   onSyncCalendar,
+  onClone,
 }: CampaignCardProps) {
   const { i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
@@ -78,7 +82,7 @@ export default function CampaignCard({
     const daysRemaining = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 
     const formatDate = (date: Date) =>
-      date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 
     return {
       startStr: formatDate(start),
@@ -102,7 +106,7 @@ export default function CampaignCard({
       className={`
         group glass-card p-4 cursor-pointer transition-all
         ${isSelected ? 'ring-2 ring-primary-500 bg-primary-500/10' : 'hover:bg-white/5'}
-        ${campaign.status === 'completed' ? 'opacity-60' : ''}
+        ${campaign.status === 'completed' || campaign.status === 'deleted' ? 'opacity-60' : ''}
       `}
     >
       {/* Header */}
@@ -169,7 +173,7 @@ export default function CampaignCard({
       {/* Actions */}
       <div className="flex items-center gap-1 pt-2 border-t border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
         {/* Toggle Status */}
-        {campaign.status !== 'completed' && onToggleStatus && (
+        {campaign.status !== 'completed' && campaign.status !== 'deleted' && onToggleStatus && (
           <div className="tooltip-trigger">
             <button
               onClick={e => {
@@ -206,6 +210,24 @@ export default function CampaignCard({
             </button>
             <div className="tooltip tooltip-top">
               {isRTL ? 'ערוך' : 'Edit'}
+            </div>
+          </div>
+        )}
+
+        {/* Clone */}
+        {onClone && (
+          <div className="tooltip-trigger">
+            <button
+              onClick={e => {
+                e.stopPropagation()
+                onClone()
+              }}
+              className="p-1.5 rounded-lg text-dark-300 hover:text-green-400 hover:bg-green-500/10 transition-colors"
+            >
+              <Copy size={16} />
+            </button>
+            <div className="tooltip tooltip-top">
+              {isRTL ? 'שכפל' : 'Clone'}
             </div>
           </div>
         )}

@@ -251,12 +251,6 @@ export default function ActionsStudio() {
           content_id: '',
           description: baseName,
         }
-      case 'play_commercials':
-        return {
-          action_type: type,
-          commercial_count: 2,
-          description: baseName,
-        }
       case 'play_show':
         return {
           action_type: type,

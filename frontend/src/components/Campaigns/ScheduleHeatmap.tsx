@@ -31,6 +31,7 @@ interface ScheduleHeatmapProps {
   onWeekChange?: (direction: 'prev' | 'next') => void // Navigate between weeks
   initialScrollTop?: number // Initial scroll position to restore
   onScrollChange?: (scrollTop: number) => void // Report scroll position changes
+  onSlotClick?: (slotDate: string, slotIndex: number) => void // Open slot details panel
 }
 
 // Day labels
@@ -82,6 +83,7 @@ export default function ScheduleHeatmap({
   onWeekChange,
   initialScrollTop,
   onScrollChange,
+  onSlotClick,
 }: ScheduleHeatmapProps) {
   const { i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
@@ -203,65 +205,6 @@ export default function ScheduleHeatmap({
 
     return slotDateTime < now
   }, [weekDates])
-
-  // Handle cell click - toggle behavior for SELECTED campaign (0 -> 1, >0 -> 0)
-  const handleCellClick = useCallback(
-    (dayIndex: number, slotIndex: number) => {
-      if (readOnly) return
-
-      const slotDate = formatSlotDate(weekDates[dayIndex])
-
-      // Check if the slot is in the past
-      if (isSlotInPast(dayIndex, slotIndex)) {
-        const now = Date.now()
-        if (now - lastToastTime.current > 3000) {
-          lastToastTime.current = now
-          toast.warning(
-            isRTL
-              ? 'לא ניתן לתזמן משבצות בעבר'
-              : 'Cannot schedule slots in the past'
-          )
-        }
-        return // Block the action
-      }
-
-      // Check if the day is outside the campaign date range
-      if (campaignDateBoundaries) {
-        const dayStatus = campaignDateBoundaries[dayIndex]
-        if (dayStatus && (dayStatus.isBeforeStart || dayStatus.isAfterEnd)) {
-          // Show toast warning (rate-limited)
-          const now = Date.now()
-          if (now - lastToastTime.current > 3000) {
-            lastToastTime.current = now
-            if (dayStatus.isBeforeStart) {
-              toast.warning(
-                isRTL
-                  ? 'לא ניתן לתזמן לפני תאריך תחילת הקמפיין'
-                  : 'Cannot schedule before campaign start date'
-              )
-            } else {
-              toast.warning(
-                isRTL
-                  ? 'לא ניתן לתזמן אחרי תאריך סיום הקמפיין'
-                  : 'Cannot schedule after campaign end date'
-              )
-            }
-          }
-          return // Block the action
-        }
-      }
-
-      // Use selectedCampaignGrid for toggle logic (not aggregated grid)
-      const gridToCheck = selectedCampaignGrid || grid
-      const count = getSlotPlayCount(gridToCheck, slotDate, slotIndex)
-      if (count === 0) {
-        onIncrement?.(slotDate, slotIndex)
-      } else {
-        onDecrement?.(slotDate, slotIndex)
-      }
-    },
-    [readOnly, onIncrement, onDecrement, grid, selectedCampaignGrid, campaignDateBoundaries, isRTL, isSlotInPast, weekDates]
-  )
 
   // Prevent context menu on right click
   const handleContextMenu = useCallback(
@@ -437,8 +380,10 @@ export default function ScheduleHeatmap({
                           onMouseEnter={() => setHoveredCell({ day: dayIndex, slot: slot.index })}
                           onMouseLeave={() => setHoveredCell(null)}
                           onClick={() => {
+                            // Clicking a cell opens the slot details panel
+                            onSlotClick?.(slotDate, slot.index)
+                            // Also show toast if in readOnly mode (no campaign selected) to hint about editing
                             if (readOnly) {
-                              // Show toast only once every 3 seconds to avoid spam
                               const now = Date.now()
                               if (now - lastToastTime.current > 3000) {
                                 lastToastTime.current = now
@@ -448,8 +393,6 @@ export default function ScheduleHeatmap({
                                     : 'Select a campaign from the list to edit its schedule'
                                 )
                               }
-                            } else {
-                              handleCellClick(dayIndex, slot.index)
                             }
                           }}
                           onContextMenu={handleContextMenu}
@@ -464,7 +407,7 @@ export default function ScheduleHeatmap({
                               }
                               ${isCurrentSlot ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-dark-900' : ''}
                               ${hasSelectedCampaignSlot && !isDisabledSlot ? 'ring-1 ring-white/40' : ''}
-                              ${!readOnly && !isDisabledSlot ? 'cursor-pointer active:scale-95' : 'cursor-default'}
+                              cursor-pointer active:scale-95
                               flex items-center justify-center text-[11px] font-semibold
                             `}
                           >
@@ -527,6 +470,38 @@ export default function ScheduleHeatmap({
                                 type="button"
                                 onClick={e => {
                                   e.stopPropagation()
+                                  // Validate before incrementing
+                                  if (isSlotInPast(dayIndex, slot.index)) {
+                                    const now = Date.now()
+                                    if (now - lastToastTime.current > 3000) {
+                                      lastToastTime.current = now
+                                      toast.warning(
+                                        isRTL
+                                          ? 'לא ניתן לתזמן משבצות בעבר'
+                                          : 'Cannot schedule slots in the past'
+                                      )
+                                    }
+                                    return
+                                  }
+                                  if (campaignDateBoundaries) {
+                                    const dayStatus = campaignDateBoundaries[dayIndex]
+                                    if (dayStatus && (dayStatus.isBeforeStart || dayStatus.isAfterEnd)) {
+                                      const now = Date.now()
+                                      if (now - lastToastTime.current > 3000) {
+                                        lastToastTime.current = now
+                                        toast.warning(
+                                          isRTL
+                                            ? (dayStatus.isBeforeStart
+                                              ? 'לא ניתן לתזמן לפני תאריך תחילת הקמפיין'
+                                              : 'לא ניתן לתזמן אחרי תאריך סיום הקמפיין')
+                                            : (dayStatus.isBeforeStart
+                                              ? 'Cannot schedule before campaign start date'
+                                              : 'Cannot schedule after campaign end date')
+                                        )
+                                      }
+                                      return
+                                    }
+                                  }
                                   onIncrement?.(slotDate, slot.index)
                                 }}
                                 className="w-4 h-4 rounded-full bg-green-500 hover:bg-green-400 flex items-center justify-center shadow-lg"
@@ -590,8 +565,8 @@ export default function ScheduleHeatmap({
       {!readOnly && (
         <div className="mt-2 text-xs text-dark-500 text-center">
           {isRTL
-            ? 'לחץ למתג הפעלה/כיבוי | השתמש ב +/- לשינוי כמות | לחץ על שעה לפרטים'
-            : 'Click to toggle on/off | Use +/- for count | Click time for details'}
+            ? 'לחץ למשבצת לפרטים | השתמש ב +/- להוספה/הסרה'
+            : 'Click slot for details | Use +/- to add/remove'}
         </div>
       )}
 

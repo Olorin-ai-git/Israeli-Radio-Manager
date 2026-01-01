@@ -141,7 +141,7 @@ async def update_campaign(request: Request, campaign_id: str, update: CampaignUp
 
 @router.delete("/{campaign_id}")
 async def delete_campaign(request: Request, campaign_id: str, hard_delete: bool = False):
-    """Delete a campaign (soft delete by default sets status to completed)."""
+    """Delete a campaign (soft delete by default sets status to deleted)."""
     db = request.app.state.db
 
     try:
@@ -153,11 +153,11 @@ async def delete_campaign(request: Request, campaign_id: str, hard_delete: bool 
         else:
             result = await db.commercial_campaigns.update_one(
                 {"_id": ObjectId(campaign_id)},
-                {"$set": {"status": CampaignStatus.COMPLETED.value, "updated_at": datetime.utcnow()}}
+                {"$set": {"status": CampaignStatus.DELETED.value, "updated_at": datetime.utcnow()}}
             )
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Campaign not found")
-            return {"message": "Campaign marked as completed"}
+            return {"message": "Campaign deleted"}
     except HTTPException:
         raise
     except Exception:
@@ -196,6 +196,51 @@ async def toggle_campaign_status(request: Request, campaign_id: str):
     item = await db.commercial_campaigns.find_one({"_id": ObjectId(campaign_id)})
     item["_id"] = str(item["_id"])
     return item
+
+
+@router.post("/{campaign_id}/clone", response_model=dict)
+async def clone_campaign(request: Request, campaign_id: str):
+    """
+    Clone a campaign with a new 1-year time frame.
+    Works regardless of the original campaign's status.
+    The cloned campaign will have '-cloned' suffix and start as draft.
+    """
+    db = request.app.state.db
+
+    try:
+        original = await db.commercial_campaigns.find_one({"_id": ObjectId(campaign_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid campaign ID format")
+
+    if not original:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # Calculate new date range (1 year from today)
+    today = date.today()
+    one_year_later = date(today.year + 1, today.month, today.day)
+
+    # Create cloned campaign data
+    cloned_data = {
+        "name": f"{original.get('name', 'Campaign')}-cloned",
+        "name_he": f"{original.get('name_he', '')}-cloned" if original.get('name_he') else None,
+        "campaign_type": original.get("campaign_type", ""),
+        "comment": original.get("comment"),
+        "start_date": today.isoformat(),
+        "end_date": one_year_later.isoformat(),
+        "priority": original.get("priority", 5),
+        "contract_link": original.get("contract_link"),
+        "content_refs": original.get("content_refs", []),
+        "schedule_grid": [],  # Start with empty schedule
+        "status": CampaignStatus.DRAFT.value,
+        "calendar_event_id": None,
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow(),
+    }
+
+    result = await db.commercial_campaigns.insert_one(cloned_data)
+    cloned_data["_id"] = str(result.inserted_id)
+
+    return cloned_data
 
 
 # ==================== Schedule Grid Endpoints ====================
@@ -588,4 +633,183 @@ async def get_campaign_stats(request: Request, campaign_id: str):
         "scheduled_today": scheduled_today,
         "total_scheduled": total_scheduled,
         "content_count": len(campaign.get("content_refs", []))
+    }
+
+
+# ==================== Admin Endpoints ====================
+
+@router.post("/slots/run-now", response_model=dict)
+async def run_slot_now(
+    request: Request,
+    slot_date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    slot_index: int = Query(..., ge=0, le=47, description="Slot index 0-47"),
+    use_jingle: bool = Query(False, description="Add jingle before and after commercials"),
+    jingle_id: Optional[str] = Query(None, description="Jingle content ID to use"),
+):
+    """
+    Manually trigger a time slot to run now, regardless of current time.
+    Admin-only endpoint for testing campaign playback.
+
+    This will:
+    1. Optionally add a jingle at the start
+    2. Get all commercials scheduled for the specified slot
+    3. Insert them at the front of the playback queue
+    4. Optionally add a jingle at the end
+    5. Record the plays in the logs
+    """
+    from app.services.commercial_scheduler import get_scheduler
+    from app.routers.playback import add_to_queue, get_queue
+    from app.routers.websocket import broadcast_queue_update
+
+    db = request.app.state.db
+    scheduler = get_scheduler(db)
+
+    # Fetch jingle content if use_jingle is True
+    jingle_content = None
+    if use_jingle and jingle_id:
+        try:
+            jingle_content = await db.content.find_one({"_id": ObjectId(jingle_id)})
+            if jingle_content:
+                jingle_content["_id"] = str(jingle_content["_id"])
+        except Exception as e:
+            logger.warning(f"Failed to fetch jingle {jingle_id}: {e}")
+
+    # Create a fake datetime for the target slot
+    target_date = date.fromisoformat(slot_date)
+    hour = slot_index // 2
+    minute = (slot_index % 2) * 30
+    target_datetime = datetime.combine(target_date, datetime.min.time().replace(hour=hour, minute=minute))
+
+    # Get commercials for the slot (bypass play count limits for manual trigger)
+    commercials = await scheduler.get_commercials_for_slot(
+        target_datetime=target_datetime,
+        max_count=20,
+        bypass_play_limit=True,  # Admin manual trigger ignores already-played count
+    )
+
+    if not commercials:
+        return {
+            "success": True,
+            "message": f"No commercials scheduled for {slot_date} at {slot_index_to_time(slot_index)}",
+            "queued": 0
+        }
+
+    # Build the queue items list
+    queue_items = []
+
+    # Add opening jingle if enabled
+    if jingle_content:
+        queue_items.append({
+            "_id": jingle_content["_id"],
+            "title": jingle_content.get("title", "Jingle"),
+            "artist": jingle_content.get("artist"),
+            "type": "jingle",
+            "duration_seconds": jingle_content.get("duration_seconds", 5),
+            "genre": jingle_content.get("genre"),
+            "metadata": jingle_content.get("metadata", {}),
+            "commercial_jingle": True,
+            "jingle_position": "opening"
+        })
+
+    # Add commercials
+    for commercial_data in commercials:
+        content = commercial_data.get("content", {})
+        campaign_id = commercial_data.get("campaign_id")
+
+        queue_items.append({
+            "_id": str(content.get("_id", "")),
+            "title": content.get("title", "Commercial"),
+            "artist": content.get("artist"),
+            "type": content.get("type", "commercial"),
+            "duration_seconds": content.get("duration_seconds", 30),
+            "genre": content.get("genre"),
+            "metadata": content.get("metadata", {}),
+            "campaign_id": campaign_id,
+            "scheduled_campaign": True,
+            "manual_trigger": True
+        })
+
+    # Add closing jingle if enabled
+    if jingle_content:
+        queue_items.append({
+            "_id": jingle_content["_id"],
+            "title": jingle_content.get("title", "Jingle"),
+            "artist": jingle_content.get("artist"),
+            "type": "jingle",
+            "duration_seconds": jingle_content.get("duration_seconds", 5),
+            "genre": jingle_content.get("genre"),
+            "metadata": jingle_content.get("metadata", {}),
+            "commercial_jingle": True,
+            "jingle_position": "closing"
+        })
+
+    # Insert all items at front of queue
+    for idx, queue_item in enumerate(queue_items):
+        add_to_queue(queue_item, position=idx)
+
+    # Record commercial plays (not jingles)
+    for commercial_data in commercials:
+        content = commercial_data.get("content", {})
+        campaign_id = commercial_data.get("campaign_id")
+        await scheduler.record_play(
+            campaign_id=campaign_id,
+            content_id=str(content.get("_id", "")),
+            slot_index=slot_index,
+            slot_date=slot_date,
+            triggered_by="manual_admin"
+        )
+
+    # Broadcast queue update
+    await broadcast_queue_update(get_queue())
+
+    queued_count = len(queue_items)
+    jingle_info = " (with jingle)" if jingle_content else ""
+
+    return {
+        "success": True,
+        "message": f"Triggered {len(commercials)} commercials{jingle_info} for {slot_date} at {slot_index_to_time(slot_index)}",
+        "queued": queued_count,
+        "commercials": [
+            {"campaign": c.get("campaign_name"), "title": c.get("content", {}).get("title")}
+            for c in commercials
+        ],
+        "jingle_used": jingle_content.get("title") if jingle_content else None
+    }
+
+
+@router.get("/settings/jingle", response_model=dict)
+async def get_jingle_settings(request: Request):
+    """
+    Get the global jingle settings for commercial playback.
+    """
+    from app.services.commercial_scheduler import get_scheduler
+
+    db = request.app.state.db
+    scheduler = get_scheduler(db)
+
+    settings = await scheduler.get_jingle_settings()
+    return settings
+
+
+@router.put("/settings/jingle", response_model=dict)
+async def save_jingle_settings(
+    request: Request,
+    use_jingle: bool = Query(..., description="Whether to use jingle before/after commercials"),
+    jingle_id: Optional[str] = Query(None, description="Jingle content ID"),
+):
+    """
+    Save the global jingle settings for commercial playback.
+    These settings are used by the automatic scheduler.
+    """
+    from app.services.commercial_scheduler import get_scheduler
+
+    db = request.app.state.db
+    scheduler = get_scheduler(db)
+
+    await scheduler.save_jingle_settings(use_jingle, jingle_id)
+
+    return {
+        "success": True,
+        "use_jingle": use_jingle,
+        "jingle_id": jingle_id
     }

@@ -16,6 +16,7 @@ import {
   ChevronDown,
   AlertTriangle,
   Square,
+  Play,
 } from 'lucide-react'
 import {
   useCampaignStore,
@@ -28,6 +29,7 @@ import {
   formatSlotDate,
 } from '../store/campaignStore'
 import { api } from '../services/api'
+import { toast } from '../store/toastStore'
 import CampaignCard from '../components/Campaigns/CampaignCard'
 import CampaignFormModal from '../components/Campaigns/CampaignFormModal'
 import ScheduleHeatmap, { CampaignSlotInfo } from '../components/Campaigns/ScheduleHeatmap'
@@ -92,6 +94,11 @@ function calculateAggregatedGrid(
 
   // Add all campaigns' schedules (only if active during displayed week)
   campaigns.forEach(campaign => {
+    // Skip campaigns that are not in 'active' status - only active campaigns should show slots
+    if (campaign.status !== 'active') {
+      return
+    }
+
     // Skip campaigns not active during this week
     if (!isCampaignActiveInWeek(campaign, weekStart, weekEnd)) {
       return
@@ -148,6 +155,7 @@ export default function CampaignManager() {
     updateCampaign,
     deleteCampaign,
     toggleCampaignStatus,
+    cloneCampaign,
     incrementSlot,
     decrementSlot,
     setEditingGrid,
@@ -164,8 +172,17 @@ export default function CampaignManager() {
   const [showFormModal, setShowFormModal] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null)
   const [statusFilter, setStatusFilter] = useState<CampaignStatus | 'all'>('all')
+  const [showInactive, setShowInactive] = useState(false) // Show deleted/completed campaigns
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [confirmPause, setConfirmPause] = useState<string | null>(null)
   const [showCopyDropdown, setShowCopyDropdown] = useState(false)
+  const [repeatScope, setRepeatScope] = useState<'day' | 'week'>('day') // Repeat for rest of day or week
+  const [repeatStartSlot, setRepeatStartSlot] = useState<number>(0) // "Between" time (slot index 0-47)
+  const [repeatEndSlot, setRepeatEndSlot] = useState<number>(47) // "Until" time (slot index 0-47)
+  const [selectedSlotKeys, setSelectedSlotKeys] = useState<Set<string>>(new Set()) // Selected slot keys for deletion
+  const [useCommercialJingle, setUseCommercialJingle] = useState(true) // Add jingle before/after commercials
+  const [selectedJingleId, setSelectedJingleId] = useState<string>('') // Selected jingle ID
+  const [isJingleSettingsDirty, setIsJingleSettingsDirty] = useState(false) // Track if jingle settings changed
 
   // Audio preview state
   const [playingSlot, setPlayingSlot] = useState<{ slotDate: string; slotIndex: number } | null>(null)
@@ -199,15 +216,60 @@ export default function CampaignManager() {
   })
   const isAdmin = currentUser?.role === 'admin'
 
+  // Fetch jingles for the commercial jingle dropdown
+  const { data: jingles = [] } = useQuery({
+    queryKey: ['jingles'],
+    queryFn: api.getJingles,
+  })
+
+  // Fetch saved jingle settings
+  const { data: jingleSettings } = useQuery({
+    queryKey: ['jingleSettings'],
+    queryFn: api.getJingleSettings,
+  })
+
+  // Initialize jingle settings from saved settings
+  useEffect(() => {
+    if (jingleSettings) {
+      setUseCommercialJingle(jingleSettings.use_jingle ?? true)
+      if (jingleSettings.jingle_id) {
+        setSelectedJingleId(jingleSettings.jingle_id)
+      }
+    }
+  }, [jingleSettings])
+
+  // Set default jingle when jingles are loaded (if no saved setting)
+  useEffect(() => {
+    if (jingles.length > 0 && !selectedJingleId && !jingleSettings?.jingle_id) {
+      setSelectedJingleId(jingles[0]._id)
+    }
+  }, [jingles, selectedJingleId, jingleSettings])
+
+  // Save jingle settings (called when saving all changes)
+  const saveJingleSettings = useCallback(async () => {
+    if (!isJingleSettingsDirty) return
+    try {
+      await api.saveJingleSettings(useCommercialJingle, selectedJingleId)
+      setIsJingleSettingsDirty(false)
+    } catch (error) {
+      console.error('Failed to save jingle settings:', error)
+    }
+  }, [isJingleSettingsDirty, useCommercialJingle, selectedJingleId])
+
   // Fetch campaigns on mount
   useEffect(() => {
     fetchCampaigns()
   }, [fetchCampaigns])
 
+  // Combined check for unsaved changes (grids + jingle settings)
+  const hasUnsavedChanges = useCallback(() => {
+    return hasAnyUnsavedChanges() || isJingleSettingsDirty
+  }, [hasAnyUnsavedChanges, isJingleSettingsDirty])
+
   // Warn before leaving page with unsaved changes
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasAnyUnsavedChanges()) {
+      if (hasUnsavedChanges()) {
         e.preventDefault()
         e.returnValue = ''
         return ''
@@ -216,10 +278,15 @@ export default function CampaignManager() {
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [hasAnyUnsavedChanges])
+  }, [hasUnsavedChanges])
 
   // Filter campaigns
   const filteredCampaigns = campaigns.filter(c => {
+    // First, hide deleted/completed unless showInactive is checked
+    if (!showInactive && (c.status === 'deleted' || c.status === 'completed')) {
+      return false
+    }
+    // Then apply status filter
     if (statusFilter === 'all') return true
     return c.status === statusFilter
   })
@@ -249,21 +316,86 @@ export default function CampaignManager() {
     [editingCampaign, updateCampaign]
   )
 
-  // Handle delete confirmation
+  // Handle delete confirmation - saves pending changes, clears schedule and deletes
   const handleDeleteCampaign = useCallback(
     async (campaignId: string) => {
+      // Save any pending changes first
+      await saveAllGrids()
+
+      // Clear the schedule grid
+      try {
+        await api.updateCampaignGrid(campaignId, [])
+      } catch (e) {
+        console.error('Failed to clear schedule:', e)
+      }
+
       const success = await deleteCampaign(campaignId)
       if (success) {
         setConfirmDelete(null)
+        toast.success(isRTL ? 'הקמפיין נמחק והמשבצות הוסרו' : 'Campaign deleted and slots removed')
+        fetchCampaigns() // Refresh to update heatmap
       }
     },
-    [deleteCampaign]
+    [deleteCampaign, isRTL, fetchCampaigns, saveAllGrids]
   )
 
-  // Handle grid save - saves ALL pending changes
+  // Handle pause confirmation - saves pending changes, clears schedule and pauses
+  const handlePauseCampaign = useCallback(
+    async (campaignId: string) => {
+      // Save any pending changes first
+      await saveAllGrids()
+
+      // Clear the schedule grid
+      try {
+        await api.updateCampaignGrid(campaignId, [])
+      } catch (e) {
+        console.error('Failed to clear schedule:', e)
+      }
+
+      const campaign = await toggleCampaignStatus(campaignId)
+      if (campaign) {
+        setConfirmPause(null)
+        toast.success(isRTL ? 'הקמפיין הושהה והמשבצות הוסרו' : 'Campaign paused and slots removed')
+        fetchCampaigns() // Refresh to update heatmap
+      }
+    },
+    [toggleCampaignStatus, isRTL, fetchCampaigns, saveAllGrids]
+  )
+
+  // Handle toggle status - show confirmation if pausing an active campaign
+  const handleToggleStatus = useCallback(
+    (campaign: Campaign) => {
+      if (campaign.status === 'active') {
+        // Pausing - show confirmation
+        setConfirmPause(campaign._id)
+      } else {
+        // Activating - no confirmation needed
+        toggleCampaignStatus(campaign._id)
+      }
+    },
+    [toggleCampaignStatus]
+  )
+
+  // Handle clone campaign
+  const handleCloneCampaign = useCallback(
+    async (campaignId: string) => {
+      const cloned = await cloneCampaign(campaignId)
+      if (cloned) {
+        toast.success(
+          isRTL
+            ? `קמפיין "${cloned.name}" נוצר בהצלחה`
+            : `Campaign "${cloned.name}" created successfully`
+        )
+      }
+    },
+    [cloneCampaign, isRTL]
+  )
+
+  // Handle grid save - saves ALL pending changes including jingle settings
   const handleSaveAll = useCallback(async () => {
     await saveAllGrids()
-  }, [saveAllGrids])
+    await saveJingleSettings()
+  }, [saveAllGrids, saveJingleSettings])
 
   // Stop audio playback
   const stopPlayback = useCallback(() => {
@@ -426,6 +558,45 @@ export default function CampaignManager() {
 
   // Filter slot index for the schedule details panel (null = show all)
   const [filterSlotIndex, setFilterSlotIndex] = useState<number | null>(null)
+  const [isRunningSlot, setIsRunningSlot] = useState(false)
+
+  // Handler to run a slot now (admin feature)
+  const handleRunSlotNow = async (slotDate: string, slotIndex: number) => {
+    setIsRunningSlot(true)
+    try {
+      const result = await api.runSlotNow(
+        slotDate,
+        slotIndex,
+        useCommercialJingle,
+        useCommercialJingle ? selectedJingleId : undefined
+      )
+      if (result.success) {
+        if (result.queued > 0) {
+          toast.success(
+            isRTL
+              ? `הופעלו ${result.queued} פרסומות - נוספו לראש התור`
+              : `Triggered ${result.queued} commercials - added to front of queue`
+          )
+        } else {
+          toast.info(
+            isRTL
+              ? 'אין פרסומות מתוזמנות למשבצת זו'
+              : 'No commercials scheduled for this slot'
+          )
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to run slot:', error)
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Unknown error'
+      toast.error(
+        isRTL
+          ? `שגיאה בהפעלת המשבצת: ${errorMessage}`
+          : `Error running slot: ${errorMessage}`
+      )
+    } finally {
+      setIsRunningSlot(false)
+    }
+  }
 
   // Day labels (moved up so getScheduledSlots can use it)
   const dayLabels = isRTL ? DAY_LABELS_HE : DAY_LABELS_EN
@@ -497,11 +668,127 @@ export default function CampaignManager() {
     }
   }, [filterSlotIndex, selectCampaign])
 
+  // Handle clicking on a slot cell - show slot details in right panel
+  const handleSlotClick = useCallback((_slotDate: string, slotIndex: number) => {
+    setFilterSlotIndex(slotIndex)
+    setIsRightPanelOpen(true)
+  }, [])
+
   // Copy schedule from another campaign
   const handleCopySchedule = useCallback((sourceCampaign: Campaign) => {
     setEditingGrid(sourceCampaign.schedule_grid)
     setShowCopyDropdown(false)
   }, [setEditingGrid])
+
+  // Handle repeat slot pattern - copy a slot's play count to other time slots
+  const handleRepeatSlot = useCallback((pattern: 'hourly' | '2hours' | '30min') => {
+    if (filterSlotIndex === null || !selectedCampaign || !editingGrid) return
+
+    // Get the source slot's play count for each day in the week
+    const weekDates = getWeekDates(heatmapBaseDate)
+    const sourcePlayCounts: Record<string, number> = {}
+
+    weekDates.forEach(slotDate => {
+      const count = getSlotPlayCount(editingGrid, slotDate, filterSlotIndex)
+      if (count > 0) {
+        sourcePlayCounts[slotDate] = count
+      }
+    })
+
+    if (Object.keys(sourcePlayCounts).length === 0) {
+      toast.warning(isRTL ? 'אין תוכן במשבצת הנבחרת' : 'No content in selected slot')
+      return
+    }
+
+    // Calculate step based on pattern (in slot indices, each slot = 30 min)
+    const step = pattern === 'hourly' ? 2 : pattern === '2hours' ? 4 : 1
+
+    // Build new slots to add
+    const newSlots: WeeklySlot[] = []
+
+    // Get the first source date and its play count (for week mode)
+    const sortedSourceDates = Object.keys(sourcePlayCounts).sort()
+    const firstSourceDate = sortedSourceDates[0]
+    const firstPlayCount = sourcePlayCounts[firstSourceDate]
+
+    if (repeatScope === 'day') {
+      // Day mode: only repeat on days that already have the source slot
+      Object.entries(sourcePlayCounts).forEach(([slotDate, playCount]) => {
+        // Start from the source slot and go forward for rest of day
+        for (let idx = filterSlotIndex + step; idx < 48; idx += step) {
+          newSlots.push({
+            slot_date: slotDate,
+            slot_index: idx,
+            play_count: playCount,
+          })
+        }
+      })
+    } else {
+      // Week mode: repeat on all remaining days in the week within time bounds
+      const firstSourceIdx = weekDates.indexOf(firstSourceDate)
+
+      // For each day from the first source date onwards
+      for (let dayIdx = firstSourceIdx; dayIdx < weekDates.length; dayIdx++) {
+        const slotDate = weekDates[dayIdx]
+        const playCount = sourcePlayCounts[slotDate] || firstPlayCount
+
+        // Determine starting slot index (respect time bounds)
+        let startIdx: number
+        if (dayIdx === firstSourceIdx) {
+          // First day: start after source slot, but not before repeatStartSlot
+          startIdx = Math.max(filterSlotIndex + step, repeatStartSlot)
+        } else {
+          // Subsequent days: start from repeatStartSlot
+          startIdx = repeatStartSlot
+        }
+
+        // Add slots for this day (within time bounds)
+        for (let idx = startIdx; idx <= repeatEndSlot; idx += step) {
+          newSlots.push({
+            slot_date: slotDate,
+            slot_index: idx,
+            play_count: playCount,
+          })
+        }
+      }
+    }
+
+    if (newSlots.length === 0) {
+      toast.info(isRTL ? 'אין משבצות נוספות להוספה' : 'No additional slots to add')
+      return
+    }
+
+    // Merge with existing grid
+    const updatedGrid = [...editingGrid]
+    newSlots.forEach(newSlot => {
+      const existingIdx = updatedGrid.findIndex(
+        s => s.slot_date === newSlot.slot_date && s.slot_index === newSlot.slot_index
+      )
+      if (existingIdx >= 0) {
+        // Update existing slot
+        updatedGrid[existingIdx] = { ...updatedGrid[existingIdx], play_count: newSlot.play_count }
+      } else {
+        // Add new slot
+        updatedGrid.push(newSlot)
+      }
+    })
+
+    setEditingGrid(updatedGrid)
+
+    const patternLabel = pattern === 'hourly' ? (isRTL ? 'כל שעה' : 'hourly')
+      : pattern === '2hours' ? (isRTL ? 'כל שעתיים' : 'every 2 hours')
+      : (isRTL ? 'כל 30 דקות' : 'every 30 min')
+
+    const scopeLabel = repeatScope === 'day'
+      ? (isRTL ? 'היום' : 'today')
+      : (isRTL ? 'השבוע' : 'this week')
+
+    toast.success(
+      isRTL
+        ? `הוספו ${newSlots.length} משבצות (${patternLabel}, ${scopeLabel})`
+        : `Added ${newSlots.length} slots (${patternLabel}, ${scopeLabel})`
+    )
+  }, [filterSlotIndex, selectedCampaign, editingGrid, heatmapBaseDate, isRTL, setEditingGrid, repeatScope, repeatStartSlot, repeatEndSlot])
 
   // Get other campaigns that have schedules (excluding current)
   const campaignsWithSchedules = useMemo(() => {
@@ -585,9 +872,78 @@ export default function CampaignManager() {
     { value: 'paused', label: 'Paused', labelHe: 'מושהה' },
     { value: 'draft', label: 'Draft', labelHe: 'טיוטה' },
     { value: 'completed', label: 'Completed', labelHe: 'הושלם' },
+    { value: 'deleted', label: 'Deleted', labelHe: 'נמחק' },
   ]
 
   const scheduledSlots = getScheduledSlots()
+
+  // Helper to create a unique key for a slot
+  const getSlotKey = (slotDate: string, slotIndex: number) => `${slotDate}_${slotIndex}`
+
+  // Filter scheduled slots to only future ones (today's remaining slots + future days)
+  const futureSlots = useMemo(() => {
+    const now = new Date()
+    const todayStr = formatSlotDate(now)
+    const currentSlotIndex = Math.floor((now.getHours() * 60 + now.getMinutes()) / 30)
+
+    return scheduledSlots.filter(slot => {
+      if (slot.slotDate > todayStr) return true // Future day
+      if (slot.slotDate === todayStr && slot.slotIndex > currentSlotIndex) return true // Today but later
+      return false
+    })
+  }, [scheduledSlots])
+
+  // Toggle selection of a single slot
+  const toggleSlotSelection = useCallback((slotDate: string, slotIndex: number) => {
+    const key = getSlotKey(slotDate, slotIndex)
+    setSelectedSlotKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }, [])
+
+  // Select or deselect all future slots
+  const toggleSelectAllFutureSlots = useCallback(() => {
+    const allFutureKeys = futureSlots.map(s => getSlotKey(s.slotDate, s.slotIndex))
+    const allSelected = allFutureKeys.every(key => selectedSlotKeys.has(key))
+
+    if (allSelected) {
+      // Deselect all
+      setSelectedSlotKeys(new Set())
+    } else {
+      // Select all future
+      setSelectedSlotKeys(new Set(allFutureKeys))
+    }
+  }, [futureSlots, selectedSlotKeys])
+
+  // Delete selected slots from editingGrid
+  const deleteSelectedSlots = useCallback(() => {
+    if (selectedSlotKeys.size === 0) return
+
+    const updatedGrid = editingGrid.filter(slot => {
+      const key = getSlotKey(slot.slot_date, slot.slot_index)
+      return !selectedSlotKeys.has(key)
+    })
+
+    setEditingGrid(updatedGrid)
+    setSelectedSlotKeys(new Set())
+    toast.success(
+      isRTL
+        ? `נמחקו ${selectedSlotKeys.size} משבצות`
+        : `Deleted ${selectedSlotKeys.size} slots`
+    )
+  }, [selectedSlotKeys, editingGrid, setEditingGrid, isRTL])
+
+  // Check if all future slots are selected
+  const allFutureSlotsSelected = useMemo(() => {
+    if (futureSlots.length === 0) return false
+    return futureSlots.every(s => selectedSlotKeys.has(getSlotKey(s.slotDate, s.slotIndex)))
+  }, [futureSlots, selectedSlotKeys])
 
   // Calculate aggregated grid from all campaigns for the displayed week
   const aggregatedGrid = useMemo(() => {
@@ -747,10 +1103,34 @@ export default function CampaignManager() {
             minWidth: isLeftPanelCollapsed ? 0 : leftPanelWidth,
           }}
         >
-          <div className="p-4 border-b border-white/10">
+          <div className="p-4 border-b border-white/10 space-y-3">
             <div className="text-sm text-dark-400">
               {filteredCampaigns.length} {isRTL ? 'קמפיינים' : 'campaigns'}
             </div>
+            {/* Show inactive checkbox */}
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={showInactive}
+                  onChange={(e) => setShowInactive(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-4 h-4 border border-dark-500 rounded bg-dark-700/50 peer-checked:bg-primary-500 peer-checked:border-primary-500 transition-all peer-focus:ring-2 peer-focus:ring-primary-500/30 group-hover:border-dark-400" />
+                <svg
+                  className="absolute top-0.5 left-0.5 w-3 h-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={3}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <span className="text-xs text-dark-400 group-hover:text-dark-300 transition-colors">
+                {isRTL ? 'הצג נמחקים והושלמו' : 'Show deleted & completed'}
+              </span>
+            </label>
           </div>
 
           <div className="flex-1 overflow-auto p-4 space-y-3">
@@ -769,14 +1149,21 @@ export default function CampaignManager() {
                   campaign={campaign}
                   isSelected={selectedCampaign?._id === campaign._id}
                   isAdmin={isAdmin}
-                  onSelect={() => selectCampaign(selectedCampaign?._id === campaign._id ? null : campaign)}
+                  onSelect={() => {
+                    const isDeselecting = selectedCampaign?._id === campaign._id
+                    selectCampaign(isDeselecting ? null : campaign)
+                    if (!isDeselecting) {
+                      setIsRightPanelOpen(true)
+                    }
+                  }}
                   onEdit={() => {
                     setEditingCampaign(campaign)
                     setShowFormModal(true)
                   }}
                   onDelete={() => setConfirmDelete(campaign._id)}
-                  onToggleStatus={() => toggleCampaignStatus(campaign._id)}
+                  onToggleStatus={() => handleToggleStatus(campaign)}
                   onSyncCalendar={() => syncToCalendar(campaign._id)}
+                  onClone={() => handleCloneCampaign(campaign._id)}
                 />
               ))
             )}
@@ -990,6 +1377,7 @@ export default function CampaignManager() {
                 onWeekChange={handleWeekChange}
                 initialScrollTop={heatmapScrollTop.current}
                 onScrollChange={handleHeatmapScroll}
+                onSlotClick={handleSlotClick}
               />
             </div>
 
@@ -1038,6 +1426,63 @@ export default function CampaignManager() {
                 </div>
 
                 <div className="flex-1 overflow-auto p-4">
+                  {/* Commercial Jingle Settings */}
+                  <div className="mb-4 pb-4 border-b border-white/10">
+                    <div className="flex items-start gap-2 mb-2">
+                      <button
+                        onClick={() => {
+                          setUseCommercialJingle(!useCommercialJingle)
+                          setIsJingleSettingsDirty(true)
+                        }}
+                        className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
+                          useCommercialJingle
+                            ? 'bg-primary-500 border-primary-500'
+                            : 'border-dark-500 hover:border-primary-500/50'
+                        }`}
+                      >
+                        {useCommercialJingle && (
+                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </button>
+                      <div className="flex-1">
+                        <span className="text-xs text-dark-200">
+                          {isRTL ? 'הוסף ג׳ינגל לפני ואחרי משבצת פרסומות' : 'Add jingle before & after commercial slot'}
+                        </span>
+                        {isJingleSettingsDirty && (
+                          <span className="text-yellow-400 ml-1">*</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {useCommercialJingle && (
+                      <div className="ml-6">
+                        <label className="text-xs text-dark-400 block mb-1">
+                          {isRTL ? 'בחר ג׳ינגל' : 'Select Jingle'}
+                        </label>
+                        <select
+                          value={selectedJingleId}
+                          onChange={(e) => {
+                            setSelectedJingleId(e.target.value)
+                            setIsJingleSettingsDirty(true)
+                          }}
+                          className="w-full px-2 py-1.5 text-xs rounded-lg bg-dark-700/50 text-dark-200 border border-dark-600/50 focus:outline-none focus:border-primary-500/50"
+                        >
+                          {jingles.length === 0 ? (
+                            <option value="">{isRTL ? 'אין ג׳ינגלים זמינים' : 'No jingles available'}</option>
+                          ) : (
+                            jingles.map((jingle: any) => (
+                              <option key={jingle._id} value={jingle._id}>
+                                {jingle.title}
+                              </option>
+                            ))
+                          )}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
                   {selectedCampaign ? (
                     <div className="space-y-4">
                       {/* Campaign commercials */}
@@ -1068,30 +1513,98 @@ export default function CampaignManager() {
 
                       {/* Scheduled slots */}
                       <div className="pt-4 border-t border-white/5">
-                        <h4 className="text-xs text-dark-400 mb-2">
-                          {filterSlotIndex !== null
-                            ? (isRTL ? `משבצות ב-${slotIndexToTime(filterSlotIndex)}` : `Slots at ${slotIndexToTime(filterSlotIndex)}`)
-                            : (isRTL ? 'משבצות מתוזמנות' : 'Scheduled Slots')}
-                          {scheduledSlots.length > 0 && (
-                            <span className="text-primary-400 ml-1">({scheduledSlots.length})</span>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-xs text-dark-400">
+                            {filterSlotIndex !== null
+                              ? (isRTL ? `משבצות ב-${slotIndexToTime(filterSlotIndex)}` : `Slots at ${slotIndexToTime(filterSlotIndex)}`)
+                              : (isRTL ? 'משבצות מתוזמנות' : 'Scheduled Slots')}
+                            {scheduledSlots.length > 0 && (
+                              <span className="text-primary-400 ml-1">({scheduledSlots.length})</span>
+                            )}
+                          </h4>
+
+                          {/* Delete selected button */}
+                          {selectedSlotKeys.size > 0 && (
+                            <button
+                              onClick={deleteSelectedSlots}
+                              className="px-2 py-1 text-xs rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                            >
+                              {isRTL ? `מחק (${selectedSlotKeys.size})` : `Delete (${selectedSlotKeys.size})`}
+                            </button>
                           )}
-                        </h4>
+                        </div>
+
+                        {/* Select all checkbox - only show if there are future slots */}
+                        {futureSlots.length > 0 && (
+                          <div className="flex items-center gap-2 mb-2 pb-2 border-b border-white/5">
+                            <button
+                              onClick={toggleSelectAllFutureSlots}
+                              className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                                allFutureSlotsSelected
+                                  ? 'bg-primary-500 border-primary-500'
+                                  : 'border-dark-500 hover:border-primary-500/50'
+                              }`}
+                            >
+                              {allFutureSlotsSelected && (
+                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </button>
+                            <span className="text-xs text-dark-400">
+                              {isRTL ? `בחר הכל (${futureSlots.length} עתידיות)` : `Select all (${futureSlots.length} future)`}
+                            </span>
+                          </div>
+                        )}
 
                         {scheduledSlots.length > 0 ? (
-                          <div className="space-y-1">
-                            {scheduledSlots.map((slot, idx) => (
-                              <div
-                                key={idx}
-                                className="flex items-center justify-between p-2 bg-dark-700/30 rounded text-sm"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <Clock size={12} className="text-dark-400" />
-                                  <span className="text-dark-200">{slot.timeLabel}</span>
-                                  <span className="text-dark-400">{slot.dayLabel}</span>
+                          <div className="space-y-1 max-h-48 overflow-y-auto">
+                            {scheduledSlots.map((slot, idx) => {
+                              const slotKey = getSlotKey(slot.slotDate, slot.slotIndex)
+                              const isFuture = futureSlots.some(
+                                f => f.slotDate === slot.slotDate && f.slotIndex === slot.slotIndex
+                              )
+                              const isSelected = selectedSlotKeys.has(slotKey)
+
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`flex items-center justify-between p-2 rounded text-sm transition-colors ${
+                                    isSelected ? 'bg-primary-500/20' : 'bg-dark-700/30'
+                                  } ${!isFuture ? 'opacity-50' : ''}`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    {/* Checkbox for future slots */}
+                                    {isFuture ? (
+                                      <button
+                                        onClick={() => toggleSlotSelection(slot.slotDate, slot.slotIndex)}
+                                        className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                                          isSelected
+                                            ? 'bg-primary-500 border-primary-500'
+                                            : 'border-dark-500 hover:border-primary-500/50'
+                                        }`}
+                                      >
+                                        {isSelected && (
+                                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                          </svg>
+                                        )}
+                                      </button>
+                                    ) : (
+                                      <Clock size={12} className="text-dark-500" />
+                                    )}
+                                    <span className="text-dark-200">{slot.timeLabel}</span>
+                                    <span className="text-dark-400">{slot.dayLabel}</span>
+                                    {!isFuture && (
+                                      <span className="text-xs text-dark-500">
+                                        ({isRTL ? 'עבר' : 'past'})
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-primary-400 text-xs">×{slot.playCount}</span>
                                 </div>
-                                <span className="text-primary-400 text-xs">×{slot.playCount}</span>
-                              </div>
-                            ))}
+                              )
+                            })}
                           </div>
                         ) : (
                           <div className="text-center py-4 text-dark-500 text-xs">
@@ -1101,6 +1614,100 @@ export default function CampaignManager() {
                           </div>
                         )}
                       </div>
+
+                      {/* Repeat slot section - only show when a time slot is selected */}
+                      {filterSlotIndex !== null && scheduledSlots.length > 0 && (
+                        <div className="pt-4 border-t border-white/5">
+                          <h4 className="text-xs text-dark-400 mb-2">
+                            {isRTL ? 'חזור על משבצת' : 'Repeat Slot'}
+                          </h4>
+                          <p className="text-xs text-dark-500 mb-3">
+                            {isRTL
+                              ? `העתק את ${slotIndexToTime(filterSlotIndex)} למשבצות נוספות`
+                              : `Copy ${slotIndexToTime(filterSlotIndex)} to other time slots`}
+                          </p>
+
+                          {/* Scope toggle - Day vs Week */}
+                          <div className="flex rounded-lg bg-dark-700/50 p-0.5 mb-3 border border-dark-600/50">
+                            <button
+                              onClick={() => setRepeatScope('day')}
+                              className={`flex-1 px-3 py-1.5 text-xs rounded-md transition-colors ${
+                                repeatScope === 'day'
+                                  ? 'bg-primary-500/30 text-primary-400'
+                                  : 'text-dark-400 hover:text-dark-200'
+                              }`}
+                            >
+                              {isRTL ? 'שאר היום' : 'Rest of Day'}
+                            </button>
+                            <button
+                              onClick={() => setRepeatScope('week')}
+                              className={`flex-1 px-3 py-1.5 text-xs rounded-md transition-colors ${
+                                repeatScope === 'week'
+                                  ? 'bg-primary-500/30 text-primary-400'
+                                  : 'text-dark-400 hover:text-dark-200'
+                              }`}
+                            >
+                              {isRTL ? 'שאר השבוע' : 'Rest of Week'}
+                            </button>
+                          </div>
+
+                          {/* Time range - only show in week mode */}
+                          {repeatScope === 'week' && (
+                            <div className="flex items-center gap-2 mb-3">
+                              <span className="text-xs text-dark-400">
+                                {isRTL ? 'בין' : 'Between'}
+                              </span>
+                              <select
+                                value={repeatStartSlot}
+                                onChange={(e) => setRepeatStartSlot(Number(e.target.value))}
+                                className="flex-1 px-2 py-1 text-xs rounded-lg bg-dark-700/50 text-dark-200 border border-dark-600/50 focus:outline-none focus:border-primary-500/50"
+                              >
+                                {Array.from({ length: 48 }, (_, i) => (
+                                  <option key={i} value={i}>
+                                    {slotIndexToTime(i)}
+                                  </option>
+                                ))}
+                              </select>
+                              <span className="text-xs text-dark-400">
+                                {isRTL ? 'עד' : 'Until'}
+                              </span>
+                              <select
+                                value={repeatEndSlot}
+                                onChange={(e) => setRepeatEndSlot(Number(e.target.value))}
+                                className="flex-1 px-2 py-1 text-xs rounded-lg bg-dark-700/50 text-dark-200 border border-dark-600/50 focus:outline-none focus:border-primary-500/50"
+                              >
+                                {Array.from({ length: 48 }, (_, i) => (
+                                  <option key={i} value={i}>
+                                    {slotIndexToTime(i)}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
+                          {/* Interval buttons */}
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => handleRepeatSlot('30min')}
+                              className="px-3 py-1.5 text-xs rounded-lg bg-dark-700/50 text-dark-300 hover:bg-primary-500/20 hover:text-primary-400 transition-colors border border-dark-600/50"
+                            >
+                              {isRTL ? 'כל 30 דק׳' : 'Every 30m'}
+                            </button>
+                            <button
+                              onClick={() => handleRepeatSlot('hourly')}
+                              className="px-3 py-1.5 text-xs rounded-lg bg-dark-700/50 text-dark-300 hover:bg-primary-500/20 hover:text-primary-400 transition-colors border border-dark-600/50"
+                            >
+                              {isRTL ? 'כל שעה' : 'Hourly'}
+                            </button>
+                            <button
+                              onClick={() => handleRepeatSlot('2hours')}
+                              className="px-3 py-1.5 text-xs rounded-lg bg-dark-700/50 text-dark-300 hover:bg-primary-500/20 hover:text-primary-400 transition-colors border border-dark-600/50"
+                            >
+                              {isRTL ? 'כל שעתיים' : 'Every 2h'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Summary */}
                       <div className="pt-4 border-t border-white/5">
@@ -1125,6 +1732,32 @@ export default function CampaignManager() {
                           )}
                         </h4>
 
+                        {/* Run Now Button for the slot */}
+                        {slotOverview.length > 0 && (
+                          <div className="mb-3">
+                            <button
+                              onClick={() => {
+                                // Get the first slot date from overview (they're all for the same time)
+                                const firstSlotDate = slotOverview[0]?.slotDate
+                                if (firstSlotDate && filterSlotIndex !== null) {
+                                  handleRunSlotNow(firstSlotDate, filterSlotIndex)
+                                }
+                              }}
+                              disabled={isRunningSlot}
+                              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-green-500/20 hover:bg-green-500/30 border border-green-500/30 text-green-400 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                              {isRunningSlot ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <Play size={14} />
+                              )}
+                              <span className="text-xs font-medium">
+                                {isRTL ? 'הפעל עכשיו' : 'Run Now'}
+                              </span>
+                            </button>
+                          </div>
+                        )}
+
                         {slotOverview.length > 0 ? (
                           <div className="space-y-2">
                             {slotOverview.map((item, idx) => (
@@ -1134,9 +1767,23 @@ export default function CampaignManager() {
                               >
                                 <div className="flex items-center justify-between mb-1">
                                   <span className="text-xs text-dark-400">
-                                    {item.dayLabel}
+                                    {item.dayLabel} • {item.slotDate}
                                   </span>
-                                  <span className="text-xs text-primary-400">×{item.playCount}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-primary-400">×{item.playCount}</span>
+                                    <button
+                                      onClick={() => handleRunSlotNow(item.slotDate, filterSlotIndex!)}
+                                      disabled={isRunningSlot}
+                                      className="p-1 hover:bg-green-500/20 rounded text-green-400 transition-colors disabled:opacity-50"
+                                      title={isRTL ? 'הפעל עכשיו' : 'Run Now'}
+                                    >
+                                      {isRunningSlot ? (
+                                        <Loader2 size={10} className="animate-spin" />
+                                      ) : (
+                                        <Play size={10} />
+                                      )}
+                                    </button>
+                                  </div>
                                 </div>
                                 <div
                                   className="text-sm text-dark-200 font-medium cursor-pointer hover:text-primary-400"
@@ -1225,10 +1872,16 @@ export default function CampaignManager() {
             <h3 className="font-semibold text-dark-100 mb-4">
               {isRTL ? 'מחיקת קמפיין' : 'Delete Campaign'}
             </h3>
-            <p className="text-dark-400 mb-6">
+            <p className="text-dark-400 mb-2">
               {isRTL
                 ? 'האם אתה בטוח שברצונך למחוק קמפיין זה?'
                 : 'Are you sure you want to delete this campaign?'}
+            </p>
+            <p className="text-yellow-400 text-sm mb-6 flex items-center gap-2">
+              <AlertTriangle size={16} />
+              {isRTL
+                ? 'כל המשבצות המתוזמנות יוסרו לצמיתות'
+                : 'All scheduled slots will be permanently removed'}
             </p>
             <div className="flex gap-2">
               <button
@@ -1242,6 +1895,42 @@ export default function CampaignManager() {
                 className="flex-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg py-2 transition-colors"
               >
                 {isRTL ? 'מחק' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pause Confirmation Modal */}
+      {confirmPause && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center">
+          <div className="glass-card p-6 w-full max-w-sm mx-4">
+            <h3 className="font-semibold text-dark-100 mb-4">
+              {isRTL ? 'השהיית קמפיין' : 'Pause Campaign'}
+            </h3>
+            <p className="text-dark-400 mb-2">
+              {isRTL
+                ? 'האם אתה בטוח שברצונך להשהות קמפיין זה?'
+                : 'Are you sure you want to pause this campaign?'}
+            </p>
+            <p className="text-yellow-400 text-sm mb-6 flex items-center gap-2">
+              <AlertTriangle size={16} />
+              {isRTL
+                ? 'כל המשבצות המתוזמנות יוסרו'
+                : 'All scheduled slots will be removed'}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmPause(null)}
+                className="flex-1 glass-button py-2"
+              >
+                {isRTL ? 'ביטול' : 'Cancel'}
+              </button>
+              <button
+                onClick={() => handlePauseCampaign(confirmPause)}
+                className="flex-1 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 rounded-lg py-2 transition-colors"
+              >
+                {isRTL ? 'השהה' : 'Pause'}
               </button>
             </div>
           </div>

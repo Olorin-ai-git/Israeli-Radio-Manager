@@ -13,6 +13,7 @@ class CampaignStatus(str, Enum):
     ACTIVE = "active"
     PAUSED = "paused"
     COMPLETED = "completed"
+    DELETED = "deleted"
 
 
 class CampaignContentRef(BaseModel):

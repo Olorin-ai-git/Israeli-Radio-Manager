@@ -363,6 +363,25 @@ export const api = {
     client.post('/campaigns/sync-all-calendar').then((r) => r.data),
   getCampaignStats: (campaignId: string) =>
     client.get(`/campaigns/${campaignId}/stats`).then((r) => r.data),
+  runSlotNow: (slotDate: string, slotIndex: number, useJingle?: boolean, jingleId?: string) =>
+    client.post('/campaigns/slots/run-now', null, {
+      params: {
+        slot_date: slotDate,
+        slot_index: slotIndex,
+        use_jingle: useJingle,
+        jingle_id: jingleId
+      }
+    }).then((r) => r.data),
+  cloneCampaign: (campaignId: string) =>
+    client.post(`/campaigns/${campaignId}/clone`).then((r) => r.data),
+
+  // Jingle settings for commercial playback
+  getJingleSettings: () =>
+    client.get('/campaigns/settings/jingle').then((r) => r.data),
+  saveJingleSettings: (useJingle: boolean, jingleId?: string) =>
+    client.put('/campaigns/settings/jingle', null, {
+      params: { use_jingle: useJingle, jingle_id: jingleId }
+    }).then((r) => r.data),
 }
 
 export default api

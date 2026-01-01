@@ -73,11 +73,8 @@ class FlowMonitorService:
         self._last_check: Optional[datetime] = None
 
         # Track flow state per flow
-        # Key: flow_id, Value: { last_commercial_time, actions_played, etc. }
+        # Key: flow_id, Value: { started_at, last_action_time, actions_completed }
         self._flow_states: Dict[str, Dict[str, Any]] = {}
-
-        # Track last commercial insertion times by batch
-        self._last_commercial_by_batch: Dict[int, datetime] = {}
 
         # Auto-play tracking
         self._current_playback: Optional[Dict[str, Any]] = None  # Current playing content
@@ -133,6 +130,8 @@ class FlowMonitorService:
                 await self._check_queue_level()
                 # Check active flows
                 await self._check_active_flows()
+                # Check scheduled commercial campaigns
+                await self._check_scheduled_campaigns()
                 self._last_check = datetime.now()
             except Exception as e:
                 logger.error(f"Error in flow monitor: {e}", exc_info=True)
@@ -339,12 +338,9 @@ class FlowMonitorService:
                     "started_at": now,
                     "last_action_time": None,
                     "actions_completed": 0,
-                    "last_commercial_check": now,
                 }
                 logger.info(f"Started monitoring flow '{flow.get('name')}' ({flow_id})")
-
-            # Check if it's time for commercial breaks
-            await self._check_commercial_timing(flow, now)
+            # Note: Commercials are handled by Campaign Manager, not flows
 
     def _is_in_schedule_window(
         self,
@@ -398,178 +394,89 @@ class FlowMonitorService:
             else:
                 return start_time <= current_time_str <= end_time
 
-    async def _check_commercial_timing(self, flow: dict, now: datetime):
+    async def _check_scheduled_campaigns(self):
         """
-        Check if it's time to insert commercials based on flow actions and clock.
+        Check for scheduled commercial campaigns and insert them into the queue.
 
-        This analyzes the flow's actions to understand when commercials should play:
-        - "on the hour" -> at XX:00
-        - "on the half hour" -> at XX:30
-        - "every 30 minutes" -> every 30 minutes from flow start
-        - batch-specific timing based on action descriptions
+        Uses the CommercialSchedulerService to get commercials for the current time slot,
+        then inserts them at the front of the queue for immediate playback.
         """
-        flow_id = str(flow["_id"])
-        flow_state = self._flow_states.get(flow_id, {})
-        actions = flow.get("actions", [])
-
-        current_minute = now.minute
-        current_hour = now.hour
-
-        for idx, action in enumerate(actions):
-            action_type = action.get("action_type")
-            if action_type != "play_commercials":
-                continue
-
-            description = (action.get("description") or "").lower()
-            batch_number = action.get("batch_number")
-
-            # Determine when this commercial action should trigger
-            should_trigger = False
-            trigger_reason = ""
-
-            # Check for "on the hour" pattern
-            if "on the hour" in description or "every hour" in description:
-                # Trigger at XX:00 (with 2-minute window)
-                if current_minute <= 2:
-                    # Check if we already triggered this hour
-                    last_hourly = self._last_commercial_by_batch.get(batch_number or 0)
-                    if not last_hourly or (now - last_hourly).total_seconds() > 3000:  # 50 min buffer
-                        should_trigger = True
-                        trigger_reason = f"hourly commercial at {current_hour}:00"
-
-            # Check for "on the half hour" pattern
-            elif "half hour" in description or "half-hour" in description:
-                # Trigger at XX:30 (with 2-minute window)
-                if 28 <= current_minute <= 32:
-                    last_half = self._last_commercial_by_batch.get(batch_number or 100)
-                    if not last_half or (now - last_half).total_seconds() > 1500:  # 25 min buffer
-                        should_trigger = True
-                        trigger_reason = f"half-hour commercial at {current_hour}:30"
-
-            # Check for "every X minutes" pattern
-            elif "every" in description:
-                import re
-                match = re.search(r'every\s+(\d+)\s*(?:min|minutes?)', description)
-                if match:
-                    interval_minutes = int(match.group(1))
-                    flow_start = flow_state.get("started_at", now)
-                    elapsed = (now - flow_start).total_seconds() / 60
-
-                    # Check if we've passed an interval boundary
-                    last_interval = self._last_commercial_by_batch.get(batch_number or 200)
-                    if not last_interval or (now - last_interval).total_seconds() > (interval_minutes - 2) * 60:
-                        intervals_passed = int(elapsed / interval_minutes)
-                        if intervals_passed > 0 and elapsed % interval_minutes < 2:
-                            should_trigger = True
-                            trigger_reason = f"interval commercial (every {interval_minutes} min)"
-
-            if should_trigger:
-                logger.info(f"Flow '{flow.get('name')}': Time to insert commercials - {trigger_reason}")
-                await self._insert_commercials(flow, action, trigger_reason)
-
-                # Record the insertion time
-                self._last_commercial_by_batch[batch_number or 0] = now
-
-    async def _insert_commercials(self, flow: dict, action: dict, reason: str):
-        """
-        Insert commercials into the queue at the appropriate position.
-
-        If AI agent is available, ask for confirmation/decision.
-        Otherwise, execute directly.
-        """
-        flow_name = flow.get("name", "Unknown Flow")
-        batch_number = action.get("batch_number")
-        commercial_count = action.get("commercial_count", 1)
-
-        # Try AI agent first, fall back to direct execution if it fails
-        if self.orchestrator_agent:
-            try:
-                # Create a chat message to ask the agent
-                prompt = f"""Insert commercial break now for flow "{flow_name}".
-Batch number: {batch_number if batch_number else 'all'}
-Reason: {reason}
-
-Execute INSERT_COMMERCIAL task with batch_number={batch_number}."""
-
-                result = await self.orchestrator_agent.chat(prompt)
-                response = result.get('response', '')
-                logger.info(f"AI agent response for commercial insertion: {response[:200]}")
-
-                # Check if agent successfully executed (look for success indicators)
-                if 'commercial' in response.lower() and ('inserted' in response.lower() or 'added' in response.lower() or 'queued' in response.lower()):
-                    logger.info("AI agent successfully inserted commercials")
-                    return
-                else:
-                    logger.warning("AI agent did not confirm commercial insertion, falling back to direct execution")
-
-            except Exception as e:
-                logger.error(f"AI agent error, falling back to direct execution: {e}")
-
-        # Direct execution without AI agent
-        logger.info(f"Executing direct commercial insertion: batch={batch_number}, count={commercial_count}")
-        await self._execute_commercial_insertion(batch_number, commercial_count)
-
-    async def _execute_commercial_insertion(self, batch_number: Optional[int], repeat_count: int):
-        """Execute commercial insertion directly."""
         from app.routers.playback import add_to_queue, get_queue
         from app.routers.websocket import broadcast_queue_update
+        from app.services.commercial_scheduler import get_scheduler
 
         try:
-            # Fetch commercials
-            if batch_number:
-                commercials = await self.db.content.find({
-                    "type": "commercial",
-                    "active": True,
-                    "batches": batch_number
-                }).to_list(100)
-            else:
-                commercials = await self.db.content.find({
-                    "type": "commercial",
-                    "active": True
-                }).to_list(100)
+            scheduler = get_scheduler(self.db)
+            now = datetime.now()
+
+            # Get commercials scheduled for the current slot
+            commercials = await scheduler.get_commercials_for_slot(
+                target_datetime=now,
+                max_count=10  # Limit to prevent queue flooding
+            )
 
             if not commercials:
-                logger.warning(f"No commercials found for batch {batch_number}")
                 return
 
-            # Insert commercials at the front of the queue (priority position)
-            logger.info(f"Inserting {len(commercials)} commercials (repeat: {repeat_count})")
+            logger.info(f"Found {len(commercials)} scheduled commercials to play")
 
-            all_commercials = []
-            repeat = repeat_count if repeat_count else 1
-            for _ in range(min(repeat, 10)):  # Safety limit
-                all_commercials.extend(commercials)
+            # Get jingle settings
+            jingle_settings = await scheduler.get_jingle_settings()
+            jingle_content = None
+            if jingle_settings.get("use_jingle") and jingle_settings.get("jingle_id"):
+                jingle_content = await scheduler.get_jingle_content(jingle_settings["jingle_id"])
+                if jingle_content:
+                    logger.info(f"Using commercial jingle: {jingle_content.get('title')}")
 
-            # Add to the backend queue at high priority (front of queue)
-            for idx, commercial in enumerate(all_commercials):
-                # Insert at position idx to maintain order at front
-                add_to_queue({
-                    "_id": str(commercial["_id"]),
-                    "title": commercial.get("title", "Commercial"),
-                    "artist": commercial.get("artist"),
-                    "type": "commercial",
-                    "duration_seconds": commercial.get("duration_seconds", 0),
-                    "genre": commercial.get("genre"),
-                    "metadata": commercial.get("metadata", {}),
-                    "batches": commercial.get("batches", [])
-                }, position=idx)  # This will insert at front
+            # Build queue items
+            queue_items = []
+
+            for commercial_data in commercials:
+                content = commercial_data.get("content", {})
+                campaign_id = commercial_data.get("campaign_id")
+
+                queue_items.append({
+                    "_id": str(content.get("_id", "")),
+                    "title": content.get("title", "Commercial"),
+                    "artist": content.get("artist"),
+                    "type": content.get("type", "commercial"),
+                    "duration_seconds": content.get("duration_seconds", 30),
+                    "genre": content.get("genre"),
+                    "metadata": content.get("metadata", {}),
+                    "campaign_id": campaign_id,
+                    "scheduled_campaign": True
+                })
+
+            # Wrap with jingles if enabled
+            if jingle_content:
+                queue_items = scheduler.wrap_with_jingle(queue_items, jingle_content)
+
+            # Insert all items at front of queue
+            for idx, queue_item in enumerate(queue_items):
+                add_to_queue(queue_item, position=idx)
+
+            # Record plays for commercials (not jingles)
+            for commercial_data in commercials:
+                content = commercial_data.get("content", {})
+                campaign_id = commercial_data.get("campaign_id")
+                slot_index = commercial_data.get("slot_index")
+                slot_date = commercial_data.get("slot_date")
+
+                await scheduler.record_play(
+                    campaign_id=campaign_id,
+                    content_id=str(content.get("_id", "")),
+                    slot_index=slot_index,
+                    slot_date=slot_date,
+                    triggered_by="flow_monitor"
+                )
+
+                logger.info(f"Queued campaign commercial: {content.get('title')} (campaign: {commercial_data.get('campaign_name')})")
 
             # Broadcast queue update
             await broadcast_queue_update(get_queue())
 
-            # Log the insertion
-            await self.db.playback_logs.insert_one({
-                "type": "commercial_insertion",
-                "batch_number": batch_number,
-                "count": len(all_commercials),
-                "triggered_by": "flow_monitor",
-                "timestamp": datetime.utcnow()
-            })
-
-            logger.info(f"Successfully inserted {len(all_commercials)} commercials into queue")
-
         except Exception as e:
-            logger.error(f"Failed to insert commercials: {e}", exc_info=True)
+            logger.error(f"Error checking scheduled campaigns: {e}", exc_info=True)
 
     def get_status(self) -> Dict[str, Any]:
         """Get monitor status."""

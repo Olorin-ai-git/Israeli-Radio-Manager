@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { api } from '../services/api'
 
-export type CampaignStatus = 'draft' | 'active' | 'paused' | 'completed'
+export type CampaignStatus = 'draft' | 'active' | 'paused' | 'completed' | 'deleted'
 
 export interface WeeklySlot {
   slot_date: string    // YYYY-MM-DD format - the specific date for this slot
@@ -102,6 +102,7 @@ interface CampaignState {
   updateCampaign: (id: string, data: Partial<CampaignCreate>) => Promise<Campaign | null>
   deleteCampaign: (id: string, hardDelete?: boolean) => Promise<boolean>
   toggleCampaignStatus: (id: string) => Promise<Campaign | null>
+  cloneCampaign: (id: string) => Promise<Campaign | null>
 
   // Grid editing
   initEditingGrid: (campaign: Campaign) => void
@@ -213,12 +214,12 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
         // Check if we have unsaved changes for this campaign
         const savedGrid = newEditingGrids.get(campaign._id)
         if (savedGrid !== undefined) {
-          // Restore unsaved changes
-          newEditingGrid = [...savedGrid]
+          // Restore unsaved changes (filter out legacy day_of_week format)
+          newEditingGrid = savedGrid.filter(slot => 'slot_date' in slot && slot.slot_date)
           newIsDirty = state.dirtyGrids.has(campaign._id)
         } else {
-          // Initialize from campaign's stored grid
-          newEditingGrid = [...campaign.schedule_grid]
+          // Initialize from campaign's stored grid (filter out legacy day_of_week format)
+          newEditingGrid = campaign.schedule_grid.filter(slot => 'slot_date' in slot && slot.slot_date)
           newIsDirty = false
         }
       } else {
@@ -277,7 +278,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
       set(state => ({
         campaigns: hardDelete
           ? state.campaigns.filter(c => c._id !== id)
-          : state.campaigns.map(c => c._id === id ? { ...c, status: 'completed' as CampaignStatus } : c),
+          : state.campaigns.map(c => c._id === id ? { ...c, status: 'deleted' as CampaignStatus } : c),
         selectedCampaign: state.selectedCampaign?._id === id ? null : state.selectedCampaign,
         isSaving: false,
       }))
@@ -305,15 +306,35 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     }
   },
 
+  // Clone a campaign
+  cloneCampaign: async (id: string) => {
+    set({ isSaving: true, error: null })
+    try {
+      const clonedCampaign = await api.cloneCampaign(id)
+      set(state => ({
+        campaigns: [clonedCampaign, ...state.campaigns],
+        selectedCampaign: clonedCampaign,
+        isSaving: false,
+      }))
+      return clonedCampaign
+    } catch (error: any) {
+      set({ error: error.message || 'Failed to clone campaign', isSaving: false })
+      return null
+    }
+  },
+
   // Initialize editing grid from campaign
   initEditingGrid: (campaign: Campaign) => {
     set(state => {
+      // Filter out legacy day_of_week format slots
+      const cleanGrid = campaign.schedule_grid.filter(slot => 'slot_date' in slot && slot.slot_date)
+
       // Also update the editingGrids map
       const newEditingGrids = new Map(state.editingGrids)
-      newEditingGrids.set(campaign._id, [...campaign.schedule_grid])
+      newEditingGrids.set(campaign._id, [...cleanGrid])
 
       return {
-        editingGrid: [...campaign.schedule_grid],
+        editingGrid: [...cleanGrid],
         isDirty: false,
         editingGrids: newEditingGrids,
       }
@@ -323,17 +344,19 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   // Set editing grid directly (for copying from another campaign)
   setEditingGrid: (grid: WeeklySlot[]) => {
     const campaignId = get().selectedCampaign?._id
+    // Filter out legacy day_of_week format slots
+    const cleanGrid = grid.filter(slot => 'slot_date' in slot && slot.slot_date)
+
     set(state => {
       const newDirtyGrids = new Set(state.dirtyGrids)
       if (campaignId) newDirtyGrids.add(campaignId)
 
       // Also update the editingGrids map to keep it in sync
       const newEditingGrids = new Map(state.editingGrids)
-      const newGrid = [...grid]
-      if (campaignId) newEditingGrids.set(campaignId, newGrid)
+      if (campaignId) newEditingGrids.set(campaignId, [...cleanGrid])
 
       return {
-        editingGrid: newGrid,
+        editingGrid: [...cleanGrid],
         isDirty: true,
         dirtyGrids: newDirtyGrids,
         editingGrids: newEditingGrids,
@@ -398,7 +421,9 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   saveGrid: async (campaignId: string) => {
     set({ isSaving: true, error: null })
     try {
-      const campaign = await api.updateCampaignGrid(campaignId, get().editingGrid)
+      // Filter out any legacy slots with day_of_week format (only keep slot_date format)
+      const cleanGrid = get().editingGrid.filter(slot => 'slot_date' in slot && slot.slot_date)
+      const campaign = await api.updateCampaignGrid(campaignId, cleanGrid)
       set(state => {
         // Clear dirty state for this campaign
         const newDirtyGrids = new Set(state.dirtyGrids)
@@ -441,7 +466,9 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
           : state.editingGrids.get(campaignId)
 
         if (grid) {
-          const campaign = await api.updateCampaignGrid(campaignId, grid)
+          // Filter out any legacy slots with day_of_week format (only keep slot_date format)
+          const cleanGrid = grid.filter(slot => 'slot_date' in slot && slot.slot_date)
+          const campaign = await api.updateCampaignGrid(campaignId, cleanGrid)
           results.push(campaign)
         }
       }
