@@ -9,6 +9,7 @@ import {
 import { api } from '../services/api'
 import { usePlayerStore } from '../store/playerStore'
 import { toast } from '../store/toastStore'
+import { Select } from '../components/Form'
 
 type SortField = 'title' | 'genre' | 'duration_seconds' | 'type' | 'created_at'
 type SortDirection = 'asc' | 'desc'
@@ -395,9 +396,6 @@ export default function Library() {
               {isRTL ? 'רענן מטה-דאטה מקבצי שמע' : 'Refresh metadata from audio files'}
             </div>
           </div>
-          <div className="text-sm text-dark-400">
-            {filteredContent.length} {isRTL ? 'פריטים' : 'items'}
-          </div>
         </div>
       </div>
 
@@ -428,7 +426,7 @@ export default function Library() {
       </div>
 
       {/* Search and Filters */}
-      <div className="flex gap-4 mb-6">
+      <div className="flex gap-4 mb-6 items-center">
         <div className="flex-1 relative">
           <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400" />
           <input
@@ -442,16 +440,37 @@ export default function Library() {
         </div>
 
         {activeTab === 'songs' && Array.isArray(genres) && genres.length > 0 && (
-          <select
-            value={selectedGenre}
-            onChange={(e) => setSelectedGenre(e.target.value)}
-            className="px-4 py-2 glass-input min-w-[150px]"
-          >
-            <option value="">{isRTL ? 'כל הז\'אנרים' : 'All Genres'}</option>
-            {genres.map((genre: string) => (
-              <option key={genre} value={genre}>{genre}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-3">
+            <Select
+              value={selectedGenre}
+              onChange={setSelectedGenre}
+              placeholder={isRTL ? "כל הז'אנרים" : 'All Genres'}
+              className="min-w-[200px]"
+              options={[
+                { value: '', label: isRTL ? "כל הז'אנרים" : 'All Genres', description: `${content.length} ${isRTL ? 'שירים' : 'songs'}` },
+                ...genres.map((genre: string) => {
+                  const genreCount = content.filter((item: any) => item.genre === genre).length
+                  return {
+                    value: genre,
+                    label: genre,
+                    description: `${genreCount} ${isRTL ? 'שירים' : 'songs'}`
+                  }
+                })
+              ]}
+            />
+            <div className="px-3 py-1.5 rounded-lg bg-dark-800/50 border border-dark-700/50">
+              <span className="text-sm font-medium text-primary-400">{filteredContent.length}</span>
+              <span className="text-sm text-dark-400 ml-1">{isRTL ? 'פריטים' : 'items'}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Show item count for non-songs tabs */}
+        {activeTab !== 'songs' && (
+          <div className="px-3 py-1.5 rounded-lg bg-dark-800/50 border border-dark-700/50">
+            <span className="text-sm font-medium text-primary-400">{filteredContent.length}</span>
+            <span className="text-sm text-dark-400 ml-1">{isRTL ? 'פריטים' : 'items'}</span>
+          </div>
         )}
       </div>
 

@@ -35,7 +35,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { api } from '../../services/api'
-import { Input, Textarea } from '../Form'
+import { Input, Textarea, Select } from '../Form'
 
 // Import types and constants
 import { Flow, FlowAction, RecurrenceType } from './types'
@@ -928,17 +928,15 @@ function FlowFormModal({
 
           {/* Trigger Type */}
           <div>
-            <label className="block text-dark-300 text-sm mb-2">
-              {isRTL ? 'סוג הפעלה' : 'Trigger Type'}
-            </label>
-            <select
+            <Select
+              label={isRTL ? 'סוג הפעלה' : 'Trigger Type'}
               value={triggerType}
-              onChange={(e) => setTriggerType(e.target.value as 'scheduled' | 'manual')}
-              className="w-full glass-input"
-            >
-              <option value="scheduled">{isRTL ? 'מתוזמן' : 'Scheduled'}</option>
-              <option value="manual">{isRTL ? 'ידני' : 'Manual'}</option>
-            </select>
+              onChange={(value) => setTriggerType(value as 'scheduled' | 'manual')}
+              options={[
+                { value: 'scheduled', label: isRTL ? 'מתוזמן' : 'Scheduled', description: isRTL ? 'הפעלה אוטומטית לפי לוח זמנים' : 'Automatic execution by schedule' },
+                { value: 'manual', label: isRTL ? 'ידני' : 'Manual', description: isRTL ? 'הפעלה ידנית בלבד' : 'Manual execution only' }
+              ]}
+            />
           </div>
 
           {/* Schedule Form */}

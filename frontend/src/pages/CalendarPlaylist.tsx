@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { api } from '../services/api'
 import Checkbox from '../components/Form/Checkbox'
+import { Select } from '../components/Form'
 
 interface CalendarEvent {
   id: string
@@ -614,42 +615,37 @@ export default function CalendarPlaylist() {
                 <>
                   {/* Content Type Filter */}
                   <div>
-                    <label className="block text-dark-300 text-xs mb-1">
-                      {isRTL ? 'סוג תוכן' : 'Content Type'}
-                    </label>
-                    <select
+                    <Select
+                      label={isRTL ? 'סוג תוכן' : 'Content Type'}
                       value={contentTypeFilter}
-                      onChange={(e) => {
-                        setContentTypeFilter(e.target.value)
+                      onChange={(value) => {
+                        setContentTypeFilter(value)
                         setGenreFilter('all')
                       }}
-                      className="w-full glass-input text-sm"
-                    >
-                      <option value="all">{isRTL ? 'הכל' : 'All'}</option>
-                      <option value="song">{isRTL ? 'שירים' : 'Songs'}</option>
-                      <option value="show">{isRTL ? 'תוכניות' : 'Shows'}</option>
-                      <option value="commercial">{isRTL ? 'פרסומות' : 'Commercials'}</option>
-                    </select>
+                      options={[
+                        { value: 'all', label: isRTL ? 'הכל' : 'All' },
+                        { value: 'song', label: isRTL ? 'שירים' : 'Songs' },
+                        { value: 'show', label: isRTL ? 'תוכניות' : 'Shows' },
+                        { value: 'commercial', label: isRTL ? 'פרסומות' : 'Commercials' }
+                      ]}
+                    />
                   </div>
 
                   {/* Genre Filter (only for songs) */}
                   {contentTypeFilter !== 'commercial' && (
                     <div>
-                      <label className="block text-dark-300 text-xs mb-1">
-                        {isRTL ? 'ז׳אנר' : 'Genre'}
-                      </label>
-                      <select
+                      <Select
+                        label={isRTL ? 'ז׳אנר' : 'Genre'}
                         value={genreFilter}
-                        onChange={(e) => setGenreFilter(e.target.value)}
-                        className="w-full glass-input text-sm"
-                      >
-                        <option value="all">{isRTL ? 'כל הז׳אנרים' : 'All Genres'}</option>
-                        {genres.map((genre) => (
-                          <option key={genre} value={genre}>
-                            {genre}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setGenreFilter}
+                        options={[
+                          { value: 'all', label: isRTL ? 'כל הז׳אנרים' : 'All Genres' },
+                          ...genres.map((genre) => ({
+                            value: genre,
+                            label: genre
+                          }))
+                        ]}
+                      />
                     </div>
                   )}
 
@@ -674,25 +670,24 @@ export default function CalendarPlaylist() {
 
                   {/* Content Selector */}
                   <div>
-                    <label className="block text-dark-300 text-sm mb-2">
-                      {isRTL ? 'בחר תוכן' : 'Select Content'}
-                    </label>
-                    <select
+                    <Select
+                      label={isRTL ? 'בחר תוכן' : 'Select Content'}
                       value={selectedContentId}
-                      onChange={(e) => setSelectedContentId(e.target.value)}
-                      className="w-full glass-input"
-                      required
-                    >
-                      <option value="">{isRTL ? '-- בחר --' : '-- Select --'}</option>
-                      {filteredContent?.map((content: any) => (
-                        <option key={content._id} value={content._id}>
-                          {content.title}
-                          {content.artist ? ` - ${content.artist}` : ''}
-                          {content.type === 'commercial' && content.batch_number ? ` [Batch #${content.batch_number}]` : ''}
-                          {content.genre && content.type === 'song' ? ` (${content.genre})` : ''}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setSelectedContentId}
+                      placeholder={isRTL ? '-- בחר --' : '-- Select --'}
+                      options={[
+                        { value: '', label: isRTL ? '-- בחר --' : '-- Select --' },
+                        ...(filteredContent?.map((content: any) => ({
+                          value: content._id,
+                          label: `${content.title}${content.artist ? ` - ${content.artist}` : ''}`,
+                          description: content.type === 'commercial' && content.batch_number
+                            ? `Batch #${content.batch_number}`
+                            : content.genre && content.type === 'song'
+                            ? content.genre
+                            : undefined
+                        })) || [])
+                      ]}
+                    />
                   </div>
                 </>
               )}
@@ -700,23 +695,20 @@ export default function CalendarPlaylist() {
               {/* Flow Selection */}
               {scheduleType === 'flow' && (
                 <div>
-                  <label className="block text-dark-300 text-sm mb-2">
-                    {isRTL ? 'בחר תזרים' : 'Select Flow'}
-                  </label>
-                  <select
+                  <Select
+                    label={isRTL ? 'בחר תזרים' : 'Select Flow'}
                     value={selectedFlowId}
-                    onChange={(e) => setSelectedFlowId(e.target.value)}
-                    className="w-full glass-input"
-                    required
-                  >
-                    <option value="">{isRTL ? '-- בחר --' : '-- Select --'}</option>
-                    {allFlows?.map((flow: any) => (
-                      <option key={flow._id} value={flow._id}>
-                        {isRTL && flow.name_he ? flow.name_he : flow.name}
-                        {flow.schedule?.recurrence && ` (${flow.schedule.recurrence})`}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setSelectedFlowId}
+                    placeholder={isRTL ? '-- בחר --' : '-- Select --'}
+                    options={[
+                      { value: '', label: isRTL ? '-- בחר --' : '-- Select --' },
+                      ...(allFlows?.map((flow: any) => ({
+                        value: flow._id,
+                        label: isRTL && flow.name_he ? flow.name_he : flow.name,
+                        description: flow.schedule?.recurrence || undefined
+                      })) || [])
+                    ]}
+                  />
                 </div>
               )}
 
@@ -728,18 +720,16 @@ export default function CalendarPlaylist() {
 
                 {/* Recurrence Type */}
                 <div>
-                  <label className="block text-dark-300 text-xs mb-1">
-                    {isRTL ? 'חזרה' : 'Repeat'}
-                  </label>
-                  <select
+                  <Select
+                    label={isRTL ? 'חזרה' : 'Repeat'}
                     value={scheduleRecurrence}
-                    onChange={(e) => setScheduleRecurrence(e.target.value as 'none' | 'daily' | 'weekly')}
-                    className="w-full glass-input text-sm"
-                  >
-                    <option value="none">{isRTL ? 'פעם אחת' : 'Once'}</option>
-                    <option value="daily">{isRTL ? 'יומי' : 'Daily'}</option>
-                    <option value="weekly">{isRTL ? 'שבועי' : 'Weekly'}</option>
-                  </select>
+                    onChange={(value) => setScheduleRecurrence(value as 'none' | 'daily' | 'weekly')}
+                    options={[
+                      { value: 'none', label: isRTL ? 'פעם אחת' : 'Once' },
+                      { value: 'daily', label: isRTL ? 'יומי' : 'Daily' },
+                      { value: 'weekly', label: isRTL ? 'שבועי' : 'Weekly' }
+                    ]}
+                  />
                 </div>
 
                 {/* One-time: Datetime picker */}

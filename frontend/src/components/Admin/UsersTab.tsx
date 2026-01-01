@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import api from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
+import { Select, Checkbox } from '../Form'
 
 // Protected super admin email - cannot be modified or deactivated by other users
 const PROTECTED_ADMIN_EMAIL = 'admin@olorin.ai'
@@ -313,27 +314,25 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
           </div>
 
           {/* Role Filter */}
-          <select
+          <Select
             value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-            className="px-4 py-2 bg-dark-800 border border-dark-600 rounded-lg text-dark-100 focus:outline-none focus:border-primary-500"
-          >
-            <option value="">{isRTL ? 'כל התפקידים' : 'All Roles'}</option>
-            <option value="admin">{isRTL ? 'מנהלים' : 'Admins'}</option>
-            <option value="editor">{isRTL ? 'עורכים' : 'Editors'}</option>
-            <option value="viewer">{isRTL ? 'צופים' : 'Viewers'}</option>
-          </select>
+            onChange={setRoleFilter}
+            placeholder={isRTL ? 'כל התפקידים' : 'All Roles'}
+            className="min-w-[160px]"
+            options={[
+              { value: '', label: isRTL ? 'כל התפקידים' : 'All Roles' },
+              { value: 'admin', label: isRTL ? 'מנהלים' : 'Admins' },
+              { value: 'editor', label: isRTL ? 'עורכים' : 'Editors' },
+              { value: 'viewer', label: isRTL ? 'צופים' : 'Viewers' }
+            ]}
+          />
 
           {/* Show Inactive Toggle */}
-          <label className="flex items-center gap-2 text-sm text-dark-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showInactive}
-              onChange={(e) => setShowInactive(e.target.checked)}
-              className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-primary-500 focus:ring-primary-500"
-            />
-            {isRTL ? 'הצג לא פעילים' : 'Show Inactive'}
-          </label>
+          <Checkbox
+            checked={showInactive}
+            onChange={(e) => setShowInactive(e.target.checked)}
+            label={isRTL ? 'הצג לא פעילים' : 'Show Inactive'}
+          />
 
           {/* Add User Button */}
           <button
@@ -717,23 +716,16 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
 
               {/* Role */}
               <div>
-                <label className="block text-sm font-medium text-dark-300 mb-2">
-                  {isRTL ? 'תפקיד' : 'Role'} *
-                </label>
-                <select
+                <Select
+                  label={`${isRTL ? 'תפקיד' : 'Role'} *`}
                   value={createForm.role}
-                  onChange={(e) => setCreateForm({ ...createForm, role: e.target.value as 'admin' | 'editor' | 'viewer' })}
-                  className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-dark-100 focus:outline-none focus:border-primary-500"
-                >
-                  <option value="viewer">{isRTL ? 'צופה' : 'Viewer'}</option>
-                  <option value="editor">{isRTL ? 'עורך' : 'Editor'}</option>
-                  <option value="admin">{isRTL ? 'מנהל' : 'Admin'}</option>
-                </select>
-                <p className="text-xs text-dark-400 mt-1">
-                  {createForm.role === 'admin' && (isRTL ? 'גישה מלאה לכל המערכת' : 'Full access to the entire system')}
-                  {createForm.role === 'editor' && (isRTL ? 'יכול לערוך תוכן ולוחות זמנים' : 'Can edit content and schedules')}
-                  {createForm.role === 'viewer' && (isRTL ? 'יכול לצפות בלבד' : 'Read-only access')}
-                </p>
+                  onChange={(value) => setCreateForm({ ...createForm, role: value as 'admin' | 'editor' | 'viewer' })}
+                  options={[
+                    { value: 'viewer', label: isRTL ? 'צופה' : 'Viewer', description: isRTL ? 'יכול לצפות בלבד' : 'Read-only access' },
+                    { value: 'editor', label: isRTL ? 'עורך' : 'Editor', description: isRTL ? 'יכול לערוך תוכן ולוחות זמנים' : 'Can edit content and schedules' },
+                    { value: 'admin', label: isRTL ? 'מנהל' : 'Admin', description: isRTL ? 'גישה מלאה לכל המערכת' : 'Full access to the entire system' }
+                  ]}
+                />
               </div>
 
               {/* Display Name (optional) */}

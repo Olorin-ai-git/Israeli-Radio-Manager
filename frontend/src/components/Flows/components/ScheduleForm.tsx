@@ -4,7 +4,7 @@
  */
 
 import { RecurrenceType, FlowSchedule } from '../types'
-import { Checkbox } from '../../Form'
+import { Checkbox, Select } from '../../Form'
 
 interface ScheduleFormProps {
   isRTL: boolean
@@ -53,20 +53,18 @@ export default function ScheduleForm({
 
       {/* Recurrence Type */}
       <div>
-        <label className="block text-dark-300 text-xs mb-1">
-          {isRTL ? 'חזרה' : 'Repeat'}
-        </label>
-        <select
+        <Select
+          label={isRTL ? 'חזרה' : 'Repeat'}
           value={recurrenceType}
-          onChange={(e) => onRecurrenceTypeChange(e.target.value as RecurrenceType)}
-          className="w-full glass-input text-sm"
-        >
-          <option value="none">{isRTL ? 'פעם אחת / מרובה ימים' : 'Once / Multi-day'}</option>
-          <option value="daily">{isRTL ? 'יומי' : 'Daily'}</option>
-          <option value="weekly">{isRTL ? 'שבועי' : 'Weekly'}</option>
-          <option value="monthly">{isRTL ? 'חודשי' : 'Monthly'}</option>
-          <option value="yearly">{isRTL ? 'שנתי' : 'Yearly'}</option>
-        </select>
+          onChange={(value) => onRecurrenceTypeChange(value as RecurrenceType)}
+          options={[
+            { value: 'none', label: isRTL ? 'פעם אחת / מרובה ימים' : 'Once / Multi-day' },
+            { value: 'daily', label: isRTL ? 'יומי' : 'Daily' },
+            { value: 'weekly', label: isRTL ? 'שבועי' : 'Weekly' },
+            { value: 'monthly', label: isRTL ? 'חודשי' : 'Monthly' },
+            { value: 'yearly', label: isRTL ? 'שנתי' : 'Yearly' }
+          ]}
+        />
       </div>
 
       {/* One-time/Multi-day: Datetime pickers */}
@@ -163,19 +161,15 @@ export default function ScheduleForm({
       {/* Monthly: Day of month */}
       {recurrenceType === 'monthly' && (
         <div>
-          <label className="block text-dark-300 text-xs mb-1">
-            {isRTL ? 'יום בחודש' : 'Day of Month'}
-          </label>
-          <select
-            name="day_of_month"
-            defaultValue={schedule.day_of_month || 1}
-            onChange={(e) => handleFieldChange('day_of_month', parseInt(e.target.value))}
-            className="w-full glass-input text-sm"
-          >
-            {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
+          <Select
+            label={isRTL ? 'יום בחודש' : 'Day of Month'}
+            value={String(schedule.day_of_month || 1)}
+            onChange={(value) => handleFieldChange('day_of_month', parseInt(value))}
+            options={Array.from({ length: 31 }, (_, i) => ({
+              value: String(i + 1),
+              label: String(i + 1)
+            }))}
+          />
         </div>
       )}
 
@@ -183,34 +177,26 @@ export default function ScheduleForm({
       {recurrenceType === 'yearly' && (
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-dark-300 text-xs mb-1">
-              {isRTL ? 'חודש' : 'Month'}
-            </label>
-            <select
-              name="month"
-              defaultValue={schedule.month || 1}
-              onChange={(e) => handleFieldChange('month', parseInt(e.target.value))}
-              className="w-full glass-input text-sm"
-            >
-              {MONTH_NAMES[lang].map((m, idx) => (
-                <option key={idx} value={idx + 1}>{m}</option>
-              ))}
-            </select>
+            <Select
+              label={isRTL ? 'חודש' : 'Month'}
+              value={String(schedule.month || 1)}
+              onChange={(value) => handleFieldChange('month', parseInt(value))}
+              options={MONTH_NAMES[lang].map((m, idx) => ({
+                value: String(idx + 1),
+                label: m
+              }))}
+            />
           </div>
           <div>
-            <label className="block text-dark-300 text-xs mb-1">
-              {isRTL ? 'יום' : 'Day'}
-            </label>
-            <select
-              name="day_of_month"
-              defaultValue={schedule.day_of_month || 1}
-              onChange={(e) => handleFieldChange('day_of_month', parseInt(e.target.value))}
-              className="w-full glass-input text-sm"
-            >
-              {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
+            <Select
+              label={isRTL ? 'יום' : 'Day'}
+              value={String(schedule.day_of_month || 1)}
+              onChange={(value) => handleFieldChange('day_of_month', parseInt(value))}
+              options={Array.from({ length: 31 }, (_, i) => ({
+                value: String(i + 1),
+                label: String(i + 1)
+              }))}
+            />
           </div>
         </div>
       )}

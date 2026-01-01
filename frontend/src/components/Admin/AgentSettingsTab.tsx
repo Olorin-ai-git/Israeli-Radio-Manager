@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bot, Settings as SettingsIcon, Bell, Cpu, Key, Eye, EyeOff, Trash2 } from 'lucide-react'
 import api from '../../services/api'
 import { toast } from '../../store/toastStore'
+import { Select } from '../Form'
 
 interface AgentSettingsTabProps {
   isRTL: boolean
@@ -212,21 +213,17 @@ export default function AgentSettingsTab({ isRTL }: AgentSettingsTabProps) {
           <div className="space-y-6">
             {/* Model Selection */}
             <div>
-              <label className="block text-sm font-medium text-dark-200 mb-2">
-                {isRTL ? 'מודל' : 'Model'}
-              </label>
-              <select
+              <Select
+                label={isRTL ? 'מודל' : 'Model'}
                 value={llmConfig?.model || ''}
-                onChange={(e) => handleModelChange(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg bg-dark-800 border border-dark-700 text-dark-100 focus:border-primary-500 focus:outline-none"
+                onChange={handleModelChange}
                 disabled={updateLLMMutation.isPending}
-              >
-                {llmConfig?.available_models?.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name} ({model.tier})
-                  </option>
-                ))}
-              </select>
+                options={llmConfig?.available_models?.map((model) => ({
+                  value: model.id,
+                  label: model.name,
+                  description: model.tier === 'premium' ? (isRTL ? 'פרימיום' : 'Premium') : (isRTL ? 'רגיל' : 'Standard')
+                })) || []}
+              />
             </div>
 
             {/* API Key Status */}
@@ -398,15 +395,15 @@ export default function AgentSettingsTab({ isRTL }: AgentSettingsTabProps) {
             {isRTL ? 'רמת התראות' : 'Notification Level'}
           </h3>
         </div>
-        <select
+        <Select
           value={agentConfig?.notification_level || 'all'}
-          onChange={(e) => handleNotificationLevelChange(e.target.value)}
-          className="w-full px-4 py-3 rounded-lg bg-dark-800 border border-dark-700 text-dark-100 focus:border-primary-500 focus:outline-none"
-        >
-          <option value="all">{isRTL ? 'כל ההתראות' : 'All Notifications'}</option>
-          <option value="critical_only">{isRTL ? 'קריטי בלבד' : 'Critical Only'}</option>
-          <option value="summary_only">{isRTL ? 'סיכום בלבד' : 'Summary Only'}</option>
-        </select>
+          onChange={handleNotificationLevelChange}
+          options={[
+            { value: 'all', label: isRTL ? 'כל ההתראות' : 'All Notifications', description: isRTL ? 'קבל את כל ההודעות' : 'Receive all messages' },
+            { value: 'critical_only', label: isRTL ? 'קריטי בלבד' : 'Critical Only', description: isRTL ? 'רק התראות חשובות' : 'Only important alerts' },
+            { value: 'summary_only', label: isRTL ? 'סיכום בלבד' : 'Summary Only', description: isRTL ? 'סיכום יומי בלבד' : 'Daily summary only' }
+          ]}
+        />
       </div>
     </div>
   )

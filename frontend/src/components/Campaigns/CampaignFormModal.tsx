@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { X, Plus, Trash2, Loader2, ExternalLink, FileAudio, Clock, Check } from 'lucide-react'
 import { Campaign, CampaignCreate, ContentRef } from '../../store/campaignStore'
 import { api } from '../../services/api'
+import { Textarea } from '../Form'
 
 // Format duration in mm:ss
 const formatDuration = (seconds?: number): string => {
@@ -230,14 +231,12 @@ export default function CampaignFormModal({
 
           {/* Comment */}
           <div>
-            <label className="block text-dark-300 text-sm mb-1">
-              {isRTL ? 'הערות' : 'Notes'}
-            </label>
-            <textarea
+            <Textarea
+              label={isRTL ? 'הערות' : 'Notes'}
               value={comment}
               onChange={e => setComment(e.target.value)}
-              className="w-full glass-input h-20 resize-none"
               placeholder={isRTL ? 'הערות נוספות...' : 'Additional notes...'}
+              rows={3}
               dir="auto"
             />
           </div>

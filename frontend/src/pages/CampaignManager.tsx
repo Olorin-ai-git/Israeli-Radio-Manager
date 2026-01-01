@@ -30,6 +30,7 @@ import {
 } from '../store/campaignStore'
 import { api } from '../services/api'
 import { toast } from '../store/toastStore'
+import { Checkbox, Select } from '../components/Form'
 import CampaignCard from '../components/Campaigns/CampaignCard'
 import CampaignFormModal from '../components/Campaigns/CampaignFormModal'
 import ScheduleHeatmap, { CampaignSlotInfo } from '../components/Campaigns/ScheduleHeatmap'
@@ -1028,17 +1029,15 @@ export default function CampaignManager() {
 
         <div className="flex items-center gap-2">
           {/* Status filter */}
-          <select
+          <Select
             value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value as CampaignStatus | 'all')}
-            className="glass-input text-sm py-1.5 pl-8 pr-3"
-          >
-            {statusOptions.map(opt => (
-              <option key={opt.value} value={opt.value}>
-                {isRTL ? opt.labelHe : opt.label}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => setStatusFilter(value as CampaignStatus | 'all')}
+            className="min-w-[140px]"
+            options={statusOptions.map(opt => ({
+              value: opt.value,
+              label: isRTL ? opt.labelHe : opt.label
+            }))}
+          />
 
           {/* Refresh */}
           <button
@@ -1128,29 +1127,11 @@ export default function CampaignManager() {
               {filteredCampaigns.length} {isRTL ? 'קמפיינים' : 'campaigns'}
             </div>
             {/* Show inactive checkbox */}
-            <label className="flex items-center gap-2 cursor-pointer group">
-              <div className="relative">
-                <input
-                  type="checkbox"
-                  checked={showInactive}
-                  onChange={(e) => setShowInactive(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-4 h-4 border border-dark-500 rounded bg-dark-700/50 peer-checked:bg-primary-500 peer-checked:border-primary-500 transition-all peer-focus:ring-2 peer-focus:ring-primary-500/30 group-hover:border-dark-400" />
-                <svg
-                  className="absolute top-0.5 left-0.5 w-3 h-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={3}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <span className="text-xs text-dark-400 group-hover:text-dark-300 transition-colors">
-                {isRTL ? 'הצג נמחקים והושלמו' : 'Show deleted & completed'}
-              </span>
-            </label>
+            <Checkbox
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+              label={isRTL ? 'הצג נמחקים והושלמו' : 'Show deleted & completed'}
+            />
           </div>
 
           <div className="flex-1 overflow-auto p-4 space-y-3">
@@ -1490,24 +1471,21 @@ export default function CampaignManager() {
                       </div>
                       {useOpeningJingle && (
                         <div className="ml-6">
-                          <select
+                          <Select
                             value={openingJingleId}
-                            onChange={(e) => {
-                              setOpeningJingleId(e.target.value)
+                            onChange={(value) => {
+                              setOpeningJingleId(value)
                               setIsJingleSettingsDirty(true)
                             }}
-                            className="w-full px-2 py-1.5 text-xs rounded-lg bg-dark-700/50 text-dark-200 border border-dark-600/50 focus:outline-none focus:border-primary-500/50"
-                          >
-                            {jingles.length === 0 ? (
-                              <option value="">{isRTL ? 'אין ג׳ינגלים זמינים' : 'No jingles available'}</option>
-                            ) : (
-                              jingles.map((jingle: any) => (
-                                <option key={jingle._id} value={jingle._id}>
-                                  {jingle.title}
-                                </option>
-                              ))
-                            )}
-                          </select>
+                            placeholder={isRTL ? 'בחר ג׳ינגל' : 'Select jingle'}
+                            options={jingles.length === 0
+                              ? [{ value: '', label: isRTL ? 'אין ג׳ינגלים זמינים' : 'No jingles available' }]
+                              : jingles.map((jingle: any) => ({
+                                  value: jingle._id,
+                                  label: jingle.title
+                                }))
+                            }
+                          />
                         </div>
                       )}
                     </div>
@@ -1538,24 +1516,21 @@ export default function CampaignManager() {
                       </div>
                       {useClosingJingle && (
                         <div className="ml-6">
-                          <select
+                          <Select
                             value={closingJingleId}
-                            onChange={(e) => {
-                              setClosingJingleId(e.target.value)
+                            onChange={(value) => {
+                              setClosingJingleId(value)
                               setIsJingleSettingsDirty(true)
                             }}
-                            className="w-full px-2 py-1.5 text-xs rounded-lg bg-dark-700/50 text-dark-200 border border-dark-600/50 focus:outline-none focus:border-primary-500/50"
-                          >
-                            {jingles.length === 0 ? (
-                              <option value="">{isRTL ? 'אין ג׳ינגלים זמינים' : 'No jingles available'}</option>
-                            ) : (
-                              jingles.map((jingle: any) => (
-                                <option key={jingle._id} value={jingle._id}>
-                                  {jingle.title}
-                                </option>
-                              ))
-                            )}
-                          </select>
+                            placeholder={isRTL ? 'בחר ג׳ינגל' : 'Select jingle'}
+                            options={jingles.length === 0
+                              ? [{ value: '', label: isRTL ? 'אין ג׳ינגלים זמינים' : 'No jingles available' }]
+                              : jingles.map((jingle: any) => ({
+                                  value: jingle._id,
+                                  label: jingle.title
+                                }))
+                            }
+                          />
                         </div>
                       )}
                     </div>
@@ -1735,31 +1710,27 @@ export default function CampaignManager() {
                               <span className="text-xs text-dark-400">
                                 {isRTL ? 'בין' : 'Between'}
                               </span>
-                              <select
-                                value={repeatStartSlot}
-                                onChange={(e) => setRepeatStartSlot(Number(e.target.value))}
-                                className="flex-1 px-2 py-1 text-xs rounded-lg bg-dark-700/50 text-dark-200 border border-dark-600/50 focus:outline-none focus:border-primary-500/50"
-                              >
-                                {Array.from({ length: 48 }, (_, i) => (
-                                  <option key={i} value={i}>
-                                    {slotIndexToTime(i)}
-                                  </option>
-                                ))}
-                              </select>
+                              <Select
+                                value={String(repeatStartSlot)}
+                                onChange={(value) => setRepeatStartSlot(Number(value))}
+                                className="flex-1"
+                                options={Array.from({ length: 48 }, (_, i) => ({
+                                  value: String(i),
+                                  label: slotIndexToTime(i)
+                                }))}
+                              />
                               <span className="text-xs text-dark-400">
                                 {isRTL ? 'עד' : 'Until'}
                               </span>
-                              <select
-                                value={repeatEndSlot}
-                                onChange={(e) => setRepeatEndSlot(Number(e.target.value))}
-                                className="flex-1 px-2 py-1 text-xs rounded-lg bg-dark-700/50 text-dark-200 border border-dark-600/50 focus:outline-none focus:border-primary-500/50"
-                              >
-                                {Array.from({ length: 48 }, (_, i) => (
-                                  <option key={i} value={i}>
-                                    {slotIndexToTime(i)}
-                                  </option>
-                                ))}
-                              </select>
+                              <Select
+                                value={String(repeatEndSlot)}
+                                onChange={(value) => setRepeatEndSlot(Number(value))}
+                                className="flex-1"
+                                options={Array.from({ length: 48 }, (_, i) => ({
+                                  value: String(i),
+                                  label: slotIndexToTime(i)
+                                }))}
+                              />
                             </div>
                           )}
 

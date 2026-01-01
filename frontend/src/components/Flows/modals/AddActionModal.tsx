@@ -5,7 +5,7 @@
 import { useState, useEffect, FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { X, Plus } from 'lucide-react'
-import { Input, Select, Slider, Textarea } from '../../Form'
+import { Checkbox, Input, Select, Slider, Textarea } from '../../Form'
 import { api } from '../../../services/api'
 import { FlowAction } from '../types'
 import { FLOW_GENRES, ACTION_TYPE_OPTIONS, JINGLE_STYLE_OPTIONS, TIME_FORMAT_OPTIONS, TIME_LANGUAGE_OPTIONS, TTS_LANGUAGE_OPTIONS } from '../constants'
@@ -371,17 +371,12 @@ export default function AddActionModal({
                 showCount
               />
               {/* TTS Options */}
-              <div className="flex items-center gap-2 p-3 bg-dark-800/30 rounded-lg">
-                <input
-                  type="checkbox"
-                  id="useTts"
+              <div className="p-3 bg-dark-800/30 rounded-lg">
+                <Checkbox
                   checked={useTts}
                   onChange={(e) => setUseTts(e.target.checked)}
-                  className="text-primary-500"
+                  label={isRTL ? 'השתמש ב-TTS (יצירת קול)' : 'Use TTS (generate audio)'}
                 />
-                <label htmlFor="useTts" className="text-sm text-dark-300 cursor-pointer">
-                  {isRTL ? 'השתמש ב-TTS (יצירת קול)' : 'Use TTS (generate audio)'}
-                </label>
               </div>
               {useTts && (
                 <>
@@ -489,17 +484,12 @@ export default function AddActionModal({
                 }))}
               />
               {/* TTS Options */}
-              <div className="flex items-center gap-2 p-3 bg-dark-800/30 rounded-lg">
-                <input
-                  type="checkbox"
-                  id="useTtsTime"
+              <div className="p-3 bg-dark-800/30 rounded-lg">
+                <Checkbox
                   checked={useTts}
                   onChange={(e) => setUseTts(e.target.checked)}
-                  className="text-primary-500"
+                  label={isRTL ? 'השתמש ב-TTS (יצירת קול)' : 'Use TTS (generate audio)'}
                 />
-                <label htmlFor="useTtsTime" className="text-sm text-dark-300 cursor-pointer">
-                  {isRTL ? 'השתמש ב-TTS (יצירת קול)' : 'Use TTS (generate audio)'}
-                </label>
               </div>
               {useTts && (
                 <Select
@@ -568,17 +558,12 @@ export default function AddActionModal({
                 step={0.1}
                 unit=""
               />
-              <div className="flex items-center gap-2 p-3 bg-dark-800/30 rounded-lg">
-                <input
-                  type="checkbox"
-                  id="saveAsContent"
+              <div className="p-3 bg-dark-800/30 rounded-lg">
+                <Checkbox
                   checked={saveAsContent}
                   onChange={(e) => setSaveAsContent(e.target.checked)}
-                  className="text-primary-500"
+                  label={isRTL ? 'שמור בספריית התוכן' : 'Save to content library'}
                 />
-                <label htmlFor="saveAsContent" className="text-sm text-dark-300 cursor-pointer">
-                  {isRTL ? 'שמור בספריית התוכן' : 'Save to content library'}
-                </label>
               </div>
             </>
           )}

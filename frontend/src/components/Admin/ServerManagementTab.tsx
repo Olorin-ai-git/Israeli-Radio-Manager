@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Server, Activity, Cpu, HardDrive, RefreshCw, Power, Trash2, AlertTriangle } from 'lucide-react'
 import api from '../../services/api'
 import { toast } from '../../store/toastStore'
+import { Checkbox } from '../Form'
 
 interface ServerManagementTabProps {
   isRTL: boolean
@@ -226,17 +227,12 @@ export default function ServerManagementTab({ isRTL }: ServerManagementTabProps)
             </div>
           </div>
 
-          <div className="flex items-center gap-3 mb-4">
-            <input
-              type="checkbox"
-              id="includeLogs"
+          <div className="mb-4">
+            <Checkbox
               checked={includeLogs}
               onChange={(e) => setIncludeLogs(e.target.checked)}
-              className="w-4 h-4 rounded border-dark-600 bg-dark-700 text-accent-500 focus:ring-accent-500"
+              label={isRTL ? 'כלול קבצי לוג (*.log)' : 'Include log files (*.log)'}
             />
-            <label htmlFor="includeLogs" className="text-sm text-dark-300 cursor-pointer">
-              {isRTL ? 'כלול קבצי לוג (*.log)' : 'Include log files (*.log)'}
-            </label>
           </div>
 
           <button

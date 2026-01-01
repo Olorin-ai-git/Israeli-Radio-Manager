@@ -29,6 +29,7 @@ import {
   Wand2,
 } from 'lucide-react'
 import { useActionsStudioStore, FlowActionType, StudioAction, getActionDisplayName } from '../store/actionsStudioStore'
+import { Textarea } from '../components/Form'
 import BlocksPalette from '../components/ActionsStudio/BlocksPalette'
 import StudioCanvas from '../components/ActionsStudio/StudioCanvas'
 import PreviewPanel from '../components/ActionsStudio/PreviewPanel'
@@ -427,7 +428,7 @@ export default function ActionsStudio() {
                   <Loader2 size={14} className="animate-spin text-purple-400 ml-auto" />
                 )}
               </div>
-              <textarea
+              <Textarea
                 value={aiDescription}
                 onChange={(e) => setAiDescription(e.target.value)}
                 placeholder={
@@ -435,7 +436,7 @@ export default function ActionsStudio() {
                     ? 'תאר את הזרימה בשפה טבעית...\n\nלדוגמה:\nנגן מזרחי שמח 30 דקות, אז 2 פרסומות, אז חסידי 20 דקות'
                     : 'Describe the flow in natural language...\n\nExample:\nPlay happy mizrahi for 30 minutes, then 2 commercials, then hasidi for 20 minutes'
                 }
-                className="flex-1 glass-input text-sm resize-none"
+                className="flex-1 text-sm"
                 dir="auto"
               />
               <p className="text-xs text-dark-400 mt-2">
