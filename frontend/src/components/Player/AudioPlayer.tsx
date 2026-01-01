@@ -226,15 +226,8 @@ export default function AudioPlayer({
   const getActiveAudio = () => activeAudioRef.current === 'A' ? audioARef.current : audioBRef.current
   const getInactiveAudio = () => activeAudioRef.current === 'A' ? audioBRef.current : audioARef.current
 
-  // Queue panel height with localStorage persistence
-  const [queueHeight, setQueueHeight] = useState(() => {
-    const saved = localStorage.getItem('queuePanelHeight')
-    return saved ? parseInt(saved) : 240 // Default 240px (same as max-h-60)
-  })
-  const isResizingQueue = useRef(false)
-  const resizeStartY = useRef(0)
-  const resizeStartHeight = useRef(0)
-  const queuePanelRef = useRef<HTMLDivElement>(null)
+  // Queue popover ref for click outside detection
+  const queuePopoverRef = useRef<HTMLDivElement>(null)
 
   const { queue, removeFromQueue, clearQueue, reorderQueue, hasUserInteracted, setUserInteracted } = usePlayerStore()
   const isRTL = i18n.language === 'he'
@@ -364,43 +357,17 @@ export default function AudioPlayer({
     }
   }
 
-  // Queue panel resize handlers
-  const handleQueueResizeStart = (e: React.MouseEvent) => {
-    e.preventDefault()
-    isResizingQueue.current = true
-    resizeStartY.current = e.clientY
-    resizeStartHeight.current = queueHeight
-    document.body.style.cursor = 'ns-resize'
-    document.body.style.userSelect = 'none'
-  }
-
-  // Global mouse event handlers for queue resize
+  // Close queue popover when clicking outside
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizingQueue.current) return
-      // Delta-based calculation: drag up = increase height, drag down = decrease height
-      const deltaY = resizeStartY.current - e.clientY
-      const newHeight = Math.max(120, Math.min(500, resizeStartHeight.current + deltaY))
-      setQueueHeight(newHeight)
-    }
-
-    const handleMouseUp = () => {
-      if (isResizingQueue.current) {
-        isResizingQueue.current = false
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
-        localStorage.setItem('queuePanelHeight', queueHeight.toString())
+    const handleClickOutside = (e: MouseEvent) => {
+      if (queueExpanded && queuePopoverRef.current && !queuePopoverRef.current.contains(e.target as Node)) {
+        setQueueExpanded(false)
       }
     }
 
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [queueHeight])
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [queueExpanded])
 
   // Cancel any ongoing crossfade animation
   const cancelCrossfade = () => {
@@ -556,12 +523,7 @@ export default function AudioPlayer({
     }
   }, [])
 
-  // Auto-expand queue when items are added
-  useEffect(() => {
-    if (queue.length > 0 && !queueExpanded) {
-      setQueueExpanded(true)
-    }
-  }, [queue.length])
+  // No longer auto-expand - queue is now a popover that user controls
 
   // Load new track when track changes
   useEffect(() => {
@@ -990,102 +952,7 @@ export default function AudioPlayer({
   }
 
   return (
-    <div className="glass-card w-full">
-      {/* Queue Panel - Expandable with animation */}
-      <div
-        ref={queuePanelRef}
-        className={`bg-dark-800/50 relative flex flex-col overflow-hidden transition-all duration-300 ease-out w-full ${
-          queueExpanded ? 'opacity-100 border-b border-white/10' : 'opacity-0 border-b-0'
-        }`}
-        style={{ height: queueExpanded ? queueHeight : 0 }}
-      >
-          {/* Resize Handle - at top, drag up to expand, drag down to shrink */}
-          <div
-            className="flex-shrink-0 h-3 cursor-ns-resize hover:bg-primary-500/20 transition-colors group flex items-center justify-center border-b border-white/5"
-            onMouseDown={handleQueueResizeStart}
-          >
-            <div className="w-16 h-1 bg-dark-500 group-hover:bg-primary-500 rounded-full transition-colors" />
-          </div>
-
-          {/* Header */}
-          <div className="flex-shrink-0 bg-dark-800 px-4 py-3 border-b border-white/5 w-full">
-            <div className="flex items-center justify-between w-full">
-              <h3 className="text-sm font-semibold text-dark-100 flex items-center gap-2">
-                <ListMusic size={16} className="text-primary-400" />
-                {isRTL ? 'תור השמעה' : 'Play Queue'}
-                <span className="px-1.5 py-0.5 text-xs bg-dark-600 rounded-full text-dark-300">
-                  {queue.length}
-                </span>
-              </h3>
-              {queue.length > 0 && (
-                <button
-                  onClick={clearQueue}
-                  className="text-xs text-dark-400 hover:text-red-400 transition-colors flex items-center gap-1"
-                >
-                  <Trash2 size={12} />
-                  {isRTL ? 'נקה הכל' : 'Clear all'}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Scrollable Queue Content */}
-          <div className="flex-1 overflow-y-auto p-4 pt-2 w-full">
-          {queue.length > 0 ? (
-            <div className="w-full">
-            {/* Loading spinner while all items are animating in (initial load) */}
-            {newItemsMap.size > 0 && newItemsMap.size === queue.length && (
-              <div className="flex items-center justify-center py-4 mb-2">
-                <Loader2 size={20} className="animate-spin text-primary-400" />
-                <span className="ml-2 text-sm text-dark-400">
-                  {isRTL ? 'טוען...' : 'Loading...'}
-                </span>
-              </div>
-            )}
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext
-                items={queue.map((item, index) => `${item._id}-${index}`)}
-                strategy={verticalListSortingStrategy}
-              >
-                <div className="space-y-1 w-full">
-                  {queue.map((item, index) => {
-                    // Use compound key to handle potential duplicate IDs
-                    const uniqueKey = `${item._id}-${index}`
-                    return (
-                      <SortableQueueItem
-                        key={uniqueKey}
-                        item={item}
-                        index={index}
-                        uniqueKey={uniqueKey}
-                        isRTL={isRTL}
-                        onRemove={() => handleAnimatedRemove(uniqueKey, index)}
-                        formatDuration={formatDuration}
-                        animationDelay={newItemsMap.has(item._id) ? newItemsMap.get(item._id)! * 150 : undefined}
-                        isRemoving={removingItems.has(uniqueKey)}
-                      />
-                    )
-                  })}
-                </div>
-              </SortableContext>
-            </DndContext>
-            </div>
-          ) : (
-            <div className="text-center py-4 text-dark-500">
-              <ListMusic size={24} className="mx-auto mb-2 opacity-40" />
-              <p className="text-xs">{isRTL ? 'התור ריק' : 'Queue is empty'}</p>
-              <p className="text-xs text-dark-600 mt-0.5">
-                {isRTL ? 'לחץ על + ליד שיר כדי להוסיף' : 'Click + next to a song to add it'}
-              </p>
-            </div>
-          )}
-          </div>
-        </div>
-
+    <div className="glass-card w-full relative">
       {/* Two hidden audio elements for true crossfade */}
       <div className="p-4">
         <audio
@@ -1310,34 +1177,126 @@ export default function AudioPlayer({
           />
         </div>
 
-        {/* Queue Toggle */}
-        <div className="tooltip-trigger">
-          <button
-            onClick={() => setQueueExpanded(!queueExpanded)}
-            className={`p-2 rounded-lg transition-all duration-200 relative flex items-center gap-1 ${
-              queueExpanded
-                ? 'bg-primary-500/20 text-primary-400'
-                : 'hover:bg-white/10 text-dark-300'
-            }`}
-          >
-            <ListMusic size={20} />
-            <ChevronUp
-              size={14}
-              className={`transition-transform duration-300 ${
-                queueExpanded ? 'rotate-0' : 'rotate-180'
+        {/* Queue Toggle with Floating Popover */}
+        <div className="relative" ref={queuePopoverRef}>
+          <div className="tooltip-trigger">
+            <button
+              onClick={() => setQueueExpanded(!queueExpanded)}
+              className={`p-2 rounded-lg transition-all duration-200 relative flex items-center gap-1 ${
+                queueExpanded
+                  ? 'bg-primary-500/20 text-primary-400'
+                  : 'hover:bg-white/10 text-dark-300'
               }`}
-            />
-            {queue.length > 0 && (
-              <span className={`absolute -top-1 -right-1 w-4 h-4 bg-primary-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold transition-transform duration-200 ${
-                queueExpanded ? 'scale-100' : 'scale-110'
-              }`}>
-                {queue.length}
-              </span>
+            >
+              <ListMusic size={20} />
+              <ChevronUp
+                size={14}
+                className={`transition-transform duration-300 ${
+                  queueExpanded ? 'rotate-0' : 'rotate-180'
+                }`}
+              />
+              {queue.length > 0 && (
+                <span className={`absolute -top-1 -right-1 w-4 h-4 bg-primary-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold transition-transform duration-200 ${
+                  queueExpanded ? 'scale-100' : 'scale-110'
+                }`}>
+                  {queue.length}
+                </span>
+              )}
+            </button>
+            {!queueExpanded && (
+              <div className="tooltip tooltip-top">
+                {isRTL ? 'תור השמעה' : 'Play Queue'}
+              </div>
             )}
-          </button>
-          <div className="tooltip tooltip-top">
-            {isRTL ? 'תור השמעה' : 'Play Queue'}
           </div>
+
+          {/* Floating Queue Popover */}
+          {queueExpanded && (
+            <div
+              className={`absolute bottom-full mb-2 bg-dark-800/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 ${
+                isRTL ? 'left-0' : 'right-0'
+              }`}
+              style={{ width: '380px', maxHeight: '400px' }}
+            >
+              {/* Header */}
+              <div className="flex-shrink-0 bg-dark-800 px-4 py-3 border-b border-white/10">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-dark-100 flex items-center gap-2">
+                    <ListMusic size={16} className="text-primary-400" />
+                    {isRTL ? 'תור השמעה' : 'Play Queue'}
+                    <span className="px-1.5 py-0.5 text-xs bg-dark-600 rounded-full text-dark-300">
+                      {queue.length}
+                    </span>
+                  </h3>
+                  {queue.length > 0 && (
+                    <button
+                      onClick={clearQueue}
+                      className="text-xs text-dark-400 hover:text-red-400 transition-colors flex items-center gap-1"
+                    >
+                      <Trash2 size={12} />
+                      {isRTL ? 'נקה הכל' : 'Clear all'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Scrollable Queue Content */}
+              <div className="overflow-y-auto p-3" style={{ maxHeight: '340px' }}>
+                {queue.length > 0 ? (
+                  <div className="w-full">
+                    {/* Loading spinner while all items are animating in (initial load) */}
+                    {newItemsMap.size > 0 && newItemsMap.size === queue.length && (
+                      <div className="flex items-center justify-center py-4 mb-2">
+                        <Loader2 size={20} className="animate-spin text-primary-400" />
+                        <span className="ml-2 text-sm text-dark-400">
+                          {isRTL ? 'טוען...' : 'Loading...'}
+                        </span>
+                      </div>
+                    )}
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <SortableContext
+                        items={queue.map((item, index) => `${item._id}-${index}`)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <div className="space-y-1 w-full">
+                          {queue.map((item, index) => {
+                            // Use compound key to handle potential duplicate IDs
+                            const uniqueKey = `${item._id}-${index}`
+                            return (
+                              <SortableQueueItem
+                                key={uniqueKey}
+                                item={item}
+                                index={index}
+                                uniqueKey={uniqueKey}
+                                isRTL={isRTL}
+                                onRemove={() => handleAnimatedRemove(uniqueKey, index)}
+                                formatDuration={formatDuration}
+                                animationDelay={newItemsMap.has(item._id) ? newItemsMap.get(item._id)! * 150 : undefined}
+                                isRemoving={removingItems.has(uniqueKey)}
+                              />
+                            )
+                          })}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-dark-500">
+                    <ListMusic size={28} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">{isRTL ? 'התור ריק' : 'Queue is empty'}</p>
+                    <p className="text-xs text-dark-600 mt-1">
+                      {isRTL ? 'לחץ על + ליד שיר כדי להוסיף' : 'Click + next to a song to add it'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
       </div>

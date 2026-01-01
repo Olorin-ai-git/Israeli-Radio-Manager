@@ -10,6 +10,7 @@ import Settings from './pages/Settings'
 import CalendarPlaylist from './pages/CalendarPlaylist'
 import ActionsStudio from './pages/ActionsStudio'
 import CampaignManager from './pages/CampaignManager'
+import HelpPage from './pages/HelpPage'
 import Admin from './pages/Admin'
 import Login from './pages/Login'
 import VoiceManagement from './pages/VoiceManagement'
@@ -77,6 +78,7 @@ function App() {
                   />
                   <Route path="/actions-studio" element={<ActionsStudio />} />
                   <Route path="/actions-studio/:flowId" element={<ActionsStudio />} />
+                  <Route path="/help" element={<HelpPage />} />
                   <Route
                     path="/admin"
                     element={

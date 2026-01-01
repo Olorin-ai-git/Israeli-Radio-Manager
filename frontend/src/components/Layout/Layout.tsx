@@ -15,8 +15,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Shield,
-  Mic,
-  Megaphone
+  Megaphone,
+  HelpCircle
 } from 'lucide-react'
 import ChatSidebar from '../Agent/ChatSidebar'
 import AudioPlayer from '../Player/AudioPlayer'
@@ -273,8 +273,8 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/upload', icon: Upload, label: t('nav.upload') },
     { path: '/agent', icon: Bot, label: t('nav.agent') },
     { path: '/settings', icon: Settings, label: t('nav.settings') },
+    { path: '/help', icon: HelpCircle, label: isRTL ? 'עזרה' : 'Help' },
     ...(role === 'admin' ? [
-      { path: '/voices', icon: Mic, label: isRTL ? 'סטודיו קולות' : 'Voice Studio' },
       { path: '/admin', icon: Shield, label: isRTL ? 'ניהול' : 'Admin' }
     ] : []),
   ]

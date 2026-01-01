@@ -119,8 +119,18 @@ export const api = {
     }).then((r) => r.data)
   },
   getPendingUploads: () => client.get('/upload/pending').then((r) => r.data),
-  confirmUpload: (id: string, data: any) =>
-    client.post(`/upload/pending/${id}/confirm`, data).then((r) => r.data),
+  confirmUpload: (id: string, data: { content_type: string; genre?: string; title?: string; artist?: string }) => {
+    const formData = new FormData()
+    formData.append('content_type', data.content_type)
+    if (data.genre) formData.append('genre', data.genre)
+    if (data.title) formData.append('title', data.title)
+    if (data.artist) formData.append('artist', data.artist)
+    return client.post(`/upload/pending/${id}/confirm`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data)
+  },
+  cancelPendingUpload: (id: string) =>
+    client.delete(`/upload/pending/${id}`).then((r) => r.data),
 
   // Agent
   getAgentConfig: () => client.get('/agent/config').then((r) => r.data),

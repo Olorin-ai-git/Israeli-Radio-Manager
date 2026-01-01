@@ -109,9 +109,12 @@ async def upload_file(
             type_folders = {
                 "song": "Songs",
                 "commercial": "Commercials",
-                "show": "Shows"
+                "show": "Shows",
+                "jingle": "Jingles",
+                "sample": "Samples",
+                "newsflash": "Newsflashes"
             }
-            folder_name = type_folders.get(final_type, "Songs")
+            folder_name = type_folders.get(final_type, "Uploads")
             if final_genre:
                 folder_name = f"{folder_name}/{final_genre}"
 
@@ -215,8 +218,8 @@ async def upload_batch(
             # Upload to Google Drive
             google_drive_id = None
             if drive_service:
-                type_folders = {"song": "Songs", "commercial": "Commercials", "show": "Shows"}
-                folder_name = type_folders.get(final_type, "Songs")
+                type_folders = {"song": "Songs", "commercial": "Commercials", "show": "Shows", "jingle": "Jingles", "sample": "Samples", "newsflash": "Newsflashes"}
+                folder_name = type_folders.get(final_type, "Uploads")
                 uploaded = await drive_service.upload_file(tmp_path, file.filename, folder_path=folder_name)
                 if uploaded:
                     google_drive_id = uploaded.get("id")
@@ -308,8 +311,8 @@ async def confirm_upload(
     google_drive_id = None
     google_drive_path = None
     if drive_service and os.path.exists(tmp_path):
-        type_folders = {"song": "Songs", "commercial": "Commercials", "show": "Shows"}
-        folder_name = type_folders.get(final_type, "Songs")
+        type_folders = {"song": "Songs", "commercial": "Commercials", "show": "Shows", "jingle": "Jingles", "sample": "Samples", "newsflash": "Newsflashes"}
+        folder_name = type_folders.get(final_type, "Uploads")
         if final_genre:
             folder_name = f"{folder_name}/{final_genre}"
 
