@@ -72,6 +72,10 @@ class FlowMonitorService:
         self._task: Optional[asyncio.Task] = None
         self._last_check: Optional[datetime] = None
 
+        # Track last checked campaign slot to avoid duplicate triggers
+        # Format: "YYYY-MM-DD_slotindex"
+        self._last_campaign_slot: Optional[str] = None
+
         # Track flow state per flow
         # Key: flow_id, Value: { started_at, last_action_time, actions_completed }
         self._flow_states: Dict[str, Dict[str, Any]] = {}
@@ -404,10 +408,22 @@ class FlowMonitorService:
         from app.routers.playback import add_to_queue, get_queue
         from app.routers.websocket import broadcast_queue_update
         from app.services.commercial_scheduler import get_scheduler
+        from app.models.commercial_campaign import slot_index_to_time, time_to_slot_index
 
         try:
             scheduler = get_scheduler(self.db)
             now = datetime.now()
+            current_slot = time_to_slot_index(now.hour, now.minute)
+            current_slot_key = f"{now.date().isoformat()}_{current_slot}"
+
+            # Skip if we already checked this slot
+            if self._last_campaign_slot == current_slot_key:
+                return
+
+            logger.info(f"Flow monitor checking campaigns at {now.strftime('%H:%M:%S')} (slot {current_slot} = {slot_index_to_time(current_slot)})")
+
+            # Mark this slot as checked
+            self._last_campaign_slot = current_slot_key
 
             # Get commercials scheduled for the current slot
             commercials = await scheduler.get_commercials_for_slot(

@@ -759,17 +759,8 @@ async def run_slot_now(
     for idx, queue_item in enumerate(queue_items):
         add_to_queue(queue_item, position=idx)
 
-    # Record commercial plays (not jingles)
-    for commercial_data in commercials:
-        content = commercial_data.get("content", {})
-        campaign_id = commercial_data.get("campaign_id")
-        await scheduler.record_play(
-            campaign_id=campaign_id,
-            content_id=str(content.get("_id", "")),
-            slot_index=slot_index,
-            slot_date=slot_date,
-            triggered_by="manual_admin"
-        )
+    # NOTE: "Run Now" does NOT record plays - it's for testing/preview only
+    # Only the automatic flow_monitor scheduler records plays to track against scheduled counts
 
     # Broadcast queue update
     await broadcast_queue_update(get_queue())
@@ -839,4 +830,99 @@ async def save_jingle_settings(
         "opening_jingle_id": opening_jingle_id,
         "use_closing_jingle": use_closing_jingle,
         "closing_jingle_id": closing_jingle_id
+    }
+
+
+@router.get("/slots/debug", response_model=dict)
+async def debug_slot(
+    request: Request,
+    slot_date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    slot_index: int = Query(..., ge=0, le=47, description="Slot index 0-47"),
+):
+    """
+    Debug endpoint to check why a slot might not have triggered.
+    Shows active campaigns, schedule entries, and play logs for the slot.
+    """
+    from app.services.commercial_scheduler import get_scheduler
+
+    db = request.app.state.db
+    scheduler = get_scheduler(db)
+
+    # Find active campaigns for this date
+    query = {
+        "status": "active",
+        "start_date": {"$lte": slot_date},
+        "end_date": {"$gte": slot_date},
+    }
+
+    campaigns_info = []
+    cursor = db.commercial_campaigns.find(query)
+
+    async for campaign in cursor:
+        campaign_id = str(campaign["_id"])
+        schedule_grid = campaign.get("schedule_grid", [])
+
+        # Find slot entry
+        slot_entry = None
+        for slot in schedule_grid:
+            if slot.get("slot_date") == slot_date and slot.get("slot_index") == slot_index:
+                slot_entry = slot
+                break
+
+        # Count play logs
+        play_count = await db.commercial_play_logs.count_documents({
+            "campaign_id": campaign_id,
+            "slot_date": slot_date,
+            "slot_index": slot_index,
+        })
+
+        campaigns_info.append({
+            "campaign_id": campaign_id,
+            "name": campaign.get("name"),
+            "status": campaign.get("status"),
+            "start_date": campaign.get("start_date"),
+            "end_date": campaign.get("end_date"),
+            "priority": campaign.get("priority"),
+            "content_count": len(campaign.get("content_refs", [])),
+            "slot_entry": slot_entry,
+            "scheduled_plays": slot_entry.get("play_count", 0) if slot_entry else 0,
+            "actual_plays": play_count,
+            "remaining_plays": (slot_entry.get("play_count", 0) if slot_entry else 0) - play_count,
+        })
+
+    return {
+        "slot_date": slot_date,
+        "slot_index": slot_index,
+        "slot_time": slot_index_to_time(slot_index),
+        "active_campaigns_in_date_range": len(campaigns_info),
+        "campaigns": campaigns_info,
+    }
+
+
+@router.delete("/slots/logs", response_model=dict)
+async def clear_slot_logs(
+    request: Request,
+    campaign_id: str = Query(..., description="Campaign ID"),
+    slot_date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    slot_index: int = Query(..., ge=0, le=47, description="Slot index 0-47"),
+):
+    """
+    Clear play logs for a specific campaign slot.
+    Useful for resetting after testing with 'Run Now'.
+    """
+    db = request.app.state.db
+
+    result = await db.commercial_play_logs.delete_many({
+        "campaign_id": campaign_id,
+        "slot_date": slot_date,
+        "slot_index": slot_index,
+    })
+
+    return {
+        "success": True,
+        "deleted_count": result.deleted_count,
+        "campaign_id": campaign_id,
+        "slot_date": slot_date,
+        "slot_index": slot_index,
+        "slot_time": slot_index_to_time(slot_index),
     }

@@ -75,7 +75,7 @@ class CommercialSchedulerService:
         slot_date = target_date.isoformat()
         slot_index = time_to_slot_index(target_datetime.hour, target_datetime.minute)
 
-        logger.debug(f"Getting commercials for slot {slot_index} ({slot_index_to_time(slot_index)}) on {slot_date}")
+        logger.info(f"Checking commercials for slot {slot_index} ({slot_index_to_time(slot_index)}) on {slot_date}")
 
         # Find active campaigns for this date
         query = {
@@ -83,6 +83,10 @@ class CommercialSchedulerService:
             "start_date": {"$lte": target_date.isoformat()},
             "end_date": {"$gte": target_date.isoformat()},
         }
+
+        # Log active campaigns count
+        active_count = await self.db.commercial_campaigns.count_documents(query)
+        logger.info(f"Found {active_count} active campaigns in date range")
 
         # Apply type filters
         if include_campaign_types:
@@ -102,12 +106,15 @@ class CommercialSchedulerService:
             schedule_grid = campaign.get("schedule_grid", [])
             scheduled_plays = 0
             for slot in schedule_grid:
-                if slot["slot_date"] == slot_date and slot["slot_index"] == slot_index:
-                    scheduled_plays = slot["play_count"]
+                if slot.get("slot_date") == slot_date and slot.get("slot_index") == slot_index:
+                    scheduled_plays = slot.get("play_count", 0)
                     break
 
             if scheduled_plays == 0:
+                logger.debug(f"Campaign '{campaign.get('name')}' has no plays for slot {slot_index} on {slot_date}")
                 continue
+
+            logger.info(f"Campaign '{campaign.get('name')}' has {scheduled_plays} plays scheduled for slot {slot_index}")
 
             # Check how many times already played today for this slot
             # (skip this check if bypassing play limit for manual triggers)
@@ -122,7 +129,10 @@ class CommercialSchedulerService:
 
                 remaining_plays = scheduled_plays - already_played
                 if remaining_plays <= 0:
+                    logger.info(f"Campaign '{campaign.get('name')}' already played {already_played}/{scheduled_plays} times for this slot")
                     continue
+
+            logger.info(f"Campaign '{campaign.get('name')}' needs {remaining_plays} more plays for slot {slot_index}")
 
             # Get content for this campaign
             content_refs = campaign.get("content_refs", [])
