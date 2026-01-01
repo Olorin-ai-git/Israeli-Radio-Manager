@@ -1,8 +1,17 @@
 import { useMemo, useCallback, useState, useRef, useLayoutEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Minus, Play, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Minus, Play, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
 import { WeeklySlot, getSlotPlayCount, slotIndexToTime, formatSlotDate } from '../../store/campaignStore'
 import { toast } from '../../store/toastStore'
+
+// Slot execution status from API
+export interface SlotExecutionStatus {
+  slot_date: string
+  slot_index: number
+  scheduled: number
+  played: number
+  status: 'success' | 'partial' | 'failed' | 'none'
+}
 
 export interface CampaignSlotInfo {
   campaignId: string
@@ -32,27 +41,39 @@ interface ScheduleHeatmapProps {
   initialScrollTop?: number // Initial scroll position to restore
   onScrollChange?: (scrollTop: number) => void // Report scroll position changes
   onSlotClick?: (slotDate: string, slotIndex: number) => void // Open slot details panel
+  slotExecutionStatus?: SlotExecutionStatus[] // Execution status for past slots
 }
 
 // Day labels
 const DAY_LABELS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DAY_LABELS_HE = ['א\'', 'ב\'', 'ג\'', 'ד\'', 'ה\'', 'ו\'', 'ש\'']
 
-// Get heatmap color based on play count
-const getHeatmapColor = (count: number): string => {
-  if (count === 0) return 'bg-dark-700/30 hover:bg-dark-600/40'
-  if (count === 1) return 'bg-primary-500/30 hover:bg-primary-500/40'
-  if (count === 2) return 'bg-primary-500/50 hover:bg-primary-500/60'
-  if (count === 3) return 'bg-primary-500/70 hover:bg-primary-500/80'
-  if (count === 4) return 'bg-primary-500/85 hover:bg-primary-500/90'
-  return 'bg-primary-500 hover:bg-primary-400' // 5+
+// Get heatmap color based on play count - improved palette with better contrast
+const getHeatmapColor = (count: number, isPast: boolean): string => {
+  if (isPast) {
+    // Past slots: muted colors but still readable
+    if (count === 0) return 'bg-dark-800/40'
+    if (count === 1) return 'bg-amber-900/40'
+    if (count === 2) return 'bg-amber-800/50'
+    if (count === 3) return 'bg-amber-700/50'
+    return 'bg-amber-600/50' // 4+
+  }
+  // Future/current slots: vibrant colors
+  if (count === 0) return 'bg-dark-700/30'
+  if (count === 1) return 'bg-emerald-600/40'
+  if (count === 2) return 'bg-emerald-500/55'
+  if (count === 3) return 'bg-emerald-500/70'
+  if (count === 4) return 'bg-emerald-400/80'
+  return 'bg-emerald-400/90' // 5+
 }
 
 // Get text color based on count
-const getTextColor = (count: number): string => {
+const getTextColor = (count: number, isPast: boolean): string => {
   if (count === 0) return 'text-dark-500'
-  if (count <= 2) return 'text-dark-100'
-  return 'text-white'
+  if (isPast) {
+    return count >= 2 ? 'text-amber-200' : 'text-amber-300'
+  }
+  return count >= 3 ? 'text-white' : 'text-emerald-100'
 }
 
 // Get the Sunday of the current week
@@ -84,6 +105,7 @@ export default function ScheduleHeatmap({
   initialScrollTop,
   onScrollChange,
   onSlotClick,
+  slotExecutionStatus,
 }: ScheduleHeatmapProps) {
   const { i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
@@ -91,6 +113,8 @@ export default function ScheduleHeatmap({
 
   // Track hovered cell for showing +/- controls
   const [hoveredCell, setHoveredCell] = useState<{ day: number; slot: number } | null>(null)
+  // Track selected cell for persistent border
+  const [selectedCell, setSelectedCell] = useState<{ day: number; slot: number } | null>(null)
   // Track hovered row for highlighting
   const [hoveredRow, setHoveredRow] = useState<number | null>(null)
   // Track last toast time to avoid spamming
@@ -241,6 +265,23 @@ export default function ScheduleHeatmap({
     return `${formatDate(startDate)} - ${formatDate(endDate)}`
   }, [weekDates])
 
+  // Create a lookup map for slot execution status
+  const executionStatusMap = useMemo(() => {
+    const map = new Map<string, SlotExecutionStatus>()
+    if (slotExecutionStatus) {
+      slotExecutionStatus.forEach(status => {
+        const key = `${status.slot_date}:${status.slot_index}`
+        map.set(key, status)
+      })
+    }
+    return map
+  }, [slotExecutionStatus])
+
+  // Helper to get execution status for a slot
+  const getSlotExecutionStatus = useCallback((slotDate: string, slotIndex: number): SlotExecutionStatus | undefined => {
+    return executionStatusMap.get(`${slotDate}:${slotIndex}`)
+  }, [executionStatusMap])
+
   return (
     <div className="relative">
       {/* Week navigation and Legend */}
@@ -271,16 +312,26 @@ export default function ScheduleHeatmap({
         )}
 
         {/* Legend */}
-        <div className="flex items-center gap-2 text-xs text-dark-400">
-          <span>{isRTL ? 'פחות' : 'Less'}</span>
-          <div className="flex items-center gap-1">
-            <div className="w-4 h-4 rounded bg-dark-700/30" />
-            <div className="w-4 h-4 rounded bg-primary-500/30" />
-            <div className="w-4 h-4 rounded bg-primary-500/50" />
-            <div className="w-4 h-4 rounded bg-primary-500/70" />
-            <div className="w-4 h-4 rounded bg-primary-500" />
+        <div className="flex items-center gap-3 text-xs text-dark-400">
+          <div className="flex items-center gap-2">
+            <span>{isRTL ? 'עתיד:' : 'Future:'}</span>
+            <div className="flex items-center gap-0.5">
+              <div className="w-4 h-4 rounded bg-dark-700/30" />
+              <div className="w-4 h-4 rounded bg-emerald-600/40" />
+              <div className="w-4 h-4 rounded bg-emerald-500/55" />
+              <div className="w-4 h-4 rounded bg-emerald-500/70" />
+              <div className="w-4 h-4 rounded bg-emerald-400/90" />
+            </div>
           </div>
-          <span>{isRTL ? 'יותר' : 'More'}</span>
+          <div className="flex items-center gap-2">
+            <span>{isRTL ? 'עבר:' : 'Past:'}</span>
+            <div className="flex items-center gap-0.5">
+              <div className="w-4 h-4 rounded bg-dark-800/40" />
+              <div className="w-4 h-4 rounded bg-amber-900/40" />
+              <div className="w-4 h-4 rounded bg-amber-700/50" />
+              <div className="w-4 h-4 rounded bg-amber-600/50" />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -359,6 +410,7 @@ export default function ScheduleHeatmap({
                       currentSlot?.dayOfWeek === dayIndex &&
                       currentSlot?.slotIndex === slot.index
                     const isHovered = hoveredCell?.day === dayIndex && hoveredCell?.slot === slot.index
+                    const isSelected = selectedCell?.day === dayIndex && selectedCell?.slot === slot.index
 
                     // Get per-campaign breakdown for tooltip
                     const campaignBreakdown = getCampaignBreakdown?.(slotDate, slot.index) || []
@@ -371,7 +423,9 @@ export default function ScheduleHeatmap({
 
                     // Check if slot is in the past
                     const isPastSlot = isSlotInPast(dayIndex, slot.index)
-                    const isDisabledSlot = isOutsideCampaignRange || isPastSlot
+
+                    // Get execution status for past slots
+                    const executionStatus = isPastSlot ? getSlotExecutionStatus(slotDate, slot.index) : undefined
 
                     return (
                       <td key={dayIndex} className="p-0.5 relative">
@@ -380,6 +434,8 @@ export default function ScheduleHeatmap({
                           onMouseEnter={() => setHoveredCell({ day: dayIndex, slot: slot.index })}
                           onMouseLeave={() => setHoveredCell(null)}
                           onClick={() => {
+                            // Set selected cell for persistent border
+                            setSelectedCell({ day: dayIndex, slot: slot.index })
                             // Clicking a cell opens the slot details panel
                             onSlotClick?.(slotDate, slot.index)
                             // Also show toast if in readOnly mode (no campaign selected) to hint about editing
@@ -400,18 +456,38 @@ export default function ScheduleHeatmap({
                           {/* Main cell display */}
                           <div
                             className={`
-                              w-full h-7 rounded transition-all
-                              ${isDisabledSlot
-                                ? 'bg-dark-800/50 text-dark-600 cursor-not-allowed'
-                                : `${getHeatmapColor(totalCount)} ${getTextColor(totalCount)}`
+                              w-full h-7 rounded transition-all border-2
+                              ${isOutsideCampaignRange
+                                ? 'bg-dark-800/30 text-dark-600 cursor-not-allowed border-transparent'
+                                : `${getHeatmapColor(totalCount, isPastSlot)} ${getTextColor(totalCount, isPastSlot)}`
+                              }
+                              ${!isOutsideCampaignRange && isSelected
+                                ? 'border-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.4)]'
+                                : !isOutsideCampaignRange && isHovered
+                                  ? 'border-cyan-400/60'
+                                  : 'border-transparent'
                               }
                               ${isCurrentSlot ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-dark-900' : ''}
-                              ${hasSelectedCampaignSlot && !isDisabledSlot ? 'ring-1 ring-white/40' : ''}
+                              ${hasSelectedCampaignSlot && !isOutsideCampaignRange ? 'ring-1 ring-white/40' : ''}
                               cursor-pointer active:scale-95
-                              flex items-center justify-center text-[11px] font-semibold
+                              flex items-center justify-center text-[11px] font-semibold relative
                             `}
                           >
                             {totalCount > 0 ? totalCount : ''}
+                            {/* Execution status icon for past slots */}
+                            {isPastSlot && executionStatus && (
+                              <div className="absolute -bottom-0.5 -right-0.5">
+                                {executionStatus.status === 'success' && (
+                                  <CheckCircle2 size={10} className="text-green-400 drop-shadow-sm" />
+                                )}
+                                {executionStatus.status === 'partial' && (
+                                  <AlertTriangle size={10} className="text-yellow-400 drop-shadow-sm" />
+                                )}
+                                {executionStatus.status === 'failed' && (
+                                  <XCircle size={10} className="text-red-400 drop-shadow-sm" />
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           {/* Vertical line indicator for campaign end day */}
@@ -424,47 +500,120 @@ export default function ScheduleHeatmap({
                             <div className="absolute top-0 left-0 bottom-0 w-0.5 bg-green-500/80 z-10" />
                           )}
 
-                          {/* Selected campaign indicator dot - only show when not disabled */}
-                          {hasSelectedCampaignSlot && !isDisabledSlot && (
+                          {/* Selected campaign indicator dot - only show when within campaign range */}
+                          {hasSelectedCampaignSlot && !isOutsideCampaignRange && (
                             <div className="absolute -top-0.5 -left-0.5 w-2 h-2 rounded-full bg-white shadow-sm" />
                           )}
 
-                          {/* Custom tooltip with per-campaign breakdown */}
-                          <div className="tooltip tooltip-top !whitespace-normal !w-48">
-                            <div className="font-medium mb-1">
-                              {dayLabels[dayIndex]} {formatHeaderDate(weekDates[dayIndex])} {slot.label}
-                            </div>
-                            {campaignBreakdown.length > 0 ? (
-                              <div className="space-y-1">
-                                {campaignBreakdown.map((info, idx) => (
-                                  <div
-                                    key={idx}
-                                    className={`flex items-center justify-between text-[10px] ${
-                                      info.campaignId === selectedCampaignId
-                                        ? 'text-primary-300 font-medium'
-                                        : 'text-dark-300'
-                                    }`}
-                                  >
-                                    <span className="truncate mr-2" dir="auto">
-                                      {info.campaignName}
-                                    </span>
-                                    <span className="flex-shrink-0">×{info.playCount}</span>
+                          {/* Tooltip for PAST slots - execution status focused */}
+                          {isPastSlot && (
+                            <div className="tooltip tooltip-top !whitespace-normal !w-52">
+                              <div className="font-medium mb-1">
+                                {dayLabels[dayIndex]} {formatHeaderDate(weekDates[dayIndex])} {slot.label}
+                              </div>
+                              {/* Execution status banner */}
+                              {executionStatus ? (
+                                <>
+                                  <div className={`flex items-center gap-1.5 mb-2 p-1.5 rounded text-[10px] font-medium ${
+                                    executionStatus.status === 'success'
+                                      ? 'bg-green-500/20 text-green-300'
+                                      : executionStatus.status === 'partial'
+                                        ? 'bg-yellow-500/20 text-yellow-300'
+                                        : 'bg-red-500/20 text-red-300'
+                                  }`}>
+                                    {executionStatus.status === 'success' && (
+                                      <>
+                                        <CheckCircle2 size={12} />
+                                        <span>{isRTL ? 'הכל הושמע בהצלחה' : 'All played successfully'}</span>
+                                      </>
+                                    )}
+                                    {executionStatus.status === 'partial' && (
+                                      <>
+                                        <AlertTriangle size={12} />
+                                        <span>{isRTL ? 'הצלחה חלקית' : 'Partial success'}</span>
+                                      </>
+                                    )}
+                                    {executionStatus.status === 'failed' && (
+                                      <>
+                                        <XCircle size={12} />
+                                        <span>{isRTL ? 'לא הושמע' : 'Not played'}</span>
+                                      </>
+                                    )}
                                   </div>
-                                ))}
-                                <div className="border-t border-white/10 pt-1 mt-1 flex justify-between text-[10px] font-medium">
-                                  <span>{isRTL ? 'סה"כ' : 'Total'}</span>
-                                  <span>{totalCount}</span>
+                                  {/* Execution details */}
+                                  <div className="text-[10px] text-dark-300 mb-2 flex justify-between">
+                                    <span>{isRTL ? 'מתוכנן:' : 'Scheduled:'} {executionStatus.scheduled}</span>
+                                    <span>{isRTL ? 'הושמע:' : 'Played:'} {executionStatus.played}</span>
+                                  </div>
+                                  {/* Campaign breakdown */}
+                                  {campaignBreakdown.length > 0 && (
+                                    <div className="space-y-1 border-t border-white/10 pt-1">
+                                      {campaignBreakdown.map((info, idx) => (
+                                        <div
+                                          key={idx}
+                                          className={`flex items-center justify-between text-[10px] ${
+                                            info.campaignId === selectedCampaignId
+                                              ? 'text-primary-300 font-medium'
+                                              : 'text-dark-300'
+                                          }`}
+                                        >
+                                          <span className="truncate mr-2" dir="auto">
+                                            {info.campaignName}
+                                          </span>
+                                          <span className="flex-shrink-0">×{info.playCount}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <div className="text-[10px] text-dark-400">
+                                  {totalCount > 0
+                                    ? (isRTL ? 'אין נתוני השמעה' : 'No playback data')
+                                    : (isRTL ? 'אין פרסומות' : 'No commercials')}
                                 </div>
-                              </div>
-                            ) : (
-                              <div className="text-[10px] text-dark-400">
-                                {isRTL ? 'אין פרסומות' : 'No commercials'}
-                              </div>
-                            )}
-                          </div>
+                              )}
+                            </div>
+                          )}
 
-                          {/* Increment/Decrement controls on hover - only show if not disabled */}
-                          {!readOnly && isHovered && !isDisabledSlot && (
+                          {/* Tooltip for FUTURE/CURRENT slots - campaign breakdown focused */}
+                          {!isPastSlot && (
+                            <div className="tooltip tooltip-top !whitespace-normal !w-48">
+                              <div className="font-medium mb-1">
+                                {dayLabels[dayIndex]} {formatHeaderDate(weekDates[dayIndex])} {slot.label}
+                              </div>
+                              {campaignBreakdown.length > 0 ? (
+                                <div className="space-y-1">
+                                  {campaignBreakdown.map((info, idx) => (
+                                    <div
+                                      key={idx}
+                                      className={`flex items-center justify-between text-[10px] ${
+                                        info.campaignId === selectedCampaignId
+                                          ? 'text-primary-300 font-medium'
+                                          : 'text-dark-300'
+                                      }`}
+                                    >
+                                      <span className="truncate mr-2" dir="auto">
+                                        {info.campaignName}
+                                      </span>
+                                      <span className="flex-shrink-0">×{info.playCount}</span>
+                                    </div>
+                                  ))}
+                                  <div className="border-t border-white/10 pt-1 mt-1 flex justify-between text-[10px] font-medium">
+                                    <span>{isRTL ? 'סה"כ' : 'Total'}</span>
+                                    <span>{totalCount}</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-[10px] text-dark-400">
+                                  {isRTL ? 'אין פרסומות' : 'No commercials'}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Increment/Decrement controls on hover - only show for future slots in campaign range */}
+                          {!readOnly && isHovered && !isOutsideCampaignRange && !isPastSlot && (
                             <div className="absolute -top-1 -right-1 flex gap-0.5 z-20">
                               <button
                                 type="button"
@@ -523,8 +672,8 @@ export default function ScheduleHeatmap({
                             </div>
                           )}
 
-                          {/* Play preview button on hover (only in readOnly mode to not interfere with editing) */}
-                          {readOnly && isHovered && totalCount > 0 && onPlaySlot && (
+                          {/* Play preview button on hover (only for future slots in readOnly mode) */}
+                          {readOnly && isHovered && !isPastSlot && totalCount > 0 && onPlaySlot && (
                             <button
                               type="button"
                               onClick={e => {
@@ -544,8 +693,8 @@ export default function ScheduleHeatmap({
                             </button>
                           )}
 
-                          {/* Playing indicator (when not hovering but currently playing, only in readOnly mode) */}
-                          {readOnly && !isHovered && isPlayingSlot?.slotDate === slotDate && isPlayingSlot?.slotIndex === slot.index && (
+                          {/* Playing indicator (when not hovering but currently playing, only for future slots in readOnly mode) */}
+                          {readOnly && !isHovered && !isPastSlot && isPlayingSlot?.slotDate === slotDate && isPlayingSlot?.slotIndex === slot.index && (
                             <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-yellow-500 flex items-center justify-center shadow-lg z-20 animate-pulse">
                               <Play size={10} className="text-white ml-0.5" />
                             </div>

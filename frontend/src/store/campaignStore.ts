@@ -27,6 +27,9 @@ export interface Campaign {
   end_date: string    // ISO date string
   priority: number    // 1-9
   contract_link?: string  // Admin only - link to contract document
+  price_per_slot?: number  // Price per 30-min slot in ILS
+  monthly_budget?: number  // Monthly budget in ILS
+  contract_value?: number  // Total contract value in ILS
   content_refs: ContentRef[]
   schedule_grid: WeeklySlot[]
   status: CampaignStatus
@@ -44,6 +47,9 @@ export interface CampaignCreate {
   end_date: string
   priority?: number
   contract_link?: string  // Admin only
+  price_per_slot?: number  // Admin only
+  monthly_budget?: number  // Admin only
+  contract_value?: number  // Admin only
   content_refs?: ContentRef[]
   schedule_grid?: WeeklySlot[]
 }
@@ -107,6 +113,7 @@ interface CampaignState {
   // Grid editing
   initEditingGrid: (campaign: Campaign) => void
   setEditingGrid: (grid: WeeklySlot[]) => void
+  setCampaignGrid: (campaignId: string, grid: WeeklySlot[]) => void
   updateSlot: (slotDate: string, slotIndex: number, playCount: number) => void
   incrementSlot: (slotDate: string, slotIndex: number) => void
   decrementSlot: (slotDate: string, slotIndex: number) => void
@@ -358,6 +365,28 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
       return {
         editingGrid: [...cleanGrid],
         isDirty: true,
+        dirtyGrids: newDirtyGrids,
+        editingGrids: newEditingGrids,
+      }
+    })
+  },
+
+  // Set grid for a specific campaign (for bulk operations like copy from previous week)
+  setCampaignGrid: (campaignId: string, grid: WeeklySlot[]) => {
+    const cleanGrid = grid.filter(slot => 'slot_date' in slot && slot.slot_date)
+
+    set(state => {
+      const newDirtyGrids = new Set(state.dirtyGrids)
+      newDirtyGrids.add(campaignId)
+
+      const newEditingGrids = new Map(state.editingGrids)
+      newEditingGrids.set(campaignId, [...cleanGrid])
+
+      // If this is the selected campaign, also update editingGrid
+      const isSelectedCampaign = state.selectedCampaign?._id === campaignId
+      return {
+        editingGrid: isSelectedCampaign ? [...cleanGrid] : state.editingGrid,
+        isDirty: isSelectedCampaign ? true : state.isDirty,
         dirtyGrids: newDirtyGrids,
         editingGrids: newEditingGrids,
       }

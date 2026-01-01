@@ -1,7 +1,10 @@
 """Commercial campaigns router - CRUD and scheduling for ad campaigns."""
 
+import logging
 from datetime import date, datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from bson import ObjectId
@@ -660,7 +663,7 @@ async def run_slot_now(
     5. Record the plays in the logs
     """
     from app.services.commercial_scheduler import get_scheduler
-    from app.routers.playback import add_to_queue, get_queue
+    from app.routers.playback import add_to_queue_async, get_queue_async
     from app.routers.websocket import broadcast_queue_update
 
     db = request.app.state.db
@@ -755,15 +758,16 @@ async def run_slot_now(
             "jingle_position": "closing"
         })
 
-    # Insert all items at front of queue
+    # Insert all items at front of queue (persisted to MongoDB)
     for idx, queue_item in enumerate(queue_items):
-        add_to_queue(queue_item, position=idx)
+        await add_to_queue_async(db, queue_item, position=idx)
 
     # NOTE: "Run Now" does NOT record plays - it's for testing/preview only
     # Only the automatic flow_monitor scheduler records plays to track against scheduled counts
 
     # Broadcast queue update
-    await broadcast_queue_update(get_queue())
+    updated_queue = await get_queue_async(db)
+    await broadcast_queue_update(updated_queue)
 
     queued_count = len(queue_items)
     jingle_parts = []
@@ -896,6 +900,97 @@ async def debug_slot(
         "slot_time": slot_index_to_time(slot_index),
         "active_campaigns_in_date_range": len(campaigns_info),
         "campaigns": campaigns_info,
+    }
+
+
+@router.get("/slots/execution-status", response_model=dict)
+async def get_slot_execution_status(
+    request: Request,
+    start_date: str = Query(..., description="Start date in YYYY-MM-DD format"),
+    end_date: str = Query(..., description="End date in YYYY-MM-DD format"),
+):
+    """
+    Get execution status for all slots in a date range.
+    Returns scheduled vs played counts for each slot to show in the heatmap.
+
+    Status for each slot:
+    - success: All scheduled commercials played
+    - partial: Some commercials played
+    - failed: No commercials played despite being scheduled
+    - none: Nothing was scheduled
+    """
+    db = request.app.state.db
+
+    # Find all active campaigns in this date range
+    query = {
+        "status": "active",
+        "start_date": {"$lte": end_date},
+        "end_date": {"$gte": start_date},
+    }
+
+    # Build a map of slot -> scheduled plays
+    # Key format: "YYYY-MM-DD:slot_index"
+    scheduled_map: Dict[str, int] = {}
+
+    cursor = db.commercial_campaigns.find(query)
+    async for campaign in cursor:
+        schedule_grid = campaign.get("schedule_grid", [])
+        for slot in schedule_grid:
+            slot_date = slot.get("slot_date", "")
+            if slot_date >= start_date and slot_date <= end_date:
+                slot_key = f"{slot_date}:{slot.get('slot_index')}"
+                scheduled_map[slot_key] = scheduled_map.get(slot_key, 0) + slot.get("play_count", 0)
+
+    # Get actual play counts from logs
+    play_logs_cursor = db.commercial_play_logs.aggregate([
+        {
+            "$match": {
+                "slot_date": {"$gte": start_date, "$lte": end_date}
+            }
+        },
+        {
+            "$group": {
+                "_id": {"slot_date": "$slot_date", "slot_index": "$slot_index"},
+                "play_count": {"$sum": 1}
+            }
+        }
+    ])
+
+    played_map: Dict[str, int] = {}
+    async for doc in play_logs_cursor:
+        slot_key = f"{doc['_id']['slot_date']}:{doc['_id']['slot_index']}"
+        played_map[slot_key] = doc["play_count"]
+
+    # Build result with status for each slot that had scheduled plays
+    slots_status = []
+    for slot_key, scheduled in scheduled_map.items():
+        parts = slot_key.split(":")
+        slot_date = parts[0]
+        slot_index = int(parts[1])
+        played = played_map.get(slot_key, 0)
+
+        # Determine status
+        if scheduled == 0:
+            status = "none"
+        elif played >= scheduled:
+            status = "success"
+        elif played > 0:
+            status = "partial"
+        else:
+            status = "failed"
+
+        slots_status.append({
+            "slot_date": slot_date,
+            "slot_index": slot_index,
+            "scheduled": scheduled,
+            "played": played,
+            "status": status
+        })
+
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "slots": slots_status
     }
 
 

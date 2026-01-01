@@ -91,17 +91,19 @@ async def _get_next_track_for_playback(websocket: WebSocket = None) -> dict:
     Used by both WebSocket handler and can be called from other places.
     Returns the track data or None if queue is empty.
     """
-    from app.routers.playback import get_queue, remove_from_queue
+    from app.routers.playback import get_queue_async, remove_from_queue_async
     from app.services.flow_monitor import notify_playback_started
+    from app.main import app
 
-    queue = get_queue()
+    db = app.state.db
+    queue = await get_queue_async(db)
 
     if not queue:
         return None
 
-    # Get and remove the first item from the queue
+    # Get and remove the first item from the queue (persisted to MongoDB)
     next_track = queue[0]
-    remove_from_queue(0)
+    await remove_from_queue_async(db, 0)
 
     # Build track data
     track_data = {
@@ -118,7 +120,8 @@ async def _get_next_track_for_playback(websocket: WebSocket = None) -> dict:
     notify_playback_started(track_data, track_data.get("duration_seconds", 0))
 
     # Broadcast queue update to all clients
-    await broadcast_queue_update(get_queue())
+    updated_queue = await get_queue_async(db)
+    await broadcast_queue_update(updated_queue)
 
     logger.info(f"Next track for playback: {track_data.get('title')}")
 

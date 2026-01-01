@@ -150,7 +150,7 @@ class FlowMonitorService:
         Fallback: If no activity for duration + 60 seconds, assume frontend is not responding
         and auto-advance to prevent dead air.
         """
-        from app.routers.playback import get_queue, remove_from_queue
+        from app.routers.playback import get_queue_async, remove_from_queue_async
         from app.routers.websocket import broadcast_scheduled_playback, broadcast_queue_update
 
         now = datetime.now()
@@ -167,7 +167,7 @@ class FlowMonitorService:
             logger.warning(f"Fallback auto-play triggered - no frontend response after {elapsed:.0f}s")
 
         # Playback has ended (or nothing was playing), check queue
-        queue = get_queue()
+        queue = await get_queue_async(self.db)
         if not queue:
             # Queue is empty, nothing to play
             self._current_playback = None
@@ -178,8 +178,8 @@ class FlowMonitorService:
         # Get the first item from the queue
         next_item = queue[0]
 
-        # Remove it from the queue
-        remove_from_queue(0)
+        # Remove it from the queue (persisted to MongoDB)
+        await remove_from_queue_async(self.db, 0)
 
         # Broadcast for playback
         content_data = {
@@ -201,7 +201,8 @@ class FlowMonitorService:
         self._playback_duration = next_item.get("duration_seconds", 0) or 180  # Default 3 min if unknown
 
         # Broadcast queue update
-        await broadcast_queue_update(get_queue())
+        updated_queue = await get_queue_async(self.db)
+        await broadcast_queue_update(updated_queue)
 
         # Log playback
         try:
@@ -238,14 +239,14 @@ class FlowMonitorService:
         Args:
             count: Number of songs to add
         """
-        from app.routers.playback import get_queue, add_to_queue
+        from app.routers.playback import get_queue_async, add_to_queue_async
         from app.routers.websocket import broadcast_queue_update
 
         # Get recently played song IDs to avoid repeats (last 2 hours)
         two_hours_ago = datetime.utcnow() - timedelta(hours=2)
 
         # Build exclusion list from recent plays and current queue
-        current_queue = get_queue()
+        current_queue = await get_queue_async(self.db)
         current_ids = [item.get("_id") for item in current_queue if item.get("_id")]
 
         try:
@@ -300,13 +301,14 @@ class FlowMonitorService:
                 "batches": song.get("batches", []),
                 "auto_queued": True  # Mark as auto-queued for tracking
             }
-            # Add to end of queue (no position = append)
-            add_to_queue(queue_item)
+            # Add to end of queue (no position = append, persisted to MongoDB)
+            await add_to_queue_async(self.db, queue_item)
 
         # Broadcast queue update
-        await broadcast_queue_update(get_queue())
+        updated_queue = await get_queue_async(self.db)
+        await broadcast_queue_update(updated_queue)
 
-        logger.info(f"Added {len(selected_songs)} random songs to queue. Queue now has {len(get_queue())} items.")
+        logger.info(f"Added {len(selected_songs)} random songs to queue. Queue now has {len(updated_queue)} items.")
 
     async def _check_active_flows(self):
         """Check active looping flows and manage their scheduling."""
@@ -405,7 +407,7 @@ class FlowMonitorService:
         Uses the CommercialSchedulerService to get commercials for the current time slot,
         then inserts them at the front of the queue for immediate playback.
         """
-        from app.routers.playback import add_to_queue, get_queue
+        from app.routers.playback import add_to_queue_async, get_queue_async
         from app.routers.websocket import broadcast_queue_update
         from app.services.commercial_scheduler import get_scheduler
         from app.models.commercial_campaign import slot_index_to_time, time_to_slot_index
@@ -474,9 +476,9 @@ class FlowMonitorService:
             if opening_jingle or closing_jingle:
                 queue_items = scheduler.wrap_with_jingles(queue_items, opening_jingle, closing_jingle)
 
-            # Insert all items at front of queue
+            # Insert all items at front of queue (persisted to MongoDB)
             for idx, queue_item in enumerate(queue_items):
-                add_to_queue(queue_item, position=idx)
+                await add_to_queue_async(self.db, queue_item, position=idx)
 
             # Record plays for commercials (not jingles)
             for commercial_data in commercials:
@@ -496,7 +498,8 @@ class FlowMonitorService:
                 logger.info(f"Queued campaign commercial: {content.get('title')} (campaign: {commercial_data.get('campaign_name')})")
 
             # Broadcast queue update
-            await broadcast_queue_update(get_queue())
+            updated_queue = await get_queue_async(self.db)
+            await broadcast_queue_update(updated_queue)
 
         except Exception as e:
             logger.error(f"Error checking scheduled campaigns: {e}", exc_info=True)

@@ -3,20 +3,15 @@ import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import {
   Megaphone,
-  Plus,
   RefreshCw,
   Save,
   Loader2,
   X,
   ChevronRight,
   ChevronLeft,
-  Clock,
-  FileAudio,
-  Copy,
-  ChevronDown,
-  AlertTriangle,
   Square,
-  Play,
+  AlertTriangle,
+  Copy,
 } from 'lucide-react'
 import {
   useCampaignStore,
@@ -26,115 +21,22 @@ import {
   WeeklySlot,
   getSlotPlayCount,
   slotIndexToTime,
-  formatSlotDate,
 } from '../store/campaignStore'
 import { api } from '../services/api'
 import { toast } from '../store/toastStore'
-import { Checkbox, Select } from '../components/Form'
-import CampaignCard from '../components/Campaigns/CampaignCard'
 import CampaignFormModal from '../components/Campaigns/CampaignFormModal'
-import ScheduleHeatmap, { CampaignSlotInfo } from '../components/Campaigns/ScheduleHeatmap'
-
-const DAY_LABELS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const DAY_LABELS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
-
-// Get the Sunday (start) of the week containing the given date
-function getWeekStart(date: Date): Date {
-  const d = new Date(date)
-  const day = d.getDay()
-  d.setDate(d.getDate() - day)
-  d.setHours(0, 0, 0, 0)
-  return d
-}
-
-// Get the Saturday (end) of the week containing the given date
-function getWeekEnd(date: Date): Date {
-  const d = getWeekStart(date)
-  d.setDate(d.getDate() + 6)
-  d.setHours(23, 59, 59, 999)
-  return d
-}
-
-// Check if a campaign is active during a specific week
-function isCampaignActiveInWeek(campaign: Campaign, weekStart: Date, weekEnd: Date): boolean {
-  // Parse dates carefully - campaign dates are in YYYY-MM-DD format
-  const [startYear, startMonth, startDay] = campaign.start_date.split('-').map(Number)
-  const [endYear, endMonth, endDay] = campaign.end_date.split('-').map(Number)
-
-  const campaignStart = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0)
-  const campaignEnd = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999)
-
-  // Campaign overlaps with week if: campaign starts before week ends AND campaign ends after week starts
-  return campaignStart <= weekEnd && campaignEnd >= weekStart
-}
-
-// Get week dates array (7 dates for Sun-Sat)
-function getWeekDates(displayedWeekDate: Date): string[] {
-  const weekStart = getWeekStart(displayedWeekDate)
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart)
-    d.setDate(d.getDate() + i)
-    return formatSlotDate(d)
-  })
-}
-
-// Calculate aggregated grid from all campaigns for a specific week
-function calculateAggregatedGrid(
-  campaigns: Campaign[],
-  selectedCampaignId: string | null,
-  editingGrid: WeeklySlot[],
-  editingGrids: Map<string, WeeklySlot[]>,
-  displayedWeekDate: Date
-): WeeklySlot[] {
-  const weekStart = getWeekStart(displayedWeekDate)
-  const weekEnd = getWeekEnd(displayedWeekDate)
-  const weekDates = getWeekDates(displayedWeekDate)
-
-  // Create a map for quick lookup: "date_slot" -> total count
-  const aggregated = new Map<string, number>()
-
-  // Add all campaigns' schedules (only if active during displayed week)
-  campaigns.forEach(campaign => {
-    // Skip campaigns that are not in 'active' status - only active campaigns should show slots
-    if (campaign.status !== 'active') {
-      return
-    }
-
-    // Skip campaigns not active during this week
-    if (!isCampaignActiveInWeek(campaign, weekStart, weekEnd)) {
-      return
-    }
-
-    // Priority: selected campaign uses editingGrid, others check editingGrids map, fallback to schedule_grid
-    let gridToUse: WeeklySlot[]
-    if (campaign._id === selectedCampaignId) {
-      gridToUse = editingGrid
-    } else {
-      // Check if there are pending changes in editingGrids map
-      const pendingGrid = editingGrids.get(campaign._id)
-      gridToUse = pendingGrid !== undefined ? pendingGrid : campaign.schedule_grid
-    }
-
-    gridToUse.forEach(slot => {
-      // Only include slots that fall within this week
-      if (weekDates.includes(slot.slot_date)) {
-        const key = `${slot.slot_date}_${slot.slot_index}`
-        aggregated.set(key, (aggregated.get(key) || 0) + slot.play_count)
-      }
-    })
-  })
-
-  // Convert back to WeeklySlot array
-  const result: WeeklySlot[] = []
-  aggregated.forEach((count, key) => {
-    const [date, slot] = key.split('_')
-    if (count > 0) {
-      result.push({ slot_date: date, slot_index: parseInt(slot), play_count: count })
-    }
-  })
-
-  return result
-}
+import ScheduleHeatmap, { CampaignSlotInfo, SlotExecutionStatus } from '../components/Campaigns/ScheduleHeatmap'
+import CampaignListPanel from '../components/Campaigns/CampaignListPanel'
+import CampaignStatsBar from '../components/Campaigns/CampaignStatsBar'
+import ScheduleDetailsPanel from '../components/Campaigns/ScheduleDetailsPanel'
+import { usePanelResize } from '../components/Campaigns/hooks/usePanelResize'
+import { useSlotPlayback } from '../components/Campaigns/hooks/useSlotPlayback'
+import {
+  calculateAggregatedGrid,
+  getWeekStart,
+  getWeekEnd,
+  isCampaignActiveInWeek,
+} from '../components/Campaigns/utils/campaignUtils'
 
 export default function CampaignManager() {
   const { i18n } = useTranslation()
@@ -160,6 +62,7 @@ export default function CampaignManager() {
     incrementSlot,
     decrementSlot,
     setEditingGrid,
+    setCampaignGrid,
     saveAllGrids,
     resetGrid,
     syncToCalendar,
@@ -169,50 +72,46 @@ export default function CampaignManager() {
     dirtyGrids,
   } = useCampaignStore()
 
+  // Panel resize hook
+  const {
+    leftPanelWidth,
+    rightPanelWidth,
+    isLeftPanelCollapsed,
+    isRightPanelOpen,
+    setIsRightPanelOpen,
+    containerRef,
+    heatmapContainerRef,
+    handleLeftSplitterMouseDown,
+    handleRightSplitterMouseDown,
+    toggleLeftPanel,
+    toggleRightPanel,
+  } = usePanelResize()
+
+  // Slot playback hook
+  const { playingSlot, playQueue, handlePlaySlot, stopPlayback } = useSlotPlayback(campaigns)
+
   // Local state
   const [showFormModal, setShowFormModal] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null)
-  const [statusFilter, setStatusFilter] = useState<CampaignStatus | 'all'>('all')
-  const [showInactive, setShowInactive] = useState(false) // Show deleted/completed campaigns
+  const [statusFilter, setStatusFilter] = useState<CampaignStatus[]>(['active'])
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [confirmPause, setConfirmPause] = useState<string | null>(null)
-  const [showCopyDropdown, setShowCopyDropdown] = useState(false)
-  const [repeatScope, setRepeatScope] = useState<'day' | 'week'>('day') // Repeat for rest of day or week
-  const [repeatStartSlot, setRepeatStartSlot] = useState<number>(0) // "Between" time (slot index 0-47)
-  const [repeatEndSlot, setRepeatEndSlot] = useState<number>(47) // "Until" time (slot index 0-47)
-  const [selectedSlotKeys, setSelectedSlotKeys] = useState<Set<string>>(new Set()) // Selected slot keys for deletion
-  // Opening jingle settings
+
+  // Jingle settings
   const [useOpeningJingle, setUseOpeningJingle] = useState(true)
   const [openingJingleId, setOpeningJingleId] = useState<string>('')
-  // Closing jingle settings
   const [useClosingJingle, setUseClosingJingle] = useState(true)
   const [closingJingleId, setClosingJingleId] = useState<string>('')
-  const [isJingleSettingsDirty, setIsJingleSettingsDirty] = useState(false) // Track if jingle settings changed
+  const [isJingleSettingsDirty, setIsJingleSettingsDirty] = useState(false)
 
-  // Audio preview state
-  const [playingSlot, setPlayingSlot] = useState<{ slotDate: string; slotIndex: number } | null>(null)
-  const [playQueue, setPlayQueue] = useState<string[]>([]) // Queue of content IDs to play
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-
-  // Panel state
-  const [leftPanelWidth, setLeftPanelWidth] = useState(320)
-  const [rightPanelWidth, setRightPanelWidth] = useState(288) // 72 * 4 = 288 (w-72)
-  const [isRightPanelOpen, setIsRightPanelOpen] = useState(false)
-
-  // Week navigation state (offset from current week)
+  // Week navigation
   const [weekOffset, setWeekOffset] = useState(0)
-
-  // Heatmap scroll position (preserved across week changes)
   const heatmapScrollTop = useRef(0)
 
-  // Left panel collapsed state
-  const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false)
-
-  // Draggable splitter state
-  const isDraggingLeft = useRef(false)
-  const isDraggingRight = useRef(false)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const heatmapContainerRef = useRef<HTMLDivElement>(null)
+  // Filter state
+  const [filterSlotIndex, setFilterSlotIndex] = useState<number | null>(null)
+  const [filterSlotDate, setFilterSlotDate] = useState<string | null>(null)
+  const [isRunningSlot, setIsRunningSlot] = useState(false)
 
   // Get user role
   const { data: currentUser } = useQuery({
@@ -221,7 +120,7 @@ export default function CampaignManager() {
   })
   const isAdmin = currentUser?.role === 'admin'
 
-  // Fetch jingles for the commercial jingle dropdown
+  // Fetch jingles
   const { data: jingles = [] } = useQuery({
     queryKey: ['jingles'],
     queryFn: api.getJingles,
@@ -233,42 +132,29 @@ export default function CampaignManager() {
     queryFn: api.getJingleSettings,
   })
 
-  // Initialize jingle settings from saved settings
+  // Initialize jingle settings
   useEffect(() => {
     if (jingleSettings) {
       setUseOpeningJingle(jingleSettings.use_opening_jingle ?? true)
       setUseClosingJingle(jingleSettings.use_closing_jingle ?? true)
-      if (jingleSettings.opening_jingle_id) {
-        setOpeningJingleId(jingleSettings.opening_jingle_id)
-      }
-      if (jingleSettings.closing_jingle_id) {
-        setClosingJingleId(jingleSettings.closing_jingle_id)
-      }
+      if (jingleSettings.opening_jingle_id) setOpeningJingleId(jingleSettings.opening_jingle_id)
+      if (jingleSettings.closing_jingle_id) setClosingJingleId(jingleSettings.closing_jingle_id)
     }
   }, [jingleSettings])
 
-  // Set default jingles when jingles are loaded (if no saved setting)
+  // Set default jingles
   useEffect(() => {
     if (jingles.length > 0) {
-      if (!openingJingleId && !jingleSettings?.opening_jingle_id) {
-        setOpeningJingleId(jingles[0]._id)
-      }
-      if (!closingJingleId && !jingleSettings?.closing_jingle_id) {
-        setClosingJingleId(jingles[0]._id)
-      }
+      if (!openingJingleId && !jingleSettings?.opening_jingle_id) setOpeningJingleId(jingles[0]._id)
+      if (!closingJingleId && !jingleSettings?.closing_jingle_id) setClosingJingleId(jingles[0]._id)
     }
   }, [jingles, openingJingleId, closingJingleId, jingleSettings])
 
-  // Save jingle settings (called when saving all changes)
+  // Save jingle settings
   const saveJingleSettings = useCallback(async () => {
     if (!isJingleSettingsDirty) return
     try {
-      await api.saveJingleSettings(
-        useOpeningJingle,
-        openingJingleId,
-        useClosingJingle,
-        closingJingleId
-      )
+      await api.saveJingleSettings(useOpeningJingle, openingJingleId, useClosingJingle, closingJingleId)
       setIsJingleSettingsDirty(false)
     } catch (error) {
       console.error('Failed to save jingle settings:', error)
@@ -280,12 +166,12 @@ export default function CampaignManager() {
     fetchCampaigns()
   }, [fetchCampaigns])
 
-  // Combined check for unsaved changes (grids + jingle settings)
+  // Check for unsaved changes
   const hasUnsavedChanges = useCallback(() => {
     return hasAnyUnsavedChanges() || isJingleSettingsDirty
   }, [hasAnyUnsavedChanges, isJingleSettingsDirty])
 
-  // Warn before leaving page with unsaved changes
+  // Warn before leaving with unsaved changes
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (hasUnsavedChanges()) {
@@ -294,564 +180,280 @@ export default function CampaignManager() {
         return ''
       }
     }
-
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [hasUnsavedChanges])
 
   // Filter campaigns
   const filteredCampaigns = campaigns.filter(c => {
-    // First, hide deleted/completed unless showInactive is checked
-    if (!showInactive && (c.status === 'deleted' || c.status === 'completed')) {
-      return false
+    // Empty array means "All" - show everything except deleted/completed by default
+    if (statusFilter.length === 0) {
+      return c.status !== 'deleted' && c.status !== 'completed'
     }
-    // Then apply status filter
-    if (statusFilter === 'all') return true
-    return c.status === statusFilter
+    // Otherwise, filter by selected statuses
+    return statusFilter.includes(c.status)
   })
 
   // Handle campaign creation
-  const handleCreateCampaign = useCallback(
-    async (data: CampaignCreate) => {
-      const campaign = await createCampaign(data)
-      if (campaign) {
-        setShowFormModal(false)
-        selectCampaign(campaign)
-      }
-    },
-    [createCampaign, selectCampaign]
-  )
+  const handleCreateCampaign = useCallback(async (data: CampaignCreate) => {
+    const campaign = await createCampaign(data)
+    if (campaign) {
+      setShowFormModal(false)
+      selectCampaign(campaign)
+    }
+  }, [createCampaign, selectCampaign])
 
   // Handle campaign update
-  const handleUpdateCampaign = useCallback(
-    async (data: CampaignCreate) => {
-      if (!editingCampaign) return
-      const campaign = await updateCampaign(editingCampaign._id, data)
-      if (campaign) {
-        setShowFormModal(false)
-        setEditingCampaign(null)
-      }
-    },
-    [editingCampaign, updateCampaign]
-  )
+  const handleUpdateCampaign = useCallback(async (data: CampaignCreate) => {
+    if (!editingCampaign) return
+    const campaign = await updateCampaign(editingCampaign._id, data)
+    if (campaign) {
+      setShowFormModal(false)
+      setEditingCampaign(null)
+    }
+  }, [editingCampaign, updateCampaign])
 
-  // Handle delete confirmation - saves pending changes, clears schedule and deletes
-  const handleDeleteCampaign = useCallback(
-    async (campaignId: string) => {
-      // Save any pending changes first
-      await saveAllGrids()
+  // Handle delete
+  const handleDeleteCampaign = useCallback(async (campaignId: string) => {
+    await saveAllGrids()
+    try {
+      await api.updateCampaignGrid(campaignId, [])
+    } catch (e) {
+      console.error('Failed to clear schedule:', e)
+    }
+    const success = await deleteCampaign(campaignId)
+    if (success) {
+      setConfirmDelete(null)
+      toast.success(isRTL ? 'הקמפיין נמחק והמשבצות הוסרו' : 'Campaign deleted and slots removed')
+      fetchCampaigns()
+    }
+  }, [deleteCampaign, isRTL, fetchCampaigns, saveAllGrids])
 
-      // Clear the schedule grid
-      try {
-        await api.updateCampaignGrid(campaignId, [])
-      } catch (e) {
-        console.error('Failed to clear schedule:', e)
-      }
+  // Handle pause
+  const handlePauseCampaign = useCallback(async (campaignId: string) => {
+    await saveAllGrids()
+    try {
+      await api.updateCampaignGrid(campaignId, [])
+    } catch (e) {
+      console.error('Failed to clear schedule:', e)
+    }
+    const campaign = await toggleCampaignStatus(campaignId)
+    if (campaign) {
+      setConfirmPause(null)
+      toast.success(isRTL ? 'הקמפיין הושהה והמשבצות הוסרו' : 'Campaign paused and slots removed')
+      fetchCampaigns()
+    }
+  }, [toggleCampaignStatus, isRTL, fetchCampaigns, saveAllGrids])
 
-      const success = await deleteCampaign(campaignId)
-      if (success) {
-        setConfirmDelete(null)
-        toast.success(isRTL ? 'הקמפיין נמחק והמשבצות הוסרו' : 'Campaign deleted and slots removed')
-        fetchCampaigns() // Refresh to update heatmap
-      }
-    },
-    [deleteCampaign, isRTL, fetchCampaigns, saveAllGrids]
-  )
+  // Handle toggle status
+  const handleToggleStatus = useCallback((campaign: Campaign) => {
+    if (campaign.status === 'active') {
+      setConfirmPause(campaign._id)
+    } else {
+      toggleCampaignStatus(campaign._id)
+    }
+  }, [toggleCampaignStatus])
 
-  // Handle pause confirmation - saves pending changes, clears schedule and pauses
-  const handlePauseCampaign = useCallback(
-    async (campaignId: string) => {
-      // Save any pending changes first
-      await saveAllGrids()
+  // Handle clone
+  const handleCloneCampaign = useCallback(async (campaignId: string) => {
+    const cloned = await cloneCampaign(campaignId)
+    if (cloned) {
+      toast.success(isRTL ? `קמפיין "${cloned.name}" נוצר בהצלחה` : `Campaign "${cloned.name}" created successfully`)
+    }
+  }, [cloneCampaign, isRTL])
 
-      // Clear the schedule grid
-      try {
-        await api.updateCampaignGrid(campaignId, [])
-      } catch (e) {
-        console.error('Failed to clear schedule:', e)
-      }
-
-      const campaign = await toggleCampaignStatus(campaignId)
-      if (campaign) {
-        setConfirmPause(null)
-        toast.success(isRTL ? 'הקמפיין הושהה והמשבצות הוסרו' : 'Campaign paused and slots removed')
-        fetchCampaigns() // Refresh to update heatmap
-      }
-    },
-    [toggleCampaignStatus, isRTL, fetchCampaigns, saveAllGrids]
-  )
-
-  // Handle toggle status - show confirmation if pausing an active campaign
-  const handleToggleStatus = useCallback(
-    (campaign: Campaign) => {
-      if (campaign.status === 'active') {
-        // Pausing - show confirmation
-        setConfirmPause(campaign._id)
-      } else {
-        // Activating - no confirmation needed
-        toggleCampaignStatus(campaign._id)
-      }
-    },
-    [toggleCampaignStatus]
-  )
-
-  // Handle clone campaign
-  const handleCloneCampaign = useCallback(
-    async (campaignId: string) => {
-      const cloned = await cloneCampaign(campaignId)
-      if (cloned) {
-        toast.success(
-          isRTL
-            ? `קמפיין "${cloned.name}" נוצר בהצלחה`
-            : `Campaign "${cloned.name}" created successfully`
-        )
-      }
-    },
-    [cloneCampaign, isRTL]
-  )
-
-  // Handle grid save - saves ALL pending changes including jingle settings
+  // Handle save all
   const handleSaveAll = useCallback(async () => {
     await saveAllGrids()
     await saveJingleSettings()
   }, [saveAllGrids, saveJingleSettings])
 
-  // Stop audio playback
-  const stopPlayback = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.src = ''
-    }
-    setPlayingSlot(null)
-    setPlayQueue([])
-  }, [])
-
-  // Handle playing next item in queue
-  useEffect(() => {
-    if (playQueue.length === 0) {
-      if (playingSlot) {
-        setPlayingSlot(null)
-      }
-      return
-    }
-
-    const currentContentId = playQueue[0]
-    const streamUrl = api.getStreamUrl(currentContentId)
-
-    if (!audioRef.current) {
-      audioRef.current = new Audio()
-    }
-
-    const audio = audioRef.current
-
-    const handleEnded = () => {
-      // Remove played item and continue with next
-      setPlayQueue(prev => prev.slice(1))
-    }
-
-    const handleError = () => {
-      console.error('Audio playback error, skipping to next')
-      setPlayQueue(prev => prev.slice(1))
-    }
-
-    audio.src = streamUrl
-    audio.addEventListener('ended', handleEnded)
-    audio.addEventListener('error', handleError)
-    audio.play().catch(err => {
-      console.error('Play error:', err)
-      setPlayQueue(prev => prev.slice(1))
-    })
-
-    return () => {
-      audio.removeEventListener('ended', handleEnded)
-      audio.removeEventListener('error', handleError)
-    }
-  }, [playQueue, playingSlot])
-
-  // Cleanup audio on unmount
-  useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.src = ''
-      }
-    }
-  }, [])
-
-  // Handle play slot - gather all commercials for the slot and play sequentially
-  const handlePlaySlot = useCallback((slotDate: string, slotIndex: number) => {
-    // If already playing this slot, stop
-    if (playingSlot?.slotDate === slotDate && playingSlot?.slotIndex === slotIndex) {
-      stopPlayback()
-      return
-    }
-
-    // Stop any current playback
-    stopPlayback()
-
-    // Gather all content IDs from all campaigns scheduled for this slot
-    const contentIds: string[] = []
-    const campaignsForSlot: Array<{ campaign: Campaign; playCount: number }> = []
-
-    campaigns.forEach(campaign => {
-      // Only include active campaigns
-      if (campaign.status !== 'active') return
-
-      const count = getSlotPlayCount(campaign.schedule_grid, slotDate, slotIndex)
-      if (count > 0) {
-        campaignsForSlot.push({ campaign, playCount: count })
-      }
-    })
-
-    // Sort by priority (highest first)
-    campaignsForSlot.sort((a, b) => b.campaign.priority - a.campaign.priority)
-
-    // Build the queue: add each campaign's content refs according to play count
-    campaignsForSlot.forEach(({ campaign, playCount }) => {
-      for (let i = 0; i < playCount; i++) {
-        campaign.content_refs.forEach(ref => {
-          if (ref.content_id) {
-            contentIds.push(ref.content_id)
-          }
-        })
-      }
-    })
-
-    if (contentIds.length === 0) {
-      return
-    }
-
-    setPlayingSlot({ slotDate, slotIndex })
-    setPlayQueue(contentIds)
-  }, [campaigns, playingSlot, stopPlayback])
-
-  // Draggable splitter handlers - left splitter (between campaign list and heatmap)
-  const handleLeftSplitterMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    isDraggingLeft.current = true
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-  }, [])
-
-  // Draggable splitter handlers - right splitter (between heatmap and slot details)
-  const handleRightSplitterMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    isDraggingRight.current = true
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-  }, [])
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!containerRef.current) return
-
-      if (isDraggingLeft.current) {
-        const containerRect = containerRef.current.getBoundingClientRect()
-        const newWidth = e.clientX - containerRect.left
-        setLeftPanelWidth(Math.max(200, Math.min(500, newWidth)))
-      }
-
-      if (isDraggingRight.current && heatmapContainerRef.current) {
-        const heatmapRect = heatmapContainerRef.current.getBoundingClientRect()
-        // Right panel width = right edge of heatmap container - mouse position
-        const newWidth = heatmapRect.right - e.clientX
-        setRightPanelWidth(Math.max(200, Math.min(400, newWidth)))
-      }
-    }
-
-    const handleMouseUp = () => {
-      isDraggingLeft.current = false
-      isDraggingRight.current = false
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [])
-
-  // Filter slot index for the schedule details panel (null = show all)
-  const [filterSlotIndex, setFilterSlotIndex] = useState<number | null>(null)
-  const [isRunningSlot, setIsRunningSlot] = useState(false)
-
-  // Handler to run a slot now (admin feature)
+  // Handle run slot now
   const handleRunSlotNow = async (slotDate: string, slotIndex: number) => {
     setIsRunningSlot(true)
     try {
       const result = await api.runSlotNow(
-        slotDate,
-        slotIndex,
-        useOpeningJingle,
-        useOpeningJingle ? openingJingleId : undefined,
-        useClosingJingle,
-        useClosingJingle ? closingJingleId : undefined
+        slotDate, slotIndex,
+        useOpeningJingle, useOpeningJingle ? openingJingleId : undefined,
+        useClosingJingle, useClosingJingle ? closingJingleId : undefined
       )
       if (result.success) {
         if (result.queued > 0) {
-          toast.success(
-            isRTL
-              ? `הופעלו ${result.queued} פרסומות - נוספו לראש התור`
-              : `Triggered ${result.queued} commercials - added to front of queue`
-          )
+          toast.success(isRTL ? `הופעלו ${result.queued} פרסומות` : `Triggered ${result.queued} commercials`)
         } else {
-          toast.info(
-            isRTL
-              ? 'אין פרסומות מתוזמנות למשבצת זו'
-              : 'No commercials scheduled for this slot'
-          )
+          toast.info(isRTL ? 'אין פרסומות מתוזמנות למשבצת זו' : 'No commercials scheduled for this slot')
         }
       }
     } catch (error: any) {
-      console.error('Failed to run slot:', error)
       const errorMessage = error?.response?.data?.detail || error?.message || 'Unknown error'
-      toast.error(
-        isRTL
-          ? `שגיאה בהפעלת המשבצת: ${errorMessage}`
-          : `Error running slot: ${errorMessage}`
-      )
+      toast.error(isRTL ? `שגיאה: ${errorMessage}` : `Error: ${errorMessage}`)
     } finally {
       setIsRunningSlot(false)
     }
   }
 
-  // Day labels (moved up so getScheduledSlots can use it)
-  const dayLabels = isRTL ? DAY_LABELS_HE : DAY_LABELS_EN
-
-  // Calculate base date for the heatmap based on week offset (moved up for dependency)
+  // Calculate base date for heatmap
   const heatmapBaseDate = useMemo(() => {
     const date = new Date()
     date.setDate(date.getDate() + weekOffset * 7)
     return date
   }, [weekOffset])
 
-  // Get selected campaign's scheduled slots for the details panel
-  // Filtered by the displayed week
-  const getScheduledSlots = useCallback(() => {
-    if (!selectedCampaign) return []
+  // Calculate week date range for slot execution status fetch
+  const weekDateRange = useMemo(() => {
+    const weekStart = getWeekStart(heatmapBaseDate)
+    const weekEnd = getWeekEnd(heatmapBaseDate)
+    const formatDate = (d: Date) => {
+      const yyyy = d.getFullYear()
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      return `${yyyy}-${mm}-${dd}`
+    }
+    return {
+      startDate: formatDate(weekStart),
+      endDate: formatDate(weekEnd),
+    }
+  }, [heatmapBaseDate])
 
-    const weekDates = getWeekDates(heatmapBaseDate)
+  // Fetch slot execution status for the current week
+  const { data: slotExecutionData } = useQuery<{ slots: SlotExecutionStatus[] }>({
+    queryKey: ['slotExecutionStatus', weekDateRange.startDate, weekDateRange.endDate],
+    queryFn: () => api.getSlotExecutionStatus(weekDateRange.startDate, weekDateRange.endDate),
+    staleTime: 30000, // Cache for 30 seconds
+  })
 
-    const slots: Array<{
-      slotDate: string
-      slotIndex: number
-      playCount: number
-      timeLabel: string
-      dayLabel: string
-    }> = []
-
-    editingGrid.forEach(slot => {
-      if (slot.play_count > 0) {
-        // Only include slots within the displayed week
-        if (!weekDates.includes(slot.slot_date)) {
-          return
-        }
-        // If filtering by slot index, only include matching slots
-        if (filterSlotIndex !== null && slot.slot_index !== filterSlotIndex) {
-          return
-        }
-        // Get day of week from date for display
-        const [year, month, day] = slot.slot_date.split('-').map(Number)
-        const date = new Date(year, month - 1, day)
-        const dayOfWeek = date.getDay()
-
-        slots.push({
-          slotDate: slot.slot_date,
-          slotIndex: slot.slot_index,
-          playCount: slot.play_count,
-          timeLabel: slotIndexToTime(slot.slot_index),
-          dayLabel: dayLabels[dayOfWeek],
-        })
-      }
-    })
-
-    // Sort by date, then by slot index
-    return slots.sort((a, b) => {
-      if (a.slotDate !== b.slotDate) return a.slotDate.localeCompare(b.slotDate)
-      return a.slotIndex - b.slotIndex
-    })
-  }, [selectedCampaign, editingGrid, filterSlotIndex, heatmapBaseDate, dayLabels])
-
-  // Handle row header click - deselect campaign and show all commercials for that slot
+  // Handle row click
   const handleRowClick = useCallback((slotIndex: number) => {
-    // Toggle filter - if clicking same slot, clear filter
-    if (filterSlotIndex === slotIndex) {
+    if (filterSlotIndex === slotIndex && !filterSlotDate) {
       setFilterSlotIndex(null)
     } else {
       setFilterSlotIndex(slotIndex)
-      // Deselect campaign to show overview of all campaigns for this slot
+      setFilterSlotDate(null)
       selectCampaign(null)
       setIsRightPanelOpen(true)
     }
-  }, [filterSlotIndex, selectCampaign])
+  }, [filterSlotIndex, filterSlotDate, selectCampaign, setIsRightPanelOpen])
 
-  // Handle clicking on a slot cell - show slot details in right panel
-  const handleSlotClick = useCallback((_slotDate: string, slotIndex: number) => {
+  // Handle slot click
+  const handleSlotClick = useCallback((slotDate: string, slotIndex: number) => {
     setFilterSlotIndex(slotIndex)
+    setFilterSlotDate(slotDate)
     setIsRightPanelOpen(true)
-  }, [])
+  }, [setIsRightPanelOpen])
 
-  // Copy schedule from another campaign
-  const handleCopySchedule = useCallback((sourceCampaign: Campaign) => {
-    setEditingGrid(sourceCampaign.schedule_grid)
-    setShowCopyDropdown(false)
-  }, [setEditingGrid])
+  // Handle copy from previous week - copies slots from the previous week to the current week
+  // If a campaign is selected, copies only that campaign's slots
+  // If no campaign is selected, copies all active campaigns' slots
+  const handleCopyFromPreviousWeek = useCallback(() => {
+    // Calculate previous week dates
+    const prevWeekDate = new Date(heatmapBaseDate)
+    prevWeekDate.setDate(prevWeekDate.getDate() - 7)
+    const prevWeekStart = getWeekStart(prevWeekDate)
 
-  // Handle repeat slot pattern - copy a slot's play count to other time slots
-  const handleRepeatSlot = useCallback((pattern: 'hourly' | '2hours' | '30min') => {
-    if (filterSlotIndex === null || !selectedCampaign || !editingGrid) return
-
-    // Get the source slot's play count for each day in the week
-    const weekDates = getWeekDates(heatmapBaseDate)
-    const sourcePlayCounts: Record<string, number> = {}
-
-    weekDates.forEach(slotDate => {
-      const count = getSlotPlayCount(editingGrid, slotDate, filterSlotIndex)
-      if (count > 0) {
-        sourcePlayCounts[slotDate] = count
-      }
-    })
-
-    if (Object.keys(sourcePlayCounts).length === 0) {
-      toast.warning(isRTL ? 'אין תוכן במשבצת הנבחרת' : 'No content in selected slot')
-      return
+    // Get dates for previous week (YYYY-MM-DD format)
+    const prevWeekDates: string[] = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(prevWeekStart)
+      d.setDate(d.getDate() + i)
+      const yyyy = d.getFullYear()
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      prevWeekDates.push(`${yyyy}-${mm}-${dd}`)
     }
 
-    // Calculate step based on pattern (in slot indices, each slot = 30 min)
-    const step = pattern === 'hourly' ? 2 : pattern === '2hours' ? 4 : 1
+    // Get dates for current week
+    const currentWeekStart = getWeekStart(heatmapBaseDate)
+    const currentWeekDates: string[] = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(currentWeekStart)
+      d.setDate(d.getDate() + i)
+      const yyyy = d.getFullYear()
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      currentWeekDates.push(`${yyyy}-${mm}-${dd}`)
+    }
 
-    // Build new slots to add
-    const newSlots: WeeklySlot[] = []
+    // Determine which campaigns to process
+    const campaignsToProcess = selectedCampaign
+      ? [selectedCampaign]
+      : campaigns.filter(c => c.status === 'active')
 
-    // Get the first source date and its play count (for week mode)
-    const sortedSourceDates = Object.keys(sourcePlayCounts).sort()
-    const firstSourceDate = sortedSourceDates[0]
-    const firstPlayCount = sourcePlayCounts[firstSourceDate]
+    let totalSlotsCopied = 0
+    let campaignsUpdated = 0
 
-    if (repeatScope === 'day') {
-      // Day mode: only repeat on days that already have the source slot
-      Object.entries(sourcePlayCounts).forEach(([slotDate, playCount]) => {
-        // Start from the source slot and go forward for rest of day
-        for (let idx = filterSlotIndex + step; idx < 48; idx += step) {
-          newSlots.push({
-            slot_date: slotDate,
-            slot_index: idx,
-            play_count: playCount,
-          })
+    campaignsToProcess.forEach(campaign => {
+      // Get the campaign's slots from the previous week (from saved grid)
+      const prevWeekSlots = campaign.schedule_grid.filter(slot =>
+        prevWeekDates.includes(slot.slot_date) && slot.play_count > 0
+      )
+
+      if (prevWeekSlots.length === 0) return
+
+      // Map previous week slots to current week (same day of week, same time slot)
+      const newSlots: WeeklySlot[] = prevWeekSlots.map(slot => {
+        const prevDayIndex = prevWeekDates.indexOf(slot.slot_date)
+        const newDate = currentWeekDates[prevDayIndex]
+        return {
+          slot_date: newDate,
+          slot_index: slot.slot_index,
+          play_count: slot.play_count,
         }
       })
-    } else {
-      // Week mode: repeat on all remaining days in the week within time bounds
-      const firstSourceIdx = weekDates.indexOf(firstSourceDate)
 
-      // For each day from the first source date onwards
-      for (let dayIdx = firstSourceIdx; dayIdx < weekDates.length; dayIdx++) {
-        const slotDate = weekDates[dayIdx]
-        const playCount = sourcePlayCounts[slotDate] || firstPlayCount
+      // Get existing grid for this campaign
+      const existingGrid = campaign._id === selectedCampaign?._id
+        ? editingGrid
+        : (editingGrids.get(campaign._id) || campaign.schedule_grid)
 
-        // Determine starting slot index (respect time bounds)
-        let startIdx: number
-        if (dayIdx === firstSourceIdx) {
-          // First day: start after source slot, but not before repeatStartSlot
-          startIdx = Math.max(filterSlotIndex + step, repeatStartSlot)
-        } else {
-          // Subsequent days: start from repeatStartSlot
-          startIdx = repeatStartSlot
-        }
+      // Merge with existing slots (keeping non-current-week slots)
+      const existingNonCurrentWeek = existingGrid.filter(slot => !currentWeekDates.includes(slot.slot_date))
+      const mergedGrid = [...existingNonCurrentWeek, ...newSlots]
 
-        // Add slots for this day (within time bounds)
-        for (let idx = startIdx; idx <= repeatEndSlot; idx += step) {
-          newSlots.push({
-            slot_date: slotDate,
-            slot_index: idx,
-            play_count: playCount,
-          })
-        }
-      }
-    }
-
-    if (newSlots.length === 0) {
-      toast.info(isRTL ? 'אין משבצות נוספות להוספה' : 'No additional slots to add')
-      return
-    }
-
-    // Merge with existing grid
-    const updatedGrid = [...editingGrid]
-    newSlots.forEach(newSlot => {
-      const existingIdx = updatedGrid.findIndex(
-        s => s.slot_date === newSlot.slot_date && s.slot_index === newSlot.slot_index
-      )
-      if (existingIdx >= 0) {
-        // Update existing slot
-        updatedGrid[existingIdx] = { ...updatedGrid[existingIdx], play_count: newSlot.play_count }
+      // Update the campaign's grid
+      if (campaign._id === selectedCampaign?._id) {
+        setEditingGrid(mergedGrid)
       } else {
-        // Add new slot
-        updatedGrid.push(newSlot)
+        setCampaignGrid(campaign._id, mergedGrid)
       }
+
+      totalSlotsCopied += newSlots.length
+      campaignsUpdated++
     })
 
-    setEditingGrid(updatedGrid)
+    if (totalSlotsCopied === 0) {
+      toast.info(isRTL ? 'אין משבצות בשבוע הקודם להעתקה' : 'No slots in previous week to copy')
+    } else {
+      const message = selectedCampaign
+        ? (isRTL ? `הועתקו ${totalSlotsCopied} משבצות מהשבוע הקודם` : `Copied ${totalSlotsCopied} slots from previous week`)
+        : (isRTL ? `הועתקו ${totalSlotsCopied} משבצות מ-${campaignsUpdated} קמפיינים` : `Copied ${totalSlotsCopied} slots from ${campaignsUpdated} campaigns`)
+      toast.success(message)
+    }
+  }, [selectedCampaign, campaigns, heatmapBaseDate, editingGrid, editingGrids, setEditingGrid, setCampaignGrid, isRTL])
 
-    const patternLabel = pattern === 'hourly' ? (isRTL ? 'כל שעה' : 'hourly')
-      : pattern === '2hours' ? (isRTL ? 'כל שעתיים' : 'every 2 hours')
-      : (isRTL ? 'כל 30 דקות' : 'every 30 min')
-
-    const scopeLabel = repeatScope === 'day'
-      ? (isRTL ? 'היום' : 'today')
-      : (isRTL ? 'השבוע' : 'this week')
-
-    toast.success(
-      isRTL
-        ? `הוספו ${newSlots.length} משבצות (${patternLabel}, ${scopeLabel})`
-        : `Added ${newSlots.length} slots (${patternLabel}, ${scopeLabel})`
-    )
-  }, [filterSlotIndex, selectedCampaign, editingGrid, heatmapBaseDate, isRTL, setEditingGrid, repeatScope, repeatStartSlot, repeatEndSlot])
-
-  // Get other campaigns that have schedules (excluding current)
-  const campaignsWithSchedules = useMemo(() => {
-    return campaigns.filter(c =>
-      c._id !== selectedCampaign?._id &&
-      c.schedule_grid.length > 0
-    )
-  }, [campaigns, selectedCampaign?._id])
-
-  // Handle week navigation
+  // Handle week change
   const handleWeekChange = useCallback((direction: 'prev' | 'next') => {
     setWeekOffset(prev => direction === 'next' ? prev + 1 : prev - 1)
   }, [])
 
-  // Handle heatmap scroll changes
+  // Handle heatmap scroll
   const handleHeatmapScroll = useCallback((scrollTop: number) => {
     heatmapScrollTop.current = scrollTop
   }, [])
 
-  // Get all campaigns' scheduled commercials for a specific slot (for overview mode)
-  // Filtered by the displayed week
-  const getSlotOverview = useCallback(() => {
-    if (filterSlotIndex === null) return []
+  // Calculate aggregated grid
+  const aggregatedGrid = useMemo(() => {
+    return calculateAggregatedGrid(campaigns, selectedCampaign?._id || null, editingGrid, editingGrids, heatmapBaseDate)
+  }, [campaigns, selectedCampaign?._id, editingGrid, editingGrids, heatmapBaseDate])
 
+  // Get campaign breakdown for slot
+  const getCampaignBreakdown = useCallback((slotDate: string, slotIndex: number): CampaignSlotInfo[] => {
     const weekStart = getWeekStart(heatmapBaseDate)
     const weekEnd = getWeekEnd(heatmapBaseDate)
-    const weekDates = getWeekDates(heatmapBaseDate)
-
-    const overview: Array<{
-      campaign: Campaign
-      slotDate: string
-      dayLabel: string
-      playCount: number
-    }> = []
+    const breakdown: CampaignSlotInfo[] = []
 
     campaigns.forEach(campaign => {
-      // Skip campaigns not active during this week
-      if (!isCampaignActiveInWeek(campaign, weekStart, weekEnd)) {
-        return
-      }
+      if (!isCampaignActiveInWeek(campaign, weekStart, weekEnd)) return
 
-      // Priority: selected campaign uses editingGrid, others check editingGrids map, fallback to schedule_grid
       let gridToUse: WeeklySlot[]
       if (campaign._id === selectedCampaign?._id) {
         gridToUse = editingGrid
@@ -859,162 +461,20 @@ export default function CampaignManager() {
         const pendingGrid = editingGrids.get(campaign._id)
         gridToUse = pendingGrid !== undefined ? pendingGrid : campaign.schedule_grid
       }
+      const count = getSlotPlayCount(gridToUse, slotDate, slotIndex)
 
-      gridToUse.forEach(slot => {
-        if (slot.slot_index === filterSlotIndex && slot.play_count > 0 && weekDates.includes(slot.slot_date)) {
-          // Get day of week from date for display
-          const [year, month, day] = slot.slot_date.split('-').map(Number)
-          const date = new Date(year, month - 1, day)
-          const dayOfWeek = date.getDay()
-
-          overview.push({
-            campaign,
-            slotDate: slot.slot_date,
-            dayLabel: dayLabels[dayOfWeek],
-            playCount: slot.play_count,
-          })
-        }
-      })
-    })
-
-    // Sort by date, then by priority
-    return overview.sort((a, b) => {
-      if (a.slotDate !== b.slotDate) return a.slotDate.localeCompare(b.slotDate)
-      return b.campaign.priority - a.campaign.priority
-    })
-  }, [campaigns, selectedCampaign?._id, editingGrid, editingGrids, filterSlotIndex, heatmapBaseDate, dayLabels])
-
-  const slotOverview = getSlotOverview()
-
-  // Status filter options
-  const statusOptions: Array<{ value: CampaignStatus | 'all'; label: string; labelHe: string }> = [
-    { value: 'all', label: 'All', labelHe: 'הכל' },
-    { value: 'active', label: 'Active', labelHe: 'פעיל' },
-    { value: 'paused', label: 'Paused', labelHe: 'מושהה' },
-    { value: 'draft', label: 'Draft', labelHe: 'טיוטה' },
-    { value: 'completed', label: 'Completed', labelHe: 'הושלם' },
-    { value: 'deleted', label: 'Deleted', labelHe: 'נמחק' },
-  ]
-
-  const scheduledSlots = getScheduledSlots()
-
-  // Helper to create a unique key for a slot
-  const getSlotKey = (slotDate: string, slotIndex: number) => `${slotDate}_${slotIndex}`
-
-  // Filter scheduled slots to only future ones (today's remaining slots + future days)
-  const futureSlots = useMemo(() => {
-    const now = new Date()
-    const todayStr = formatSlotDate(now)
-    const currentSlotIndex = Math.floor((now.getHours() * 60 + now.getMinutes()) / 30)
-
-    return scheduledSlots.filter(slot => {
-      if (slot.slotDate > todayStr) return true // Future day
-      if (slot.slotDate === todayStr && slot.slotIndex > currentSlotIndex) return true // Today but later
-      return false
-    })
-  }, [scheduledSlots])
-
-  // Toggle selection of a single slot
-  const toggleSlotSelection = useCallback((slotDate: string, slotIndex: number) => {
-    const key = getSlotKey(slotDate, slotIndex)
-    setSelectedSlotKeys(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) {
-        next.delete(key)
-      } else {
-        next.add(key)
+      if (count > 0) {
+        breakdown.push({
+          campaignId: campaign._id,
+          campaignName: isRTL && campaign.name_he ? campaign.name_he : campaign.name,
+          playCount: count,
+          priority: campaign.priority,
+        })
       }
-      return next
-    })
-  }, [])
-
-  // Select or deselect all future slots
-  const toggleSelectAllFutureSlots = useCallback(() => {
-    const allFutureKeys = futureSlots.map(s => getSlotKey(s.slotDate, s.slotIndex))
-    const allSelected = allFutureKeys.every(key => selectedSlotKeys.has(key))
-
-    if (allSelected) {
-      // Deselect all
-      setSelectedSlotKeys(new Set())
-    } else {
-      // Select all future
-      setSelectedSlotKeys(new Set(allFutureKeys))
-    }
-  }, [futureSlots, selectedSlotKeys])
-
-  // Delete selected slots from editingGrid
-  const deleteSelectedSlots = useCallback(() => {
-    if (selectedSlotKeys.size === 0) return
-
-    const updatedGrid = editingGrid.filter(slot => {
-      const key = getSlotKey(slot.slot_date, slot.slot_index)
-      return !selectedSlotKeys.has(key)
     })
 
-    setEditingGrid(updatedGrid)
-    setSelectedSlotKeys(new Set())
-    toast.success(
-      isRTL
-        ? `נמחקו ${selectedSlotKeys.size} משבצות`
-        : `Deleted ${selectedSlotKeys.size} slots`
-    )
-  }, [selectedSlotKeys, editingGrid, setEditingGrid, isRTL])
-
-  // Check if all future slots are selected
-  const allFutureSlotsSelected = useMemo(() => {
-    if (futureSlots.length === 0) return false
-    return futureSlots.every(s => selectedSlotKeys.has(getSlotKey(s.slotDate, s.slotIndex)))
-  }, [futureSlots, selectedSlotKeys])
-
-  // Calculate aggregated grid from all campaigns for the displayed week
-  const aggregatedGrid = useMemo(() => {
-    return calculateAggregatedGrid(
-      campaigns,
-      selectedCampaign?._id || null,
-      editingGrid,
-      editingGrids,
-      heatmapBaseDate
-    )
-  }, [campaigns, selectedCampaign?._id, editingGrid, editingGrids, heatmapBaseDate])
-
-  // Get per-campaign breakdown for a specific slot (filtered by displayed week)
-  const getCampaignBreakdown = useCallback(
-    (slotDate: string, slotIndex: number): CampaignSlotInfo[] => {
-      const weekStart = getWeekStart(heatmapBaseDate)
-      const weekEnd = getWeekEnd(heatmapBaseDate)
-      const breakdown: CampaignSlotInfo[] = []
-
-      campaigns.forEach(campaign => {
-        // Skip campaigns not active during this week
-        if (!isCampaignActiveInWeek(campaign, weekStart, weekEnd)) {
-          return
-        }
-
-        // Priority: selected campaign uses editingGrid, others check editingGrids map, fallback to schedule_grid
-        let gridToUse: WeeklySlot[]
-        if (campaign._id === selectedCampaign?._id) {
-          gridToUse = editingGrid
-        } else {
-          const pendingGrid = editingGrids.get(campaign._id)
-          gridToUse = pendingGrid !== undefined ? pendingGrid : campaign.schedule_grid
-        }
-        const count = getSlotPlayCount(gridToUse, slotDate, slotIndex)
-
-        if (count > 0) {
-          breakdown.push({
-            campaignId: campaign._id,
-            campaignName: isRTL && campaign.name_he ? campaign.name_he : campaign.name,
-            playCount: count,
-            priority: campaign.priority,
-          })
-        }
-      })
-
-      // Sort by priority (highest first)
-      return breakdown.sort((a, b) => b.priority - a.priority)
-    },
-    [campaigns, selectedCampaign?._id, editingGrid, editingGrids, isRTL, heatmapBaseDate]
-  )
+    return breakdown.sort((a, b) => b.priority - a.priority)
+  }, [campaigns, selectedCampaign?._id, editingGrid, editingGrids, isRTL, heatmapBaseDate])
 
   return (
     <div className="h-full flex flex-col overflow-hidden" ref={containerRef}>
@@ -1027,41 +487,18 @@ export default function CampaignManager() {
           </h1>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Status filter */}
-          <Select
-            value={statusFilter}
-            onChange={(value) => setStatusFilter(value as CampaignStatus | 'all')}
-            className="min-w-[140px]"
-            options={statusOptions.map(opt => ({
-              value: opt.value,
-              label: isRTL ? opt.labelHe : opt.label
-            }))}
-          />
-
-          {/* Refresh */}
-          <button
-            onClick={() => fetchCampaigns()}
-            disabled={isLoading}
-            className="glass-button p-2"
-            title={isRTL ? 'רענן' : 'Refresh'}
-          >
-            <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
-          </button>
-
-          {/* Add Campaign */}
-          <button
-            onClick={() => {
-              setEditingCampaign(null)
-              setShowFormModal(true)
-            }}
-            className="glass-button-primary flex items-center gap-2 px-4 py-2"
-          >
-            <Plus size={18} />
-            <span>{isRTL ? 'קמפיין חדש' : 'New Campaign'}</span>
-          </button>
-        </div>
+        <button
+          onClick={() => fetchCampaigns()}
+          disabled={isLoading}
+          className="glass-button p-2"
+          title={isRTL ? 'רענן' : 'Refresh'}
+        >
+          <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
+        </button>
       </div>
+
+      {/* Stats Bar */}
+      <CampaignStatsBar campaigns={campaigns} isRTL={isRTL} isAdmin={isAdmin} />
 
       {/* Error banner */}
       {error && (
@@ -1073,7 +510,7 @@ export default function CampaignManager() {
         </div>
       )}
 
-      {/* Unsaved changes warning banner */}
+      {/* Unsaved changes warning */}
       {dirtyGrids.size > 0 && (
         <div className="mx-6 mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-center gap-3">
           <AlertTriangle size={18} className="text-yellow-400 flex-shrink-0" />
@@ -1083,8 +520,8 @@ export default function CampaignManager() {
             </span>
             <span className="text-yellow-400/70 text-sm ml-2">
               {isRTL
-                ? `${dirtyGrids.size} קמפיינים עם שינויים שלא יהיו בתוקף עד שתשמור`
-                : `${dirtyGrids.size} campaign${dirtyGrids.size > 1 ? 's have' : ' has'} changes that won't take effect until saved`}
+                ? `${dirtyGrids.size} קמפיינים עם שינויים`
+                : `${dirtyGrids.size} campaign${dirtyGrids.size > 1 ? 's have' : ' has'} changes`}
             </span>
           </div>
           <div className="flex gap-2">
@@ -1111,171 +548,116 @@ export default function CampaignManager() {
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Campaign list - resizable with slide animation */}
+        {/* Campaign list panel */}
         <div
-          className={`
-            flex flex-col border-r border-white/10 transition-all duration-300 ease-in-out overflow-hidden
-            ${isLeftPanelCollapsed ? 'opacity-0' : 'opacity-100'}
-          `}
+          className={`flex flex-col border-r border-white/10 transition-all duration-300 ease-in-out overflow-hidden ${
+            isLeftPanelCollapsed ? 'opacity-0' : 'opacity-100'
+          }`}
           style={{
             width: isLeftPanelCollapsed ? 0 : leftPanelWidth,
             minWidth: isLeftPanelCollapsed ? 0 : leftPanelWidth,
           }}
         >
-          <div className="p-4 border-b border-white/10 space-y-3">
-            <div className="text-sm text-dark-400">
-              {filteredCampaigns.length} {isRTL ? 'קמפיינים' : 'campaigns'}
-            </div>
-            {/* Show inactive checkbox */}
-            <Checkbox
-              checked={showInactive}
-              onChange={(e) => setShowInactive(e.target.checked)}
-              label={isRTL ? 'הצג נמחקים והושלמו' : 'Show deleted & completed'}
-            />
-          </div>
-
-          <div className="flex-1 overflow-auto p-4 space-y-3">
-            {isLoading && campaigns.length === 0 ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="animate-spin text-primary-400" size={24} />
-              </div>
-            ) : filteredCampaigns.length === 0 ? (
-              <div className="text-center text-dark-500 py-8">
-                {isRTL ? 'אין קמפיינים' : 'No campaigns'}
-              </div>
-            ) : (
-              filteredCampaigns.map(campaign => (
-                <CampaignCard
-                  key={campaign._id}
-                  campaign={campaign}
-                  isSelected={selectedCampaign?._id === campaign._id}
-                  isAdmin={isAdmin}
-                  onSelect={() => {
-                    const isDeselecting = selectedCampaign?._id === campaign._id
-                    selectCampaign(isDeselecting ? null : campaign)
-                    if (!isDeselecting) {
-                      setIsRightPanelOpen(true)
-                    }
-                  }}
-                  onEdit={() => {
-                    setEditingCampaign(campaign)
-                    setShowFormModal(true)
-                  }}
-                  onDelete={() => setConfirmDelete(campaign._id)}
-                  onToggleStatus={() => handleToggleStatus(campaign)}
-                  onSyncCalendar={() => syncToCalendar(campaign._id)}
-                  onClone={() => handleCloneCampaign(campaign._id)}
-                />
-              ))
-            )}
-          </div>
+          <CampaignListPanel
+            isRTL={isRTL}
+            campaigns={campaigns}
+            filteredCampaigns={filteredCampaigns}
+            selectedCampaign={selectedCampaign}
+            isLoading={isLoading}
+            isAdmin={isAdmin}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            onSelectCampaign={selectCampaign}
+            onEditCampaign={(campaign) => {
+              setEditingCampaign(campaign)
+              setShowFormModal(true)
+            }}
+            onDeleteCampaign={(id) => setConfirmDelete(id)}
+            onToggleStatus={handleToggleStatus}
+            onSyncCalendar={syncToCalendar}
+            onCloneCampaign={handleCloneCampaign}
+            onOpenRightPanel={() => setIsRightPanelOpen(true)}
+            onCreateCampaign={() => {
+              setEditingCampaign(null)
+              setShowFormModal(true)
+            }}
+          />
         </div>
 
-        {/* Draggable splitter */}
+        {/* Left splitter */}
         <div
-          className={`
-            w-1 bg-white/5 hover:bg-primary-500/50 cursor-col-resize transition-all duration-300 flex-shrink-0
-            ${isLeftPanelCollapsed ? 'opacity-0 w-0' : 'opacity-100'}
-          `}
+          className={`w-1 bg-white/5 hover:bg-primary-500/50 cursor-col-resize transition-all duration-300 flex-shrink-0 ${
+            isLeftPanelCollapsed ? 'opacity-0 w-0' : 'opacity-100'
+          }`}
           onMouseDown={handleLeftSplitterMouseDown}
         />
 
-        {/* Left panel toggle button */}
+        {/* Left panel toggle */}
         <button
           type="button"
-          onClick={() => setIsLeftPanelCollapsed(!isLeftPanelCollapsed)}
+          onClick={toggleLeftPanel}
           className="flex-shrink-0 w-6 flex items-center justify-center bg-dark-800/50 hover:bg-dark-700/50 border-r border-white/10 transition-colors"
-          title={isLeftPanelCollapsed
-            ? (isRTL ? 'הצג רשימת קמפיינים' : 'Show campaigns list')
-            : (isRTL ? 'הסתר רשימת קמפיינים' : 'Hide campaigns list')
-          }
+          title={isLeftPanelCollapsed ? (isRTL ? 'הצג רשימה' : 'Show list') : (isRTL ? 'הסתר רשימה' : 'Hide list')}
         >
-          {isLeftPanelCollapsed ? (
-            <ChevronRight size={14} className="text-dark-400" />
-          ) : (
-            <ChevronLeft size={14} className="text-dark-400" />
-          )}
+          {isLeftPanelCollapsed ? <ChevronRight size={14} className="text-dark-400" /> : <ChevronLeft size={14} className="text-dark-400" />}
         </button>
 
         {/* Schedule grid panel */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Header - always show, content changes based on selection */}
+          {/* Grid header */}
           <div className="p-4 border-b border-white/10 flex items-center justify-between">
             <div className="flex-1">
               {selectedCampaign ? (
                 <>
                   <h2 className="font-medium text-dark-100" dir="auto">
-                    {isRTL && selectedCampaign.name_he
-                      ? selectedCampaign.name_he
-                      : selectedCampaign.name}
+                    {isRTL && selectedCampaign.name_he ? selectedCampaign.name_he : selectedCampaign.name}
                   </h2>
-                  <p className="text-sm text-dark-400">
-                    {isRTL ? 'לוח זמנים שבועי' : 'Weekly Schedule'}
-                  </p>
-                  {/* Warning for non-active campaigns */}
+                  <p className="text-sm text-dark-400">{isRTL ? 'לוח זמנים שבועי' : 'Weekly Schedule'}</p>
                   {selectedCampaign.status !== 'active' && (
                     <div className="flex items-center gap-2 mt-2 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                       <AlertTriangle size={14} className="text-yellow-400 flex-shrink-0" />
                       <span className="text-xs text-yellow-400">
                         {isRTL
-                          ? `קמפיין במצב "${selectedCampaign.status}" - פרסומות לא ישודרו! שנה למצב "פעיל" כדי להפעיל.`
-                          : `Campaign is "${selectedCampaign.status}" - commercials won't play! Set to "Active" to enable.`}
+                          ? `קמפיין במצב "${selectedCampaign.status}" - פרסומות לא ישודרו!`
+                          : `Campaign is "${selectedCampaign.status}" - commercials won't play!`}
                       </span>
                     </div>
                   )}
                 </>
               ) : (
                 <>
-                  <h2 className="font-medium text-dark-100">
-                    {isRTL ? 'לוח זמנים כללי' : 'Overall Schedule'}
-                  </h2>
-                  <p className="text-sm text-dark-400">
-                    {isRTL ? 'כל הקמפיינים' : 'All campaigns'}
-                  </p>
+                  <h2 className="font-medium text-dark-100">{isRTL ? 'לוח זמנים כללי' : 'Overall Schedule'}</h2>
+                  <p className="text-sm text-dark-400">{isRTL ? 'כל הקמפיינים' : 'All campaigns'}</p>
                 </>
               )}
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Now playing indicator */}
               {playingSlot && (
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/20 border border-blue-500/30 rounded-lg">
                   <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
                   <span className="text-xs text-blue-400">
                     {isRTL ? 'מנגן' : 'Playing'} {slotIndexToTime(playingSlot.slotIndex)} ({playQueue.length} {isRTL ? 'בתור' : 'in queue'})
                   </span>
-                  <button
-                    onClick={stopPlayback}
-                    className="p-1 hover:bg-blue-500/30 rounded"
-                    title={isRTL ? 'עצור' : 'Stop'}
-                  >
+                  <button onClick={stopPlayback} className="p-1 hover:bg-blue-500/30 rounded" title={isRTL ? 'עצור' : 'Stop'}>
                     <Square size={12} className="text-blue-400" />
                   </button>
                 </div>
               )}
 
-              {/* Reset button - only for current campaign */}
               {selectedCampaign && isDirty && (
-                <button
-                  onClick={resetGrid}
-                  className="glass-button px-3 py-1.5 text-sm"
-                >
+                <button onClick={resetGrid} className="glass-button px-3 py-1.5 text-sm">
                   {isRTL ? 'בטל שינויים' : 'Reset'}
                 </button>
               )}
 
-              {/* Save All button - saves all pending changes */}
               {dirtyGrids.size > 0 && (
                 <button
                   onClick={handleSaveAll}
                   disabled={isSaving}
                   className="glass-button-primary px-3 py-1.5 text-sm flex items-center gap-2 disabled:opacity-50"
                 >
-                  {isSaving ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Save size={14} />
-                  )}
+                  {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                   <span>
                     {dirtyGrids.size > 1
                       ? (isRTL ? `שמור הכל (${dirtyGrids.size})` : `Save All (${dirtyGrids.size})`)
@@ -1284,79 +666,30 @@ export default function CampaignManager() {
                 </button>
               )}
 
-              {/* Toggle right panel */}
-              <button
-                onClick={() => setIsRightPanelOpen(!isRightPanelOpen)}
-                className="glass-button p-1.5"
-                title={isRTL ? 'פרטי משבצת' : 'Slot details'}
-              >
+              <button onClick={toggleRightPanel} className="glass-button p-1.5" title={isRTL ? 'פרטי משבצת' : 'Slot details'}>
                 {isRightPanelOpen ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
               </button>
 
               {selectedCampaign && (
-                <button
-                  onClick={() => selectCampaign(null)}
-                  className="glass-button p-1.5"
-                >
+                <button onClick={() => selectCampaign(null)} className="glass-button p-1.5">
                   <X size={18} />
                 </button>
               )}
             </div>
           </div>
 
-          {/* Heatmap grid + details panel - always show */}
+          {/* Heatmap + details */}
           <div className="flex-1 flex overflow-hidden" ref={heatmapContainerRef}>
-            {/* Heatmap */}
             <div className="flex-1 overflow-auto p-4">
-              {/* Copy schedule button - only when campaign is selected */}
-              {selectedCampaign && (
-                <div className="mb-3 flex items-center gap-2">
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowCopyDropdown(!showCopyDropdown)}
-                      disabled={campaignsWithSchedules.length === 0}
-                      className="glass-button px-3 py-1.5 text-xs flex items-center gap-2 disabled:opacity-50"
-                    >
-                      <Copy size={14} />
-                      <span>{isRTL ? 'העתק מקמפיין קודם' : 'Populate from previous'}</span>
-                      <ChevronDown size={12} />
-                    </button>
-
-                    {/* Dropdown */}
-                    {showCopyDropdown && (
-                      <div className="absolute top-full left-0 mt-1 z-20 bg-dark-800 border border-white/10 rounded-lg shadow-xl min-w-[200px] max-h-60 overflow-auto">
-                        {campaignsWithSchedules.length === 0 ? (
-                          <div className="p-3 text-xs text-dark-400 text-center">
-                            {isRTL ? 'אין קמפיינים עם לוחות זמנים' : 'No campaigns with schedules'}
-                          </div>
-                        ) : (
-                          campaignsWithSchedules.map(campaign => (
-                            <button
-                              key={campaign._id}
-                              onClick={() => handleCopySchedule(campaign)}
-                              className="w-full p-3 text-left hover:bg-white/5 border-b border-white/5 last:border-0"
-                            >
-                              <div className="text-sm text-dark-100" dir="auto">
-                                {isRTL && campaign.name_he ? campaign.name_he : campaign.name}
-                              </div>
-                              <div className="text-xs text-dark-400 mt-0.5">
-                                {campaign.schedule_grid.length} {isRTL ? 'משבצות' : 'slots'}
-                              </div>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {showCopyDropdown && (
-                    <div
-                      className="fixed inset-0 z-10"
-                      onClick={() => setShowCopyDropdown(false)}
-                    />
-                  )}
-                </div>
-              )}
+              <div className="mb-3 flex items-center gap-2">
+                <button
+                  onClick={handleCopyFromPreviousWeek}
+                  className="glass-button px-3 py-1.5 text-xs flex items-center gap-2"
+                >
+                  <Copy size={14} />
+                  <span>{isRTL ? 'העתק מהשבוע הקודם' : 'Copy from previous week'}</span>
+                </button>
+              </div>
 
               <ScheduleHeatmap
                 key={`heatmap-week-${weekOffset}`}
@@ -1379,523 +712,56 @@ export default function CampaignManager() {
                 initialScrollTop={heatmapScrollTop.current}
                 onScrollChange={handleHeatmapScroll}
                 onSlotClick={handleSlotClick}
+                slotExecutionStatus={slotExecutionData?.slots}
               />
             </div>
 
-            {/* Draggable splitter for right panel */}
+            {/* Right splitter */}
             <div
-              className={`
-                w-1 bg-white/5 hover:bg-primary-500/50 cursor-col-resize transition-all duration-300 flex-shrink-0
-                ${isRightPanelOpen ? 'opacity-100' : 'opacity-0 w-0'}
-              `}
+              className={`w-1 bg-white/5 hover:bg-primary-500/50 cursor-col-resize transition-all duration-300 flex-shrink-0 ${
+                isRightPanelOpen ? 'opacity-100' : 'opacity-0 w-0'
+              }`}
               onMouseDown={handleRightSplitterMouseDown}
             />
 
-            {/* Collapsible right panel - schedule details with slide animation */}
-            <div
-              className={`
-                border-l border-white/10 flex flex-col bg-dark-800/30 flex-shrink-0
-                transition-all duration-300 ease-in-out overflow-hidden
-                ${isRightPanelOpen ? 'opacity-100' : 'opacity-0'}
-              `}
-              style={{ width: isRightPanelOpen ? rightPanelWidth : 0 }}
-            >
-                <div className="p-4 border-b border-white/10 flex items-center justify-between">
-                  <div>
-                    <h3 className="font-medium text-dark-100 text-sm">
-                      {isRTL ? 'פרטי לוח זמנים' : 'Schedule Details'}
-                    </h3>
-                    {filterSlotIndex !== null && (
-                      <button
-                        onClick={() => setFilterSlotIndex(null)}
-                        className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 mt-1"
-                      >
-                        <span>{slotIndexToTime(filterSlotIndex)}</span>
-                        <X size={10} />
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {isJingleSettingsDirty && (
-                      <button
-                        onClick={handleSaveAll}
-                        className="px-3 py-1 text-xs rounded-lg bg-primary-500 text-white hover:bg-primary-600 transition-colors flex items-center gap-1"
-                      >
-                        <Save size={12} />
-                        {isRTL ? 'שמור' : 'Save'}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => {
-                        setIsRightPanelOpen(false)
-                        setFilterSlotIndex(null)
-                      }}
-                      className="p-1 hover:bg-white/10 rounded"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-auto p-4">
-                  {/* Commercial Jingle Settings */}
-                  <div className="mb-4 pb-4 border-b border-white/10">
-                    <h4 className="text-xs text-dark-400 mb-3">
-                      {isRTL ? 'הגדרות ג׳ינגל פרסומות' : 'Commercial Jingle Settings'}
-                      {isJingleSettingsDirty && <span className="text-yellow-400 ml-1">*</span>}
-                    </h4>
-
-                    {/* Opening Jingle */}
-                    <div className="mb-3">
-                      <div className="flex items-start gap-2 mb-1">
-                        <button
-                          onClick={() => {
-                            setUseOpeningJingle(!useOpeningJingle)
-                            setIsJingleSettingsDirty(true)
-                          }}
-                          className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
-                            useOpeningJingle
-                              ? 'bg-primary-500 border-primary-500'
-                              : 'border-dark-500 hover:border-primary-500/50'
-                          }`}
-                        >
-                          {useOpeningJingle && (
-                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </button>
-                        <span className="text-xs text-dark-200">
-                          {isRTL ? 'ג׳ינגל פתיחה (לפני פרסומות)' : 'Opening jingle (before commercials)'}
-                        </span>
-                      </div>
-                      {useOpeningJingle && (
-                        <div className="ml-6">
-                          <Select
-                            value={openingJingleId}
-                            onChange={(value) => {
-                              setOpeningJingleId(value)
-                              setIsJingleSettingsDirty(true)
-                            }}
-                            placeholder={isRTL ? 'בחר ג׳ינגל' : 'Select jingle'}
-                            options={jingles.length === 0
-                              ? [{ value: '', label: isRTL ? 'אין ג׳ינגלים זמינים' : 'No jingles available' }]
-                              : jingles.map((jingle: any) => ({
-                                  value: jingle._id,
-                                  label: jingle.title
-                                }))
-                            }
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Closing Jingle */}
-                    <div>
-                      <div className="flex items-start gap-2 mb-1">
-                        <button
-                          onClick={() => {
-                            setUseClosingJingle(!useClosingJingle)
-                            setIsJingleSettingsDirty(true)
-                          }}
-                          className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
-                            useClosingJingle
-                              ? 'bg-primary-500 border-primary-500'
-                              : 'border-dark-500 hover:border-primary-500/50'
-                          }`}
-                        >
-                          {useClosingJingle && (
-                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </button>
-                        <span className="text-xs text-dark-200">
-                          {isRTL ? 'ג׳ינגל סיום (אחרי פרסומות)' : 'Closing jingle (after commercials)'}
-                        </span>
-                      </div>
-                      {useClosingJingle && (
-                        <div className="ml-6">
-                          <Select
-                            value={closingJingleId}
-                            onChange={(value) => {
-                              setClosingJingleId(value)
-                              setIsJingleSettingsDirty(true)
-                            }}
-                            placeholder={isRTL ? 'בחר ג׳ינגל' : 'Select jingle'}
-                            options={jingles.length === 0
-                              ? [{ value: '', label: isRTL ? 'אין ג׳ינגלים זמינים' : 'No jingles available' }]
-                              : jingles.map((jingle: any) => ({
-                                  value: jingle._id,
-                                  label: jingle.title
-                                }))
-                            }
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {selectedCampaign ? (
-                    <div className="space-y-4">
-                      {/* Campaign commercials */}
-                      <div>
-                        <h4 className="text-xs text-dark-400 mb-2">
-                          {isRTL ? 'פרסומות בקמפיין' : 'Campaign Commercials'}
-                        </h4>
-                        {selectedCampaign.content_refs.length > 0 ? (
-                          <div className="space-y-1">
-                            {selectedCampaign.content_refs.map((ref, idx) => (
-                              <div
-                                key={idx}
-                                className="flex items-center gap-2 p-2 bg-dark-700/30 rounded text-sm"
-                              >
-                                <FileAudio size={12} className="text-primary-400 flex-shrink-0" />
-                                <span className="text-dark-200 truncate" dir="auto">
-                                  {ref.file_title}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-xs text-dark-500">
-                            {isRTL ? 'אין פרסומות' : 'No commercials'}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Scheduled slots */}
-                      <div className="pt-4 border-t border-white/5">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-xs text-dark-400">
-                            {filterSlotIndex !== null
-                              ? (isRTL ? `משבצות ב-${slotIndexToTime(filterSlotIndex)}` : `Slots at ${slotIndexToTime(filterSlotIndex)}`)
-                              : (isRTL ? 'משבצות מתוזמנות' : 'Scheduled Slots')}
-                            {scheduledSlots.length > 0 && (
-                              <span className="text-primary-400 ml-1">({scheduledSlots.length})</span>
-                            )}
-                          </h4>
-
-                          {/* Delete selected button */}
-                          {selectedSlotKeys.size > 0 && (
-                            <button
-                              onClick={deleteSelectedSlots}
-                              className="px-2 py-1 text-xs rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
-                            >
-                              {isRTL ? `מחק (${selectedSlotKeys.size})` : `Delete (${selectedSlotKeys.size})`}
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Select all checkbox - only show if there are future slots */}
-                        {futureSlots.length > 0 && (
-                          <div className="flex items-center gap-2 mb-2 pb-2 border-b border-white/5">
-                            <button
-                              onClick={toggleSelectAllFutureSlots}
-                              className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                                allFutureSlotsSelected
-                                  ? 'bg-primary-500 border-primary-500'
-                                  : 'border-dark-500 hover:border-primary-500/50'
-                              }`}
-                            >
-                              {allFutureSlotsSelected && (
-                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                              )}
-                            </button>
-                            <span className="text-xs text-dark-400">
-                              {isRTL ? `בחר הכל (${futureSlots.length} עתידיות)` : `Select all (${futureSlots.length} future)`}
-                            </span>
-                          </div>
-                        )}
-
-                        {scheduledSlots.length > 0 ? (
-                          <div className="space-y-1">
-                            {scheduledSlots.map((slot, idx) => {
-                              const slotKey = getSlotKey(slot.slotDate, slot.slotIndex)
-                              const isFuture = futureSlots.some(
-                                f => f.slotDate === slot.slotDate && f.slotIndex === slot.slotIndex
-                              )
-                              const isSelected = selectedSlotKeys.has(slotKey)
-
-                              return (
-                                <div
-                                  key={idx}
-                                  className={`flex items-center justify-between p-2 rounded text-sm transition-colors ${
-                                    isSelected ? 'bg-primary-500/20' : 'bg-dark-700/30'
-                                  } ${!isFuture ? 'opacity-50' : ''}`}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    {/* Checkbox for future slots */}
-                                    {isFuture ? (
-                                      <button
-                                        onClick={() => toggleSlotSelection(slot.slotDate, slot.slotIndex)}
-                                        className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                                          isSelected
-                                            ? 'bg-primary-500 border-primary-500'
-                                            : 'border-dark-500 hover:border-primary-500/50'
-                                        }`}
-                                      >
-                                        {isSelected && (
-                                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                          </svg>
-                                        )}
-                                      </button>
-                                    ) : (
-                                      <Clock size={12} className="text-dark-500" />
-                                    )}
-                                    <span className="text-dark-200">{slot.timeLabel}</span>
-                                    <span className="text-dark-400">{slot.dayLabel}</span>
-                                    {!isFuture && (
-                                      <span className="text-xs text-dark-500">
-                                        ({isRTL ? 'עבר' : 'past'})
-                                      </span>
-                                    )}
-                                  </div>
-                                  <span className="text-primary-400 text-xs">×{slot.playCount}</span>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        ) : (
-                          <div className="text-center py-4 text-dark-500 text-xs">
-                            {isRTL
-                              ? 'אין משבצות מתוזמנות'
-                              : 'No scheduled slots'}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Repeat slot section - only show when a time slot is selected */}
-                      {filterSlotIndex !== null && scheduledSlots.length > 0 && (
-                        <div className="pt-4 border-t border-white/5">
-                          <h4 className="text-xs text-dark-400 mb-2">
-                            {isRTL ? 'חזור על משבצת' : 'Repeat Slot'}
-                          </h4>
-                          <p className="text-xs text-dark-500 mb-3">
-                            {isRTL
-                              ? `העתק את ${slotIndexToTime(filterSlotIndex)} למשבצות נוספות`
-                              : `Copy ${slotIndexToTime(filterSlotIndex)} to other time slots`}
-                          </p>
-
-                          {/* Scope toggle - Day vs Week */}
-                          <div className="flex rounded-lg bg-dark-700/50 p-0.5 mb-3 border border-dark-600/50">
-                            <button
-                              onClick={() => setRepeatScope('day')}
-                              className={`flex-1 px-3 py-1.5 text-xs rounded-md transition-colors ${
-                                repeatScope === 'day'
-                                  ? 'bg-primary-500/30 text-primary-400'
-                                  : 'text-dark-400 hover:text-dark-200'
-                              }`}
-                            >
-                              {isRTL ? 'שאר היום' : 'Rest of Day'}
-                            </button>
-                            <button
-                              onClick={() => setRepeatScope('week')}
-                              className={`flex-1 px-3 py-1.5 text-xs rounded-md transition-colors ${
-                                repeatScope === 'week'
-                                  ? 'bg-primary-500/30 text-primary-400'
-                                  : 'text-dark-400 hover:text-dark-200'
-                              }`}
-                            >
-                              {isRTL ? 'שאר השבוע' : 'Rest of Week'}
-                            </button>
-                          </div>
-
-                          {/* Time range - only show in week mode */}
-                          {repeatScope === 'week' && (
-                            <div className="flex items-center gap-2 mb-3">
-                              <span className="text-xs text-dark-400">
-                                {isRTL ? 'בין' : 'Between'}
-                              </span>
-                              <Select
-                                value={String(repeatStartSlot)}
-                                onChange={(value) => setRepeatStartSlot(Number(value))}
-                                className="flex-1"
-                                options={Array.from({ length: 48 }, (_, i) => ({
-                                  value: String(i),
-                                  label: slotIndexToTime(i)
-                                }))}
-                              />
-                              <span className="text-xs text-dark-400">
-                                {isRTL ? 'עד' : 'Until'}
-                              </span>
-                              <Select
-                                value={String(repeatEndSlot)}
-                                onChange={(value) => setRepeatEndSlot(Number(value))}
-                                className="flex-1"
-                                options={Array.from({ length: 48 }, (_, i) => ({
-                                  value: String(i),
-                                  label: slotIndexToTime(i)
-                                }))}
-                              />
-                            </div>
-                          )}
-
-                          {/* Interval buttons */}
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              onClick={() => handleRepeatSlot('30min')}
-                              className="px-3 py-1.5 text-xs rounded-lg bg-dark-700/50 text-dark-300 hover:bg-primary-500/20 hover:text-primary-400 transition-colors border border-dark-600/50"
-                            >
-                              {isRTL ? 'כל 30 דק׳' : 'Every 30m'}
-                            </button>
-                            <button
-                              onClick={() => handleRepeatSlot('hourly')}
-                              className="px-3 py-1.5 text-xs rounded-lg bg-dark-700/50 text-dark-300 hover:bg-primary-500/20 hover:text-primary-400 transition-colors border border-dark-600/50"
-                            >
-                              {isRTL ? 'כל שעה' : 'Hourly'}
-                            </button>
-                            <button
-                              onClick={() => handleRepeatSlot('2hours')}
-                              className="px-3 py-1.5 text-xs rounded-lg bg-dark-700/50 text-dark-300 hover:bg-primary-500/20 hover:text-primary-400 transition-colors border border-dark-600/50"
-                            >
-                              {isRTL ? 'כל שעתיים' : 'Every 2h'}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Summary */}
-                      <div className="pt-4 border-t border-white/5">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-dark-400">{isRTL ? 'סה"כ השמעות:' : 'Total plays:'}</span>
-                          <span className="text-dark-200 font-medium">
-                            {scheduledSlots.reduce((sum, s) => sum + s.playCount, 0)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : filterSlotIndex !== null ? (
-                    // Show all campaigns' commercials for the filtered slot
-                    <div className="space-y-4">
-                      <div>
-                        <h4 className="text-xs text-dark-400 mb-2">
-                          {isRTL
-                            ? `פרסומות ב-${slotIndexToTime(filterSlotIndex)}`
-                            : `Commercials at ${slotIndexToTime(filterSlotIndex)}`}
-                          {slotOverview.length > 0 && (
-                            <span className="text-primary-400 ml-1">({slotOverview.length})</span>
-                          )}
-                        </h4>
-
-                        {/* Run Now Button for the slot */}
-                        {slotOverview.length > 0 && (
-                          <div className="mb-3">
-                            <button
-                              onClick={() => {
-                                // Get the first slot date from overview (they're all for the same time)
-                                const firstSlotDate = slotOverview[0]?.slotDate
-                                if (firstSlotDate && filterSlotIndex !== null) {
-                                  handleRunSlotNow(firstSlotDate, filterSlotIndex)
-                                }
-                              }}
-                              disabled={isRunningSlot}
-                              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-green-500/20 hover:bg-green-500/30 border border-green-500/30 text-green-400 rounded-lg transition-colors disabled:opacity-50"
-                            >
-                              {isRunningSlot ? (
-                                <Loader2 size={14} className="animate-spin" />
-                              ) : (
-                                <Play size={14} />
-                              )}
-                              <span className="text-xs font-medium">
-                                {isRTL ? 'הפעל עכשיו' : 'Run Now'}
-                              </span>
-                            </button>
-                          </div>
-                        )}
-
-                        {slotOverview.length > 0 ? (
-                          <div className="space-y-2">
-                            {slotOverview.map((item, idx) => (
-                              <div
-                                key={idx}
-                                className="p-2 bg-dark-700/30 rounded-lg"
-                              >
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="text-xs text-dark-400">
-                                    {item.dayLabel} • {item.slotDate}
-                                  </span>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs text-primary-400">×{item.playCount}</span>
-                                    <button
-                                      onClick={() => handleRunSlotNow(item.slotDate, filterSlotIndex!)}
-                                      disabled={isRunningSlot}
-                                      className="p-1 hover:bg-green-500/20 rounded text-green-400 transition-colors disabled:opacity-50"
-                                      title={isRTL ? 'הפעל עכשיו' : 'Run Now'}
-                                    >
-                                      {isRunningSlot ? (
-                                        <Loader2 size={10} className="animate-spin" />
-                                      ) : (
-                                        <Play size={10} />
-                                      )}
-                                    </button>
-                                  </div>
-                                </div>
-                                <div
-                                  className="text-sm text-dark-200 font-medium cursor-pointer hover:text-primary-400"
-                                  dir="auto"
-                                  onClick={() => selectCampaign(item.campaign)}
-                                >
-                                  {isRTL && item.campaign.name_he ? item.campaign.name_he : item.campaign.name}
-                                </div>
-                                {item.campaign.content_refs.length > 0 && (
-                                  <div className="mt-1 space-y-0.5">
-                                    {item.campaign.content_refs.map((ref, refIdx) => (
-                                      <div
-                                        key={refIdx}
-                                        className="flex items-center gap-1 text-xs text-dark-400"
-                                      >
-                                        <FileAudio size={10} />
-                                        <span className="truncate" dir="auto">{ref.file_title}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-center py-4 text-dark-500 text-xs">
-                            {isRTL
-                              ? 'אין פרסומות מתוזמנות לשעה זו'
-                              : 'No commercials scheduled for this time'}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Summary */}
-                      {slotOverview.length > 0 && (
-                        <div className="pt-4 border-t border-white/5">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-dark-400">{isRTL ? 'סה"כ השמעות:' : 'Total plays:'}</span>
-                            <span className="text-dark-200 font-medium">
-                              {slotOverview.reduce((sum, s) => sum + s.playCount, 0)}
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-xs mt-1">
-                            <span className="text-dark-400">{isRTL ? 'קמפיינים:' : 'Campaigns:'}</span>
-                            <span className="text-dark-200 font-medium">
-                              {new Set(slotOverview.map(s => s.campaign._id)).size}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-dark-500">
-                      <Megaphone size={24} className="mb-2 opacity-50" />
-                      <p className="text-xs text-center">
-                        {isRTL
-                          ? 'בחר קמפיין או לחץ על שעה'
-                          : 'Select a campaign or click a time'}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
+            {/* Schedule details panel */}
+            <ScheduleDetailsPanel
+              isRTL={isRTL}
+              isOpen={isRightPanelOpen}
+              width={rightPanelWidth}
+              selectedCampaign={selectedCampaign}
+              campaigns={campaigns}
+              editingGrid={editingGrid}
+              editingGrids={editingGrids}
+              filterSlotIndex={filterSlotIndex}
+              filterSlotDate={filterSlotDate}
+              heatmapBaseDate={heatmapBaseDate}
+              onClose={() => {
+                setIsRightPanelOpen(false)
+                setFilterSlotIndex(null)
+                setFilterSlotDate(null)
+              }}
+              onClearFilter={() => {
+                setFilterSlotIndex(null)
+                setFilterSlotDate(null)
+              }}
+              onSelectCampaign={selectCampaign}
+              setEditingGrid={setEditingGrid}
+              useOpeningJingle={useOpeningJingle}
+              setUseOpeningJingle={setUseOpeningJingle}
+              openingJingleId={openingJingleId}
+              setOpeningJingleId={setOpeningJingleId}
+              useClosingJingle={useClosingJingle}
+              setUseClosingJingle={setUseClosingJingle}
+              closingJingleId={closingJingleId}
+              setClosingJingleId={setClosingJingleId}
+              jingles={jingles}
+              isJingleSettingsDirty={isJingleSettingsDirty}
+              onJingleSettingsChange={() => setIsJingleSettingsDirty(true)}
+              onSaveAll={handleSaveAll}
+              onRunSlotNow={handleRunSlotNow}
+              isRunningSlot={isRunningSlot}
+            />
           </div>
         </div>
       </div>
@@ -1918,25 +784,14 @@ export default function CampaignManager() {
       {confirmDelete && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center">
           <div className="glass-card p-6 w-full max-w-sm mx-4">
-            <h3 className="font-semibold text-dark-100 mb-4">
-              {isRTL ? 'מחיקת קמפיין' : 'Delete Campaign'}
-            </h3>
-            <p className="text-dark-400 mb-2">
-              {isRTL
-                ? 'האם אתה בטוח שברצונך למחוק קמפיין זה?'
-                : 'Are you sure you want to delete this campaign?'}
-            </p>
+            <h3 className="font-semibold text-dark-100 mb-4">{isRTL ? 'מחיקת קמפיין' : 'Delete Campaign'}</h3>
+            <p className="text-dark-400 mb-2">{isRTL ? 'האם אתה בטוח?' : 'Are you sure?'}</p>
             <p className="text-yellow-400 text-sm mb-6 flex items-center gap-2">
               <AlertTriangle size={16} />
-              {isRTL
-                ? 'כל המשבצות המתוזמנות יוסרו לצמיתות'
-                : 'All scheduled slots will be permanently removed'}
+              {isRTL ? 'כל המשבצות יוסרו לצמיתות' : 'All slots will be permanently removed'}
             </p>
             <div className="flex gap-2">
-              <button
-                onClick={() => setConfirmDelete(null)}
-                className="flex-1 glass-button py-2"
-              >
+              <button onClick={() => setConfirmDelete(null)} className="flex-1 glass-button py-2">
                 {isRTL ? 'ביטול' : 'Cancel'}
               </button>
               <button
@@ -1954,25 +809,14 @@ export default function CampaignManager() {
       {confirmPause && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center">
           <div className="glass-card p-6 w-full max-w-sm mx-4">
-            <h3 className="font-semibold text-dark-100 mb-4">
-              {isRTL ? 'השהיית קמפיין' : 'Pause Campaign'}
-            </h3>
-            <p className="text-dark-400 mb-2">
-              {isRTL
-                ? 'האם אתה בטוח שברצונך להשהות קמפיין זה?'
-                : 'Are you sure you want to pause this campaign?'}
-            </p>
+            <h3 className="font-semibold text-dark-100 mb-4">{isRTL ? 'השהיית קמפיין' : 'Pause Campaign'}</h3>
+            <p className="text-dark-400 mb-2">{isRTL ? 'האם אתה בטוח?' : 'Are you sure?'}</p>
             <p className="text-yellow-400 text-sm mb-6 flex items-center gap-2">
               <AlertTriangle size={16} />
-              {isRTL
-                ? 'כל המשבצות המתוזמנות יוסרו'
-                : 'All scheduled slots will be removed'}
+              {isRTL ? 'כל המשבצות יוסרו' : 'All slots will be removed'}
             </p>
             <div className="flex gap-2">
-              <button
-                onClick={() => setConfirmPause(null)}
-                className="flex-1 glass-button py-2"
-              >
+              <button onClick={() => setConfirmPause(null)} className="flex-1 glass-button py-2">
                 {isRTL ? 'ביטול' : 'Cancel'}
               </button>
               <button

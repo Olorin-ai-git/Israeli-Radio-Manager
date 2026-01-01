@@ -52,6 +52,11 @@ class CommercialCampaignBase(BaseModel):
     # Contract link (admin only - link to contract document)
     contract_link: Optional[str] = None
 
+    # Financial fields (admin only)
+    price_per_slot: Optional[float] = None  # Price per 30-min slot in ILS
+    monthly_budget: Optional[float] = None  # Monthly budget in ILS
+    contract_value: Optional[float] = None  # Total contract value in ILS
+
     # Content references (commercials in this campaign)
     content_refs: List[CampaignContentRef] = Field(default_factory=list)
 
@@ -74,6 +79,9 @@ class CampaignUpdate(BaseModel):
     end_date: Optional[date] = None
     priority: Optional[int] = Field(default=None, ge=1, le=9)
     contract_link: Optional[str] = None
+    price_per_slot: Optional[float] = None
+    monthly_budget: Optional[float] = None
+    contract_value: Optional[float] = None
     content_refs: Optional[List[CampaignContentRef]] = None
     schedule_grid: Optional[List[ScheduleSlot]] = None
     status: Optional[CampaignStatus] = None

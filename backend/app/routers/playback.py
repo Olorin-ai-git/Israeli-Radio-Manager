@@ -15,47 +15,157 @@ from bson import ObjectId
 
 router = APIRouter()
 
-# In-memory queue storage (stores full content documents)
-# This is the authoritative queue that persists across frontend refreshes
-_playback_queue: List[dict] = []
+# MongoDB-backed queue storage
+# The queue is stored in the 'playback_state' collection as a single document
+# This persists across server restarts
+
+# In-memory cache for performance (synced with MongoDB)
+_queue_cache: List[dict] = []
+_queue_loaded: bool = False
+
+
+async def _get_db():
+    """Get the database instance from the app state."""
+    from app.main import app
+    return app.state.db
+
+
+async def _load_queue_from_db(db) -> List[dict]:
+    """Load the queue from MongoDB."""
+    global _queue_cache, _queue_loaded
+
+    doc = await db.playback_state.find_one({"_id": "queue"})
+    if doc:
+        _queue_cache = doc.get("items", [])
+    else:
+        _queue_cache = []
+    _queue_loaded = True
+    return _queue_cache
+
+
+async def _save_queue_to_db(db, queue: List[dict]):
+    """Save the queue to MongoDB."""
+    global _queue_cache
+    _queue_cache = queue
+
+    await db.playback_state.update_one(
+        {"_id": "queue"},
+        {
+            "$set": {
+                "items": queue,
+                "updated_at": datetime.utcnow()
+            }
+        },
+        upsert=True
+    )
+
+
+async def get_queue_async(db) -> List[dict]:
+    """Get the current queue (async, from MongoDB)."""
+    global _queue_cache, _queue_loaded
+
+    if not _queue_loaded:
+        return await _load_queue_from_db(db)
+    return _queue_cache
 
 
 def get_queue() -> List[dict]:
-    """Get the current queue."""
-    return _playback_queue
+    """Get the current queue (sync, from cache).
+
+    Note: This returns the cached version. Call get_queue_async() for
+    guaranteed fresh data from MongoDB.
+    """
+    return _queue_cache
 
 
-def add_to_queue(content: dict, position: int = None):
+async def add_to_queue_async(db, content: dict, position: int = None):
     """Add a content item to the queue.
 
     Args:
+        db: Database instance
         content: Content item to add
         position: Optional position to insert at (None = append to end)
     """
-    if position is not None and 0 <= position <= len(_playback_queue):
-        _playback_queue.insert(position, content)
+    queue = await get_queue_async(db)
+
+    if position is not None and 0 <= position <= len(queue):
+        queue.insert(position, content)
     else:
-        _playback_queue.append(content)
+        queue.append(content)
+
+    await _save_queue_to_db(db, queue)
 
 
-def remove_from_queue(index: int) -> bool:
+def add_to_queue(content: dict, position: int = None):
+    """Add a content item to the queue (sync, cache only - for backwards compat).
+
+    DEPRECATED: Use add_to_queue_async() for persistence.
+    """
+    global _queue_cache
+    if position is not None and 0 <= position <= len(_queue_cache):
+        _queue_cache.insert(position, content)
+    else:
+        _queue_cache.append(content)
+
+
+async def remove_from_queue_async(db, index: int) -> bool:
     """Remove an item from the queue by index."""
-    if 0 <= index < len(_playback_queue):
-        _playback_queue.pop(index)
+    queue = await get_queue_async(db)
+
+    if 0 <= index < len(queue):
+        queue.pop(index)
+        await _save_queue_to_db(db, queue)
         return True
     return False
 
 
-def clear_queue_storage():
+def remove_from_queue(index: int) -> bool:
+    """Remove an item from the queue by index (sync, cache only - for backwards compat).
+
+    DEPRECATED: Use remove_from_queue_async() for persistence.
+    """
+    global _queue_cache
+    if 0 <= index < len(_queue_cache):
+        _queue_cache.pop(index)
+        return True
+    return False
+
+
+async def clear_queue_async(db):
     """Clear the queue."""
-    _playback_queue.clear()
+    await _save_queue_to_db(db, [])
+
+
+def clear_queue_storage():
+    """Clear the queue (sync, cache only - for backwards compat).
+
+    DEPRECATED: Use clear_queue_async() for persistence.
+    """
+    global _queue_cache
+    _queue_cache.clear()
+
+
+async def reorder_queue_async(db, from_idx: int, to_idx: int) -> bool:
+    """Reorder queue items."""
+    queue = await get_queue_async(db)
+
+    if 0 <= from_idx < len(queue) and 0 <= to_idx < len(queue):
+        item = queue.pop(from_idx)
+        queue.insert(to_idx, item)
+        await _save_queue_to_db(db, queue)
+        return True
+    return False
 
 
 def reorder_queue_storage(from_idx: int, to_idx: int) -> bool:
-    """Reorder queue items."""
-    if 0 <= from_idx < len(_playback_queue) and 0 <= to_idx < len(_playback_queue):
-        item = _playback_queue.pop(from_idx)
-        _playback_queue.insert(to_idx, item)
+    """Reorder queue items (sync, cache only - for backwards compat).
+
+    DEPRECATED: Use reorder_queue_async() for persistence.
+    """
+    global _queue_cache
+    if 0 <= from_idx < len(_queue_cache) and 0 <= to_idx < len(_queue_cache):
+        item = _queue_cache.pop(from_idx)
+        _queue_cache.insert(to_idx, item)
         return True
     return False
 
@@ -137,7 +247,8 @@ async def get_now_playing(request: Request):
 @router.get("/queue", response_model=List[dict])
 async def get_queue_endpoint(request: Request):
     """Get the current playback queue."""
-    return get_queue()
+    db = request.app.state.db
+    return await get_queue_async(db)
 
 
 @router.post("/play")
@@ -265,7 +376,7 @@ async def get_next_track(request: Request):
     from app.services.flow_monitor import notify_playback_started
 
     db = request.app.state.db
-    queue = get_queue()
+    queue = await get_queue_async(db)
 
     if not queue:
         # Queue is empty - the flow monitor will refill it
@@ -278,7 +389,7 @@ async def get_next_track(request: Request):
 
     # Get and remove the first item from the queue
     next_track = queue[0]
-    remove_from_queue(0)
+    await remove_from_queue_async(db, 0)
 
     # Build response with full track data
     track_data = {
@@ -294,8 +405,9 @@ async def get_next_track(request: Request):
     # Notify flow monitor that playback is starting
     notify_playback_started(track_data, track_data.get("duration_seconds", 0))
 
-    # Broadcast queue update to all clients
-    await broadcast_queue_update(get_queue())
+    # Broadcast queue update to all clients (get fresh queue after removal)
+    updated_queue = await get_queue_async(db)
+    await broadcast_queue_update(updated_queue)
 
     # Log the playback
     try:
@@ -311,7 +423,7 @@ async def get_next_track(request: Request):
 
     return {
         "next_track": track_data,
-        "queue_length": len(get_queue()),
+        "queue_length": len(updated_queue),
         "message": "Next track retrieved"
     }
 
@@ -339,15 +451,16 @@ async def add_to_queue_endpoint(request: Request, item: QueueItem):
         "batches": content.get("batches", [])
     }
 
-    # Add to queue
-    add_to_queue(queue_item)
+    # Add to queue (persisted to MongoDB)
+    await add_to_queue_async(db, queue_item)
 
     # Broadcast queue update to all clients
-    await broadcast_queue_update(get_queue())
+    queue = await get_queue_async(db)
+    await broadcast_queue_update(queue)
 
     return {
         "message": f"Added '{content.get('title')}' to queue",
-        "queue_length": len(get_queue())
+        "queue_length": len(queue)
     }
 
 
@@ -356,13 +469,15 @@ async def remove_from_queue_endpoint(request: Request, position: int):
     """Remove a track from the queue by position."""
     from app.routers.websocket import broadcast_queue_update
 
-    success = remove_from_queue(position)
+    db = request.app.state.db
+    success = await remove_from_queue_async(db, position)
     if success:
         # Broadcast queue update to all clients
-        await broadcast_queue_update(get_queue())
+        queue = await get_queue_async(db)
+        await broadcast_queue_update(queue)
         return {
             "message": f"Removed item at position {position}",
-            "queue_length": len(get_queue())
+            "queue_length": len(queue)
         }
     raise HTTPException(status_code=404, detail=f"No item at position {position}")
 
@@ -372,10 +487,11 @@ async def clear_queue_endpoint(request: Request):
     """Clear the playback queue."""
     from app.routers.websocket import broadcast_queue_update
 
-    clear_queue_storage()
+    db = request.app.state.db
+    await clear_queue_async(db)
 
     # Broadcast queue update to all clients
-    await broadcast_queue_update(get_queue())
+    await broadcast_queue_update([])
 
     return {"message": "Queue cleared"}
 
@@ -391,22 +507,24 @@ async def reorder_queue_endpoint(request: Request, reorder: QueueReorderRequest)
     """Reorder items in the queue."""
     from app.routers.websocket import broadcast_queue_update
 
-    queue = get_queue()
+    db = request.app.state.db
+    queue = await get_queue_async(db)
 
     # Validate indices
     if not (0 <= reorder.from_index < len(queue) and 0 <= reorder.to_index < len(queue)):
         raise HTTPException(status_code=400, detail="Invalid queue indices")
 
-    # Reorder the queue
-    success = reorder_queue_storage(reorder.from_index, reorder.to_index)
+    # Reorder the queue (persisted to MongoDB)
+    success = await reorder_queue_async(db, reorder.from_index, reorder.to_index)
 
     if success:
         # Broadcast queue update to all clients
-        await broadcast_queue_update(get_queue())
+        queue = await get_queue_async(db)
+        await broadcast_queue_update(queue)
 
         return {
             "message": "Queue reordered",
-            "queue_length": len(get_queue())
+            "queue_length": len(queue)
         }
 
     raise HTTPException(status_code=400, detail="Failed to reorder queue")

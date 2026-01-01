@@ -562,7 +562,7 @@ class TaskExecutor:
 
     async def _execute_add_queue(self, task: ParsedTask) -> Dict[str, Any]:
         """Add content to queue at the TOP (position 0)."""
-        from app.routers.playback import add_to_queue, get_queue
+        from app.routers.playback import add_to_queue_async, get_queue_async
         from app.routers.websocket import broadcast_queue_update
 
         title = self._to_regex_string(task.parameters.get("title"))
@@ -595,11 +595,12 @@ class TaskExecutor:
                 "batches": content.get("batches", [])
             }
 
-            # Insert at TOP of queue (position 0)
-            add_to_queue(queue_item, position=0)
+            # Insert at TOP of queue (position 0, persisted to MongoDB)
+            await add_to_queue_async(self.db, queue_item, position=0)
 
             # Broadcast queue update
-            await broadcast_queue_update(get_queue())
+            updated_queue = await get_queue_async(self.db)
+            await broadcast_queue_update(updated_queue)
 
             return {
                 "success": True,
@@ -1991,9 +1992,9 @@ Return the JSON array:"""
 
     async def _execute_show_queue(self, task: ParsedTask) -> Dict[str, Any]:
         """Show current playback queue."""
-        from app.routers.playback import get_queue
+        from app.routers.playback import get_queue_async
 
-        queue = get_queue()
+        queue = await get_queue_async(self.db)
 
         if not queue:
             return {
@@ -2029,11 +2030,12 @@ Return the JSON array:"""
 
     async def _execute_clear_queue(self, task: ParsedTask) -> Dict[str, Any]:
         """Clear the playback queue."""
-        from app.routers.playback import clear_queue_storage, get_queue
+        from app.routers.playback import clear_queue_async, get_queue_async
         from app.routers.websocket import broadcast_queue_update
 
-        previous_count = len(get_queue())
-        clear_queue_storage()
+        previous_queue = await get_queue_async(self.db)
+        previous_count = len(previous_queue)
+        await clear_queue_async(self.db)
 
         # Broadcast queue update
         await broadcast_queue_update([])
@@ -2047,7 +2049,7 @@ Return the JSON array:"""
 
     async def _execute_remove_from_queue(self, task: ParsedTask) -> Dict[str, Any]:
         """Remove an item from the queue."""
-        from app.routers.playback import get_queue, remove_from_queue
+        from app.routers.playback import get_queue_async, remove_from_queue_async
         from app.routers.websocket import broadcast_queue_update
 
         title = self._to_regex_string(task.parameters.get("title"))
@@ -2060,7 +2062,7 @@ Return the JSON array:"""
                 "message_en": "Specify song title or position number to remove"
             }
 
-        queue = get_queue()
+        queue = await get_queue_async(self.db)
 
         if not queue:
             return {
@@ -2088,9 +2090,10 @@ Return the JSON array:"""
                     break
 
         if removed_item and remove_index is not None:
-            remove_from_queue(remove_index)
+            await remove_from_queue_async(self.db, remove_index)
             # Broadcast queue update
-            await broadcast_queue_update(get_queue())
+            updated_queue = await get_queue_async(self.db)
+            await broadcast_queue_update(updated_queue)
 
             return {
                 "success": True,

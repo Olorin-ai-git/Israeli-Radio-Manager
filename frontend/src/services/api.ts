@@ -400,6 +400,8 @@ export const api = {
     }).then((r) => r.data),
   cloneCampaign: (campaignId: string) =>
     client.post(`/campaigns/${campaignId}/clone`).then((r) => r.data),
+  getSlotExecutionStatus: (startDate: string, endDate: string) =>
+    client.get('/campaigns/slots/execution-status', { params: { start_date: startDate, end_date: endDate } }).then((r) => r.data),
 
   // Jingle settings for commercial playback
   getJingleSettings: () =>

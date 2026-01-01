@@ -42,6 +42,9 @@ export default function CampaignFormModal({
   const [endDate, setEndDate] = useState(campaign?.end_date || '')
   const [priority, setPriority] = useState(campaign?.priority || 5)
   const [contractLink, setContractLink] = useState(campaign?.contract_link || '')
+  const [pricePerSlot, setPricePerSlot] = useState<string>(campaign?.price_per_slot?.toString() || '')
+  const [monthlyBudget, setMonthlyBudget] = useState<string>(campaign?.monthly_budget?.toString() || '')
+  const [contractValue, setContractValue] = useState<string>(campaign?.contract_value?.toString() || '')
   const [contentRefs, setContentRefs] = useState<ContentRef[]>(campaign?.content_refs || [])
 
   // Fetch commercials for content selection
@@ -87,6 +90,9 @@ export default function CampaignFormModal({
       end_date: endDate,
       priority,
       contract_link: isAdmin && contractLink.trim() ? contractLink.trim() : undefined,
+      price_per_slot: isAdmin && pricePerSlot ? parseFloat(pricePerSlot) : undefined,
+      monthly_budget: isAdmin && monthlyBudget ? parseFloat(monthlyBudget) : undefined,
+      contract_value: isAdmin && contractValue ? parseFloat(contractValue) : undefined,
       content_refs: contentRefs,
       schedule_grid: campaign?.schedule_grid || [],
     }
@@ -241,31 +247,98 @@ export default function CampaignFormModal({
             />
           </div>
 
-          {/* Contract Link (Admin only) */}
+          {/* Admin-only Fields */}
           {isAdmin && (
-            <div>
-              <label className="block text-dark-300 text-sm mb-1">
-                {isRTL ? 'קישור לחוזה' : 'Contract Link'}
-                <span className="text-xs text-primary-400 ml-2">(Admin)</span>
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="url"
-                  value={contractLink}
-                  onChange={e => setContractLink(e.target.value)}
-                  className="flex-1 glass-input"
-                  placeholder={isRTL ? 'קישור למסמך החוזה' : 'URL to contract document'}
-                />
-                {contractLink && (
-                  <a
-                    href={contractLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 glass-button hover:text-primary-400"
-                  >
-                    <ExternalLink size={18} />
-                  </a>
-                )}
+            <div className="space-y-4 p-4 bg-primary-500/5 border border-primary-500/20 rounded-lg">
+              <div className="text-xs text-primary-400 font-medium mb-2">
+                {isRTL ? 'שדות מנהל' : 'Admin Fields'}
+              </div>
+
+              {/* Contract Link */}
+              <div>
+                <label className="block text-dark-300 text-sm mb-1">
+                  {isRTL ? 'קישור לחוזה' : 'Contract Link'}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={contractLink}
+                    onChange={e => setContractLink(e.target.value)}
+                    className="flex-1 glass-input"
+                    placeholder={isRTL ? 'קישור למסמך החוזה' : 'URL to contract document'}
+                  />
+                  {contractLink && (
+                    <a
+                      href={contractLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2 glass-button hover:text-primary-400"
+                    >
+                      <ExternalLink size={18} />
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* Financial Fields */}
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-dark-300 text-sm mb-1">
+                    {isRTL ? 'מחיר/משבצת' : 'Price/Slot'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={pricePerSlot}
+                      onChange={e => setPricePerSlot(e.target.value)}
+                      className="w-full glass-input pr-8"
+                      placeholder="0"
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-dark-400 text-sm">
+                      ₪
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-dark-300 text-sm mb-1">
+                    {isRTL ? 'תקציב חודשי' : 'Monthly Budget'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={monthlyBudget}
+                      onChange={e => setMonthlyBudget(e.target.value)}
+                      className="w-full glass-input pr-8"
+                      placeholder="0"
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-dark-400 text-sm">
+                      ₪
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-dark-300 text-sm mb-1">
+                    {isRTL ? 'ערך חוזה' : 'Contract Value'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={contractValue}
+                      onChange={e => setContractValue(e.target.value)}
+                      className="w-full glass-input pr-8"
+                      placeholder="0"
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-dark-400 text-sm">
+                      ₪
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           )}
