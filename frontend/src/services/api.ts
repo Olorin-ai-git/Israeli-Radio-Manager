@@ -49,6 +49,7 @@ export const api = {
     client.post('/content/sync/start', null, { params: { download_files: downloadFiles } }).then((r) => r.data),
   refreshMetadata: () => client.post('/content/sync/refresh-metadata').then((r) => r.data),
   getSyncSchedulerStatus: () => client.get('/content/sync/scheduler/status').then((r) => r.data),
+  getSyncProgress: () => client.get('/content/sync/scheduler/progress').then((r) => r.data),
   triggerGcsSync: () => client.post('/content/sync/scheduler/trigger').then((r) => r.data),
 
   // Schedule
@@ -155,6 +156,12 @@ export const api = {
   getChatHistory: (limit?: number) =>
     client.get('/agent/chat/history', { params: { limit } }).then((r) => r.data),
   clearChatHistory: () => client.delete('/agent/chat/history').then((r) => r.data),
+
+  // LLM Config
+  getLLMConfig: () => client.get('/agent/llm-config').then((r) => r.data),
+  updateLLMConfig: (config: { model?: string; api_key?: string }) =>
+    client.put('/agent/llm-config', config).then((r) => r.data),
+  clearCustomApiKey: () => client.delete('/agent/llm-config/api-key').then((r) => r.data),
 
   // Calendar
   getCalendarEvents: (days?: number, contentType?: string) =>

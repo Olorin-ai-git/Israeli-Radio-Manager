@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import {
   X, Send, Bot, User, Loader2, Sparkles, HelpCircle, AlertCircle, Trash2,
   Play, Pause, SkipForward, Volume2, ListPlus, Info, Search, Clock, Music,
-  Megaphone, Calendar, Workflow, Users, type LucideIcon
+  Megaphone, Calendar, Workflow, Users, List, Trash, MinusCircle, BarChart2,
+  TrendingUp, RefreshCw, Activity, type LucideIcon
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../services/api'
@@ -94,7 +95,7 @@ interface ActionTemplate {
   icon: LucideIcon
   template: string
   templateHe: string
-  category: 'playback' | 'scheduling' | 'calendar' | 'flows' | 'library'
+  category: 'playback' | 'scheduling' | 'calendar' | 'flows' | 'library' | 'queue' | 'stats' | 'help' | 'admin'
 }
 
 const ACTION_TEMPLATES: ActionTemplate[] = [
@@ -131,6 +132,22 @@ const ACTION_TEMPLATES: ActionTemplate[] = [
   // Library
   { id: 'list_artists', label: 'Artists', labelHe: 'אמנים', icon: Users, template: 'List all artists', templateHe: 'הצג את כל האמנים', category: 'library' },
   { id: 'list_genres', label: 'Genres', labelHe: "ז'אנרים", icon: Music, template: 'List all genres', templateHe: "הצג את כל הז'אנרים", category: 'library' },
+
+  // Queue Management
+  { id: 'show_queue', label: 'Show Queue', labelHe: 'הצג תור', icon: List, template: 'Show queue', templateHe: 'מה בתור?', category: 'queue' },
+  { id: 'clear_queue', label: 'Clear Queue', labelHe: 'נקה תור', icon: Trash, template: 'Clear queue', templateHe: 'נקה תור', category: 'queue' },
+  { id: 'remove_from_queue', label: 'Remove from Queue', labelHe: 'הסר מתור', icon: MinusCircle, template: 'Remove [song name] from queue', templateHe: 'הסר [שם שיר] מהתור', category: 'queue' },
+
+  // Statistics
+  { id: 'get_statistics', label: 'Statistics', labelHe: 'סטטיסטיקות', icon: BarChart2, template: 'Show statistics', templateHe: 'הצג סטטיסטיקות', category: 'stats' },
+  { id: 'get_most_played', label: 'Most Played', labelHe: 'הכי מנוגנים', icon: TrendingUp, template: 'Show most played songs', templateHe: 'הצג שירים הכי מנוגנים', category: 'stats' },
+
+  // Help
+  { id: 'get_help', label: 'Help', labelHe: 'עזרה', icon: HelpCircle, template: 'Help', templateHe: 'עזרה', category: 'help' },
+
+  // Admin
+  { id: 'sync_drive', label: 'Sync Drive', labelHe: 'סנכרן דרייב', icon: RefreshCw, template: 'Sync from Google Drive', templateHe: 'סנכרן מגוגל דרייב', category: 'admin' },
+  { id: 'get_sync_status', label: 'Sync Status', labelHe: 'סטטוס סנכרון', icon: Activity, template: 'Show sync status', templateHe: 'הצג סטטוס סנכרון', category: 'admin' },
 ]
 
 export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeStart }: ChatSidebarProps) {

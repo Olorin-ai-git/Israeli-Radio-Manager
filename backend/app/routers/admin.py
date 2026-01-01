@@ -216,28 +216,52 @@ async def get_storage_stats(
         root_folder_id = content_sync.drive.root_folder_id if content_sync and content_sync.drive else None
 
         # Get stats from synced content in database
+        # file_size can be at root level or in metadata.file_size
         pipeline = [
-            {"$match": {"google_drive_id": {"$exists": True}}},
+            {"$match": {"google_drive_id": {"$exists": True, "$ne": None}}},
             {"$group": {
                 "_id": None,
-                "total_size": {"$sum": {"$ifNull": ["$file_size", 0]}},
+                "total_size": {"$sum": {
+                    "$ifNull": [
+                        "$file_size",
+                        {"$ifNull": ["$metadata.file_size", 0]}
+                    ]
+                }},
                 "file_count": {"$sum": 1}
             }}
         ]
         result = await db.content.aggregate(pipeline).to_list(1)
+
+        # Also get breakdown by content type
+        type_pipeline = [
+            {"$match": {"google_drive_id": {"$exists": True, "$ne": None}}},
+            {"$group": {
+                "_id": "$type",
+                "count": {"$sum": 1},
+                "size": {"$sum": {
+                    "$ifNull": [
+                        "$file_size",
+                        {"$ifNull": ["$metadata.file_size", 0]}
+                    ]
+                }}
+            }}
+        ]
+        type_breakdown = await db.content.aggregate(type_pipeline).to_list(100)
 
         if result:
             stats["drive"] = {
                 "size_bytes": result[0].get("total_size", 0),
                 "file_count": result[0].get("file_count", 0),
                 "folder_id": root_folder_id or "Not configured",
-                "source": "database (synced content)"
+                "by_type": {t["_id"]: {"count": t["count"], "size_bytes": t["size"]} for t in type_breakdown if t["_id"]},
+                "source": "database"
             }
         else:
             stats["drive"] = {
                 "size_bytes": 0,
                 "file_count": 0,
                 "folder_id": root_folder_id or "Not configured",
+                "by_type": {},
                 "source": "database (no synced content)"
             }
 

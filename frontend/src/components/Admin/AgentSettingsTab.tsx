@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bot, Settings as SettingsIcon, Bell } from 'lucide-react'
+import { Bot, Settings as SettingsIcon, Bell, Cpu, Key, Eye, EyeOff, Trash2 } from 'lucide-react'
 import api from '../../services/api'
 import { toast } from '../../store/toastStore'
 
@@ -7,12 +8,34 @@ interface AgentSettingsTabProps {
   isRTL: boolean
 }
 
+interface LLMModel {
+  id: string
+  name: string
+  tier: string
+}
+
+interface LLMConfig {
+  model: string
+  has_custom_api_key: boolean
+  has_env_api_key: boolean
+  api_key_source: 'custom' | 'environment' | 'none'
+  available_models: LLMModel[]
+}
+
 export default function AgentSettingsTab({ isRTL }: AgentSettingsTabProps) {
   const queryClient = useQueryClient()
+  const [showApiKey, setShowApiKey] = useState(false)
+  const [newApiKey, setNewApiKey] = useState('')
 
   const { data: agentConfig, isLoading, error } = useQuery({
     queryKey: ['agent', 'config'],
     queryFn: api.getAgentConfig,
+    retry: false
+  })
+
+  const { data: llmConfig, isLoading: llmLoading } = useQuery<LLMConfig>({
+    queryKey: ['agent', 'llm-config'],
+    queryFn: api.getLLMConfig,
     retry: false
   })
 
@@ -27,8 +50,47 @@ export default function AgentSettingsTab({ isRTL }: AgentSettingsTabProps) {
     }
   })
 
+  const updateLLMMutation = useMutation({
+    mutationFn: api.updateLLMConfig,
+    onSuccess: () => {
+      toast.success(isRTL ? 'הגדרות LLM עודכנו' : 'LLM settings updated')
+      queryClient.invalidateQueries({ queryKey: ['agent', 'llm-config'] })
+      setNewApiKey('')
+    },
+    onError: (error: any) => {
+      toast.error(isRTL ? 'שגיאה בעדכון הגדרות LLM' : `Error: ${error.response?.data?.detail || error.message}`)
+    }
+  })
+
+  const clearApiKeyMutation = useMutation({
+    mutationFn: api.clearCustomApiKey,
+    onSuccess: () => {
+      toast.success(isRTL ? 'מפתח API מותאם נמחק' : 'Custom API key cleared')
+      queryClient.invalidateQueries({ queryKey: ['agent', 'llm-config'] })
+    },
+    onError: (error: any) => {
+      toast.error(isRTL ? 'שגיאה במחיקת מפתח' : `Error: ${error.response?.data?.detail || error.message}`)
+    }
+  })
+
   const handleModeChange = (mode: 'full_automation' | 'prompt') => {
     updateMutation.mutate({ ...agentConfig, mode })
+  }
+
+  const handleModelChange = (model: string) => {
+    updateLLMMutation.mutate({ model })
+  }
+
+  const handleApiKeySubmit = () => {
+    if (newApiKey.trim()) {
+      updateLLMMutation.mutate({ api_key: newApiKey.trim() })
+    }
+  }
+
+  const handleClearApiKey = () => {
+    if (confirm(isRTL ? 'האם אתה בטוח שברצונך למחוק את המפתח המותאם?' : 'Are you sure you want to clear the custom API key?')) {
+      clearApiKeyMutation.mutate()
+    }
   }
 
   const handleAutomationRuleChange = (key: string, value: number) => {
@@ -131,6 +193,115 @@ export default function AgentSettingsTab({ isRTL }: AgentSettingsTabProps) {
             </div>
           </label>
         </div>
+      </div>
+
+      {/* LLM Configuration */}
+      <div className="glass-card p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Cpu size={20} className="text-primary-400" />
+          <h3 className="font-semibold text-dark-100">
+            {isRTL ? 'הגדרות LLM' : 'LLM Configuration'}
+          </h3>
+        </div>
+
+        {llmLoading ? (
+          <div className="flex items-center justify-center py-4">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-400"></div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Model Selection */}
+            <div>
+              <label className="block text-sm font-medium text-dark-200 mb-2">
+                {isRTL ? 'מודל' : 'Model'}
+              </label>
+              <select
+                value={llmConfig?.model || ''}
+                onChange={(e) => handleModelChange(e.target.value)}
+                className="w-full px-4 py-3 rounded-lg bg-dark-800 border border-dark-700 text-dark-100 focus:border-primary-500 focus:outline-none"
+                disabled={updateLLMMutation.isPending}
+              >
+                {llmConfig?.available_models?.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name} ({model.tier})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* API Key Status */}
+            <div>
+              <label className="block text-sm font-medium text-dark-200 mb-2">
+                <div className="flex items-center gap-2">
+                  <Key size={16} />
+                  {isRTL ? 'מפתח API' : 'API Key'}
+                </div>
+              </label>
+
+              {/* Current Status */}
+              <div className="mb-3 p-3 rounded-lg bg-dark-800 border border-dark-700">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-dark-300">
+                    {isRTL ? 'מקור:' : 'Source:'}
+                  </span>
+                  <span className={`text-sm font-medium ${
+                    llmConfig?.api_key_source === 'custom' ? 'text-green-400' :
+                    llmConfig?.api_key_source === 'environment' ? 'text-blue-400' :
+                    'text-red-400'
+                  }`}>
+                    {llmConfig?.api_key_source === 'custom' ? (isRTL ? 'מותאם אישית' : 'Custom') :
+                     llmConfig?.api_key_source === 'environment' ? (isRTL ? 'משתנה סביבה' : 'Environment Variable') :
+                     (isRTL ? 'לא מוגדר' : 'Not Set')}
+                  </span>
+                </div>
+                {llmConfig?.has_custom_api_key && (
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className="text-sm text-dark-400">sk-ant-••••••••••••</span>
+                    <button
+                      onClick={handleClearApiKey}
+                      className="p-1 text-red-400 hover:text-red-300 transition-colors"
+                      title={isRTL ? 'מחק מפתח מותאם' : 'Clear custom key'}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Set New API Key */}
+              <div className="space-y-2">
+                <label className="block text-xs text-dark-400">
+                  {isRTL ? 'הגדר מפתח API חדש (אופציונלי):' : 'Set new API key (optional):'}
+                </label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type={showApiKey ? 'text' : 'password'}
+                      value={newApiKey}
+                      onChange={(e) => setNewApiKey(e.target.value)}
+                      placeholder="sk-ant-..."
+                      className="w-full px-4 py-2 pr-10 rounded-lg bg-dark-800 border border-dark-700 text-dark-100 focus:border-primary-500 focus:outline-none font-mono text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-400 hover:text-dark-200"
+                    >
+                      {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleApiKeySubmit}
+                    disabled={!newApiKey.trim() || updateLLMMutation.isPending}
+                    className="px-4 py-2 rounded-lg bg-primary-600 text-white hover:bg-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isRTL ? 'שמור' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Automation Rules */}

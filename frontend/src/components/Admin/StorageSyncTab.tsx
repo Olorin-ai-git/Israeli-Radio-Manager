@@ -1,7 +1,13 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { HardDrive, RefreshCw, Trash2, AlertTriangle, Cloud, FolderOpen, Upload, Clock, CheckCircle } from 'lucide-react'
+import { HardDrive, RefreshCw, Trash2, AlertTriangle, Cloud, FolderOpen, Upload, Clock, CheckCircle, Loader2 } from 'lucide-react'
 import api from '../../services/api'
 import { toast } from '../../store/toastStore'
+
+interface SyncLogEntry {
+  time: string
+  level: 'INFO' | 'FILE' | 'GCS' | 'ERROR'
+  message: string
+}
 
 interface StorageSyncTabProps {
   isRTL: boolean
@@ -32,6 +38,20 @@ const formatTimeAgo = (isoString: string | null): string => {
   return `${diffDays}d ago`
 }
 
+// Helper function to format log time
+const formatLogTime = (isoString: string): string => {
+  const date = new Date(isoString)
+  return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+// Log level colors and icons
+const logLevelStyles: Record<string, { color: string; bg: string }> = {
+  'INFO': { color: 'text-blue-400', bg: 'bg-blue-500/10' },
+  'FILE': { color: 'text-dark-300', bg: 'bg-dark-600/50' },
+  'GCS': { color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+  'ERROR': { color: 'text-red-400', bg: 'bg-red-500/10' },
+}
+
 export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
   const { data: storageStats, isLoading, error, refetch } = useQuery({
     queryKey: ['admin', 'storage', 'stats'],
@@ -50,6 +70,13 @@ export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
     queryKey: ['admin', 'sync', 'scheduler', 'status'],
     queryFn: api.getSyncSchedulerStatus,
     refetchInterval: 10000, // Refresh every 10 seconds
+    retry: false
+  })
+
+  const { data: syncProgress } = useQuery({
+    queryKey: ['admin', 'sync', 'progress'],
+    queryFn: api.getSyncProgress,
+    refetchInterval: (query) => query.state.data?.is_syncing ? 1000 : 5000, // Poll faster during sync
     retry: false
   })
 
@@ -211,7 +238,12 @@ export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
               {isRTL ? 'סנכרון לאחסון ענן (GCS)' : 'Cloud Storage Sync (GCS)'}
             </h3>
             <div className="flex items-center gap-2">
-              {syncSchedulerStatus.running ? (
+              {syncProgress?.is_syncing ? (
+                <span className="flex items-center gap-1 text-xs text-sky-400">
+                  <Loader2 size={12} className="animate-spin" />
+                  {isRTL ? 'מסנכרן...' : 'Syncing...'}
+                </span>
+              ) : syncSchedulerStatus.running ? (
                 <span className="flex items-center gap-1 text-xs text-emerald-400">
                   <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
                   {isRTL ? 'פעיל' : 'Active'}
@@ -253,7 +285,7 @@ export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
             </div>
           </div>
 
-          {/* Progress Bar */}
+          {/* Overall Progress Bar */}
           <div className="mb-4">
             <div className="h-2 bg-dark-600 rounded-full overflow-hidden">
               <div
@@ -262,6 +294,40 @@ export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
               />
             </div>
           </div>
+
+          {/* Active Sync Progress */}
+          {syncProgress?.is_syncing && (
+            <div className="mb-4 p-4 bg-sky-500/10 border border-sky-500/30 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Loader2 size={16} className="animate-spin text-sky-400" />
+                  <span className="text-sm font-medium text-sky-400">{syncProgress.phase}</span>
+                </div>
+                <span className="text-sm text-dark-300">
+                  {syncProgress.processed_files}/{syncProgress.total_files} ({syncProgress.percent_complete}%)
+                </span>
+              </div>
+              {/* Current file progress bar */}
+              <div className="h-1.5 bg-dark-600 rounded-full overflow-hidden mb-2">
+                <div
+                  className="h-full bg-sky-400 transition-all duration-300"
+                  style={{ width: `${syncProgress.percent_complete}%` }}
+                />
+              </div>
+              {syncProgress.current_file && (
+                <div className="text-xs text-dark-400 truncate">
+                  {isRTL ? 'קובץ נוכחי:' : 'Current:'} {syncProgress.current_file}
+                </div>
+              )}
+              <div className="flex items-center gap-4 mt-2 text-xs text-dark-400">
+                <span className="text-emerald-400">{syncProgress.uploaded_to_gcs} {isRTL ? 'הועלו' : 'uploaded'}</span>
+                {syncProgress.errors > 0 && (
+                  <span className="text-red-400">{syncProgress.errors} {isRTL ? 'שגיאות' : 'errors'}</span>
+                )}
+                <span>{syncProgress.elapsed_seconds}s</span>
+              </div>
+            </div>
+          )}
 
           {/* Last Sync Info */}
           <div className="flex items-center justify-between text-sm text-dark-400 mb-4">
@@ -280,18 +346,58 @@ export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
           {/* Sync Button */}
           <button
             onClick={() => gcsSyncMutation.mutate(undefined)}
-            disabled={gcsSyncMutation.isPending}
+            disabled={gcsSyncMutation.isPending || syncProgress?.is_syncing}
             className="w-full glass-button flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-500/30 disabled:opacity-50"
           >
-            <Upload size={18} className={gcsSyncMutation.isPending ? 'animate-pulse' : ''} />
-            {gcsSyncMutation.isPending
-              ? (isRTL ? 'מסנכרן ל-GCS...' : 'Syncing to GCS...')
-              : (isRTL ? 'סנכרון ידני ל-GCS' : 'Manual Sync to GCS')
+            {syncProgress?.is_syncing ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
+              <Upload size={18} className={gcsSyncMutation.isPending ? 'animate-pulse' : ''} />
+            )}
+            {syncProgress?.is_syncing
+              ? (isRTL ? 'סנכרון בתהליך...' : 'Sync in progress...')
+              : gcsSyncMutation.isPending
+                ? (isRTL ? 'מתחיל סנכרון...' : 'Starting sync...')
+                : (isRTL ? 'סנכרון ידני ל-GCS' : 'Manual Sync to GCS')
             }
           </button>
 
-          {/* Last Sync Result */}
-          {syncSchedulerStatus.last_sync_result && (
+          {/* Rolling Sync Log */}
+          {syncProgress?.log && syncProgress.log.length > 0 && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-medium text-dark-300">
+                  {isRTL ? 'לוג סנכרון' : 'Sync Log'}
+                </h4>
+                <span className="text-xs text-dark-500">
+                  {syncProgress.log.length} {isRTL ? 'רשומות' : 'entries'}
+                </span>
+              </div>
+              <div className="bg-dark-900/50 rounded-lg border border-dark-600 max-h-48 overflow-y-auto">
+                <div className="divide-y divide-dark-700/50">
+                  {[...syncProgress.log].reverse().map((entry: SyncLogEntry, idx: number) => {
+                    const style = logLevelStyles[entry.level] || logLevelStyles['INFO']
+                    return (
+                      <div key={idx} className={`flex items-start gap-2 px-3 py-1.5 text-xs ${style.bg}`}>
+                        <span className="text-dark-500 font-mono shrink-0">
+                          {formatLogTime(entry.time)}
+                        </span>
+                        <span className={`font-medium shrink-0 w-12 ${style.color}`}>
+                          {entry.level}
+                        </span>
+                        <span className="text-dark-300 truncate">
+                          {entry.message}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Last Sync Result (when not syncing and no log) */}
+          {!syncProgress?.is_syncing && (!syncProgress?.log || syncProgress.log.length === 0) && syncSchedulerStatus.last_sync_result && (
             <div className="mt-4 p-3 bg-dark-700/50 rounded-lg">
               <div className="text-xs text-dark-400 mb-2">{isRTL ? 'תוצאת סנכרון אחרון:' : 'Last sync result:'}</div>
               {syncSchedulerStatus.last_sync_result.error ? (
@@ -300,13 +406,31 @@ export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
                 <div className="flex items-center gap-2 text-sm text-emerald-400">
                   <CheckCircle size={14} />
                   <span>
-                    {syncSchedulerStatus.last_sync_result.total_synced || 0} {isRTL ? 'פריטים סונכרנו' : 'items synced'}
-                    {syncSchedulerStatus.last_sync_result.gcs_uploaded > 0 && (
-                      <>, {syncSchedulerStatus.last_sync_result.gcs_uploaded} {isRTL ? 'הועלו ל-GCS' : 'uploaded to GCS'}</>
+                    {syncSchedulerStatus.last_sync_result.files_found || syncSchedulerStatus.last_sync_result.total_synced || 0} {isRTL ? 'קבצים נמצאו' : 'files found'}
+                    {(syncSchedulerStatus.last_sync_result.files_uploaded_gcs || syncSchedulerStatus.last_sync_result.gcs_uploaded) > 0 && (
+                      <>, {syncSchedulerStatus.last_sync_result.files_uploaded_gcs || syncSchedulerStatus.last_sync_result.gcs_uploaded} {isRTL ? 'הועלו ל-GCS' : 'uploaded to GCS'}</>
                     )}
                   </span>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Content by Type Breakdown */}
+          {syncSchedulerStatus.by_type && Object.keys(syncSchedulerStatus.by_type).length > 0 && (
+            <div className="mt-4 p-3 bg-dark-700/50 rounded-lg">
+              <div className="text-xs text-dark-400 mb-2">{isRTL ? 'לפי סוג תוכן:' : 'By content type:'}</div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {Object.entries(syncSchedulerStatus.by_type).map(([type, stats]: [string, any]) => (
+                  <div key={type} className="flex items-center justify-between text-xs">
+                    <span className="text-dark-300 capitalize">{type}</span>
+                    <span className="text-dark-400">
+                      <span className="text-emerald-400">{stats.with_gcs}</span>
+                      <span className="text-dark-500">/{stats.total}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

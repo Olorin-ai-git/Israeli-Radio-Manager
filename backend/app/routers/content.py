@@ -22,7 +22,7 @@ async def list_content(
     content_type: Optional[ContentType] = None,
     genre: Optional[str] = None,
     active: Optional[bool] = True,
-    limit: int = Query(default=100, le=500),
+    limit: int = Query(default=1000, le=5000),
     offset: int = 0
 ):
     """List all content with optional filters."""
@@ -49,7 +49,7 @@ async def list_content(
 async def list_songs(
     request: Request,
     genre: Optional[str] = None,
-    limit: int = Query(default=100, le=500)
+    limit: int = Query(default=1000, le=5000)
 ):
     """List all songs, optionally filtered by genre."""
     db = request.app.state.db
@@ -68,7 +68,7 @@ async def list_songs(
 
 
 @router.get("/shows", response_model=List[dict])
-async def list_shows(request: Request, limit: int = Query(default=50, le=200)):
+async def list_shows(request: Request, limit: int = Query(default=1000, le=5000)):
     """List all shows."""
     db = request.app.state.db
 
@@ -84,7 +84,7 @@ async def list_shows(request: Request, limit: int = Query(default=50, le=200)):
 
 
 @router.get("/commercials", response_model=List[dict])
-async def list_commercials(request: Request, limit: int = Query(default=50, le=200)):
+async def list_commercials(request: Request, limit: int = Query(default=1000, le=5000)):
     """List all commercials."""
     db = request.app.state.db
 
@@ -100,7 +100,7 @@ async def list_commercials(request: Request, limit: int = Query(default=50, le=2
 
 
 @router.get("/jingles", response_model=List[dict])
-async def list_jingles(request: Request, limit: int = Query(default=50, le=200)):
+async def list_jingles(request: Request, limit: int = Query(default=1000, le=5000)):
     """List all jingles."""
     db = request.app.state.db
 
@@ -116,7 +116,7 @@ async def list_jingles(request: Request, limit: int = Query(default=50, le=200))
 
 
 @router.get("/samples", response_model=List[dict])
-async def list_samples(request: Request, limit: int = Query(default=50, le=200)):
+async def list_samples(request: Request, limit: int = Query(default=1000, le=5000)):
     """List all samples."""
     db = request.app.state.db
 
@@ -132,7 +132,7 @@ async def list_samples(request: Request, limit: int = Query(default=50, le=200))
 
 
 @router.get("/newsflashes", response_model=List[dict])
-async def list_newsflashes(request: Request, limit: int = Query(default=50, le=200)):
+async def list_newsflashes(request: Request, limit: int = Query(default=1000, le=5000)):
     """List all newsflashes."""
     db = request.app.state.db
 
@@ -261,10 +261,33 @@ async def start_sync(request: Request, download_files: bool = False):
     notification_service = request.app.state.notification_service
     logger = logging.getLogger(__name__)
 
-    # Run sync in background
+    # Get progress tracker from scheduler if available
+    scheduler = getattr(request.app.state, 'content_sync_scheduler', None)
+    progress = scheduler.progress if scheduler else None
+
+    if progress and progress.is_syncing:
+        return {
+            "message": "Sync already in progress",
+            "status": "running",
+            "progress": progress.get_progress()
+        }
+
+    # Run sync in background with progress tracking
     async def run_sync():
         try:
-            result = await content_sync.sync_all(download_files=download_files)
+            if progress:
+                progress.start("Syncing from Google Drive")
+
+            result = await content_sync.sync_all(
+                download_files=download_files,
+                progress_callback=progress
+            )
+
+            if progress:
+                total = result.get('files_found', 0)
+                added = result.get('files_added', 0)
+                updated = result.get('files_updated', 0)
+                progress.complete(f"Drive sync complete: {total} found, {added} added, {updated} updated")
 
             # Send success notification
             if notification_service:
@@ -272,13 +295,17 @@ async def start_sync(request: Request, download_files: bool = False):
                     await notification_service.send_notification(
                         level="INFO",
                         title="Sync Completed",
-                        message=f"Synced {result.get('total_synced', 0)} files from Google Drive"
+                        message=f"Synced {result.get('files_found', 0)} files from Google Drive"
                     )
                 except Exception as e:
                     logger.warning(f"Failed to send sync success notification: {e}")
 
         except Exception as e:
             logger.error(f"Background sync error: {e}")
+
+            if progress:
+                progress.log("ERROR", f"Sync failed: {str(e)}")
+                progress.complete(f"Drive sync failed: {str(e)}")
 
             # Send error notification
             if notification_service:
@@ -458,20 +485,70 @@ async def get_sync_scheduler_status(request: Request):
     scheduler = request.app.state.content_sync_scheduler
     status = scheduler.get_status()
 
-    # Add GCS stats
+    # Add detailed stats
     db = request.app.state.db
 
+    # Total counts
     total_content = await db.content.count_documents({"active": True})
+    with_drive_id = await db.content.count_documents({"active": True, "google_drive_id": {"$exists": True, "$ne": None}})
     with_gcs = await db.content.count_documents({"active": True, "gcs_path": {"$exists": True, "$ne": None}})
+
+    # Breakdown by type
+    type_pipeline = [
+        {"$match": {"active": True}},
+        {"$group": {
+            "_id": "$type",
+            "total": {"$sum": 1},
+            "with_drive": {"$sum": {"$cond": [{"$and": [{"$ne": ["$google_drive_id", None]}, {"$ne": ["$google_drive_id", ""]}]}, 1, 0]}},
+            "with_gcs": {"$sum": {"$cond": [{"$and": [{"$ne": ["$gcs_path", None]}, {"$ne": ["$gcs_path", ""]}]}, 1, 0]}}
+        }}
+    ]
+    type_stats = await db.content.aggregate(type_pipeline).to_list(100)
+    by_type = {t["_id"]: {"total": t["total"], "with_drive": t["with_drive"], "with_gcs": t["with_gcs"]} for t in type_stats if t["_id"]}
+
+    # Get sample of pending GCS uploads (first 10)
+    pending_gcs_cursor = db.content.find(
+        {"active": True, "google_drive_id": {"$exists": True, "$ne": None}, "$or": [{"gcs_path": None}, {"gcs_path": {"$exists": False}}]},
+        {"title": 1, "type": 1, "google_drive_id": 1}
+    ).limit(10)
+    pending_gcs_items = await pending_gcs_cursor.to_list(10)
+    pending_gcs_sample = [{"title": p.get("title", "Unknown"), "type": p.get("type", "unknown"), "id": str(p["_id"])} for p in pending_gcs_items]
+
+    status["drive_stats"] = {
+        "total_content": total_content,
+        "with_drive_id": with_drive_id,
+        "missing_drive_id": total_content - with_drive_id,
+        "percent_synced": round((with_drive_id / total_content * 100) if total_content > 0 else 0, 1)
+    }
 
     status["gcs_stats"] = {
         "total_content": total_content,
         "with_gcs_path": with_gcs,
         "pending_upload": total_content - with_gcs,
-        "percent_synced": round((with_gcs / total_content * 100) if total_content > 0 else 0, 1)
+        "percent_synced": round((with_gcs / total_content * 100) if total_content > 0 else 0, 1),
+        "pending_sample": pending_gcs_sample
     }
 
+    status["by_type"] = by_type
+
     return status
+
+
+@router.get("/sync/scheduler/progress")
+async def get_sync_progress(request: Request):
+    """
+    Get detailed sync progress including rolling log.
+
+    Use this for real-time sync monitoring.
+    """
+    if not hasattr(request.app.state, 'content_sync_scheduler'):
+        return {
+            "is_syncing": False,
+            "error": "Sync scheduler not initialized"
+        }
+
+    scheduler = request.app.state.content_sync_scheduler
+    return scheduler.get_progress()
 
 
 @router.post("/sync/scheduler/trigger")

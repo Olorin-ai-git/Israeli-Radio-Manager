@@ -44,6 +44,20 @@ class TaskType(str, Enum):
     # Library queries
     LIST_ARTISTS = "list_artists"           # List all artists in the library
     LIST_GENRES = "list_genres"             # List available genres
+    # Content management
+    UPDATE_METADATA = "update_metadata"     # Update song/content metadata
+    # Queue management
+    SHOW_QUEUE = "show_queue"               # Show current queue
+    CLEAR_QUEUE = "clear_queue"             # Clear the queue
+    REMOVE_FROM_QUEUE = "remove_from_queue" # Remove item from queue
+    # Statistics/Analytics
+    GET_STATISTICS = "get_statistics"       # Get library/playback statistics
+    GET_MOST_PLAYED = "get_most_played"     # Get most played songs
+    # Help/FAQ
+    GET_HELP = "get_help"                   # Get help and available commands
+    # Admin operations
+    SYNC_DRIVE = "sync_drive"               # Trigger Google Drive sync
+    GET_SYNC_STATUS = "get_sync_status"     # Get sync status
     UNKNOWN = "unknown"                     # Unknown task
 
 
@@ -152,6 +166,39 @@ class TaskExecutor:
         "עדכן זרימה": TaskType.UPDATE_FLOW,
         "השבת זרימה": TaskType.TOGGLE_FLOW,
         "הפעל זרימה": TaskType.TOGGLE_FLOW,
+        # Metadata editing commands
+        "עדכן": TaskType.UPDATE_METADATA,
+        "ערוך": TaskType.UPDATE_METADATA,
+        "שנה שם": TaskType.UPDATE_METADATA,
+        "שנה אמן": TaskType.UPDATE_METADATA,
+        "עדכן מטאדאטא": TaskType.UPDATE_METADATA,
+        "תקן": TaskType.UPDATE_METADATA,
+        # Queue management commands
+        "הצג תור": TaskType.SHOW_QUEUE,
+        "מה בתור": TaskType.SHOW_QUEUE,
+        "תור": TaskType.SHOW_QUEUE,
+        "נקה תור": TaskType.CLEAR_QUEUE,
+        "רוקן תור": TaskType.CLEAR_QUEUE,
+        "הסר מתור": TaskType.REMOVE_FROM_QUEUE,
+        "מחק מתור": TaskType.REMOVE_FROM_QUEUE,
+        # Statistics commands
+        "סטטיסטיקה": TaskType.GET_STATISTICS,
+        "סטטיסטיקות": TaskType.GET_STATISTICS,
+        "נתונים": TaskType.GET_STATISTICS,
+        "הכי מנוגן": TaskType.GET_MOST_PLAYED,
+        "פופולרי": TaskType.GET_MOST_PLAYED,
+        "הכי פופולרי": TaskType.GET_MOST_PLAYED,
+        # Help commands
+        "עזרה": TaskType.GET_HELP,
+        "מה אתה יכול": TaskType.GET_HELP,
+        "פקודות": TaskType.GET_HELP,
+        "איך": TaskType.GET_HELP,
+        # Admin/sync commands
+        "סנכרן": TaskType.SYNC_DRIVE,
+        "סנכרון": TaskType.SYNC_DRIVE,
+        "סנכרן דרייב": TaskType.SYNC_DRIVE,
+        "סטטוס סנכרון": TaskType.GET_SYNC_STATUS,
+        "מצב סנכרון": TaskType.GET_SYNC_STATUS,
     }
 
     def __init__(self, db: AsyncIOMotorDatabase, audio_player=None, content_sync=None, calendar_service=None):
@@ -232,6 +279,28 @@ class TaskExecutor:
                 return await self._execute_list_artists(task)
             elif task.task_type == TaskType.LIST_GENRES:
                 return await self._execute_list_genres(task)
+            elif task.task_type == TaskType.UPDATE_METADATA:
+                return await self._execute_update_metadata(task)
+            # Queue management
+            elif task.task_type == TaskType.SHOW_QUEUE:
+                return await self._execute_show_queue(task)
+            elif task.task_type == TaskType.CLEAR_QUEUE:
+                return await self._execute_clear_queue(task)
+            elif task.task_type == TaskType.REMOVE_FROM_QUEUE:
+                return await self._execute_remove_from_queue(task)
+            # Statistics
+            elif task.task_type == TaskType.GET_STATISTICS:
+                return await self._execute_get_statistics(task)
+            elif task.task_type == TaskType.GET_MOST_PLAYED:
+                return await self._execute_get_most_played(task)
+            # Help
+            elif task.task_type == TaskType.GET_HELP:
+                return await self._execute_get_help(task)
+            # Admin
+            elif task.task_type == TaskType.SYNC_DRIVE:
+                return await self._execute_sync_drive(task)
+            elif task.task_type == TaskType.GET_SYNC_STATUS:
+                return await self._execute_get_sync_status(task)
             else:
                 return {
                     "success": False,
@@ -1787,3 +1856,554 @@ Return the JSON array:"""
             "message_en": f"Flow '{flow['name']}' is now {new_status}",
             "new_status": new_status
         }
+
+    async def _execute_update_metadata(self, task: ParsedTask) -> Dict[str, Any]:
+        """
+        Update content metadata (title, artist, genre).
+
+        Parameters:
+            - title: Current title to search for (or song_id)
+            - new_title: New title to set
+            - new_artist: New artist to set
+            - new_genre: New genre to set
+            - song_id: Direct content ID to update
+        """
+        # Get search parameters
+        search_title = self._to_regex_string(task.parameters.get("title"))
+        search_artist = self._to_regex_string(task.parameters.get("artist"))
+        song_id = task.parameters.get("song_id") or task.parameters.get("content_id")
+
+        # Get update values
+        new_title = task.parameters.get("new_title")
+        new_artist = task.parameters.get("new_artist")
+        new_genre = task.parameters.get("new_genre")
+
+        # Validate we have something to search for
+        if not search_title and not song_id:
+            return {
+                "success": False,
+                "message": "❌ לא ציינת איזה שיר לעדכן. ציין את שם השיר הנוכחי.",
+                "message_en": "Please specify which song to update by its current title."
+            }
+
+        # Validate we have something to update
+        if not new_title and not new_artist and not new_genre:
+            return {
+                "success": False,
+                "message": "❌ לא ציינת מה לעדכן. ציין שם חדש, אמן חדש, או ז'אנר חדש.",
+                "message_en": "Please specify what to update: new title, artist, or genre."
+            }
+
+        # Find the content
+        content = None
+        if song_id:
+            try:
+                content = await self.db.content.find_one({"_id": ObjectId(song_id)})
+            except:
+                pass
+
+        if not content and search_title:
+            # Build search query
+            query: Dict[str, Any] = {"active": True}
+
+            # Search by title
+            query["$or"] = [
+                {"title": {"$regex": search_title, "$options": "i"}},
+                {"title_he": {"$regex": search_title, "$options": "i"}}
+            ]
+
+            # Optionally filter by artist too
+            if search_artist:
+                query["artist"] = {"$regex": search_artist, "$options": "i"}
+
+            content = await self.db.content.find_one(query)
+
+        if not content:
+            # Try to find similar songs to suggest
+            suggestions = await self.db.content.find({
+                "active": True,
+                "$or": [
+                    {"title": {"$regex": search_title or "", "$options": "i"}},
+                    {"artist": {"$regex": search_title or "", "$options": "i"}}
+                ]
+            }).limit(5).to_list(5)
+
+            if suggestions:
+                suggestion_list = ", ".join([f"'{s.get('title')}'" for s in suggestions[:3]])
+                return {
+                    "success": False,
+                    "message": f"❌ לא מצאתי שיר בשם '{search_title}'. אולי התכוונת ל: {suggestion_list}?",
+                    "message_en": f"Couldn't find '{search_title}'. Did you mean: {suggestion_list}?",
+                    "suggestions": suggestions
+                }
+
+            return {
+                "success": False,
+                "message": f"❌ לא מצאתי שיר בשם '{search_title}'",
+                "message_en": f"Couldn't find song named '{search_title}'"
+            }
+
+        # Build update document
+        update_doc = {"updated_at": datetime.utcnow()}
+        changes = []
+
+        if new_title:
+            update_doc["title"] = new_title
+            changes.append(f"כותרת: '{new_title}'")
+
+        if new_artist:
+            update_doc["artist"] = new_artist
+            changes.append(f"אמן: '{new_artist}'")
+
+        if new_genre:
+            update_doc["genre"] = new_genre
+            changes.append(f"ז'אנר: '{new_genre}'")
+
+        # Perform the update
+        result = await self.db.content.update_one(
+            {"_id": content["_id"]},
+            {"$set": update_doc}
+        )
+
+        if result.modified_count > 0:
+            changes_str = ", ".join(changes)
+            old_title = content.get("title", "Unknown")
+
+            return {
+                "success": True,
+                "message": f"✅ עודכן '{old_title}': {changes_str}",
+                "message_en": f"Updated '{old_title}': {', '.join([f'title: {new_title}' if new_title else '', f'artist: {new_artist}' if new_artist else '', f'genre: {new_genre}' if new_genre else '']).strip(', ')}",
+                "content_id": str(content["_id"]),
+                "updated_fields": {
+                    "title": new_title,
+                    "artist": new_artist,
+                    "genre": new_genre
+                }
+            }
+
+        return {
+            "success": False,
+            "message": "❌ לא הצלחתי לעדכן את השיר",
+            "message_en": "Failed to update the song"
+        }
+
+    # Queue management methods
+
+    async def _execute_show_queue(self, task: ParsedTask) -> Dict[str, Any]:
+        """Show current playback queue."""
+        from app.routers.playback import get_queue
+
+        queue = get_queue()
+
+        if not queue:
+            return {
+                "success": True,
+                "message": "📋 התור ריק כרגע",
+                "message_en": "Queue is currently empty",
+                "queue": []
+            }
+
+        # Format queue items
+        queue_lines = []
+        for i, item in enumerate(queue[:10], 1):
+            title = item.get("title", "Unknown")
+            artist = item.get("artist", "")
+            if artist:
+                queue_lines.append(f"{i}. {title} - {artist}")
+            else:
+                queue_lines.append(f"{i}. {title}")
+
+        queue_display = "\n".join(queue_lines)
+        remaining = len(queue) - 10 if len(queue) > 10 else 0
+
+        if remaining > 0:
+            queue_display += f"\n...ועוד {remaining} פריטים"
+
+        return {
+            "success": True,
+            "message": f"📋 התור הנוכחי ({len(queue)} פריטים):\n{queue_display}",
+            "message_en": f"Current queue ({len(queue)} items):\n{queue_display}",
+            "queue": queue,
+            "total_count": len(queue)
+        }
+
+    async def _execute_clear_queue(self, task: ParsedTask) -> Dict[str, Any]:
+        """Clear the playback queue."""
+        from app.routers.playback import clear_queue_storage, get_queue
+        from app.routers.websocket import broadcast_queue_update
+
+        previous_count = len(get_queue())
+        clear_queue_storage()
+
+        # Broadcast queue update
+        await broadcast_queue_update([])
+
+        return {
+            "success": True,
+            "message": f"🗑️ התור נוקה ({previous_count} פריטים הוסרו)",
+            "message_en": f"Queue cleared ({previous_count} items removed)",
+            "cleared_count": previous_count
+        }
+
+    async def _execute_remove_from_queue(self, task: ParsedTask) -> Dict[str, Any]:
+        """Remove an item from the queue."""
+        from app.routers.playback import get_queue, remove_from_queue
+        from app.routers.websocket import broadcast_queue_update
+
+        title = self._to_regex_string(task.parameters.get("title"))
+        position = task.parameters.get("position")
+
+        if not title and position is None:
+            return {
+                "success": False,
+                "message": "❌ ציין את שם השיר או מספר המיקום להסרה",
+                "message_en": "Specify song title or position number to remove"
+            }
+
+        queue = get_queue()
+
+        if not queue:
+            return {
+                "success": False,
+                "message": "❌ התור ריק",
+                "message_en": "Queue is empty"
+            }
+
+        removed_item = None
+        remove_index = None
+
+        # Remove by position
+        if position is not None:
+            pos = int(position) - 1  # Convert to 0-indexed
+            if 0 <= pos < len(queue):
+                removed_item = queue[pos]
+                remove_index = pos
+
+        # Remove by title
+        elif title:
+            for i, item in enumerate(queue):
+                if title.lower() in item.get("title", "").lower():
+                    removed_item = item
+                    remove_index = i
+                    break
+
+        if removed_item and remove_index is not None:
+            remove_from_queue(remove_index)
+            # Broadcast queue update
+            await broadcast_queue_update(get_queue())
+
+            return {
+                "success": True,
+                "message": f"✅ '{removed_item.get('title', 'Unknown')}' הוסר מהתור",
+                "message_en": f"'{removed_item.get('title', 'Unknown')}' removed from queue",
+                "removed_item": removed_item
+            }
+
+        return {
+            "success": False,
+            "message": f"❌ לא מצאתי '{title or position}' בתור",
+            "message_en": f"Couldn't find '{title or position}' in queue"
+        }
+
+    # Statistics methods
+
+    async def _execute_get_statistics(self, task: ParsedTask) -> Dict[str, Any]:
+        """Get library and playback statistics."""
+        # Get content counts by type
+        song_count = await self.db.content.count_documents({"type": "song", "active": True})
+        show_count = await self.db.content.count_documents({"type": "show", "active": True})
+        commercial_count = await self.db.content.count_documents({"type": "commercial", "active": True})
+        jingle_count = await self.db.content.count_documents({"type": "jingle", "active": True})
+
+        # Get total playback count (last 24 hours)
+        from datetime import timedelta
+        yesterday = datetime.utcnow() - timedelta(days=1)
+        plays_24h = await self.db.playback_logs.count_documents({"started_at": {"$gte": yesterday}})
+
+        # Get plays this week
+        week_ago = datetime.utcnow() - timedelta(days=7)
+        plays_week = await self.db.playback_logs.count_documents({"started_at": {"$gte": week_ago}})
+
+        # Get unique artists count
+        artists_pipeline = [
+            {"$match": {"active": True, "type": "song", "artist": {"$exists": True, "$ne": ""}}},
+            {"$group": {"_id": "$artist"}},
+            {"$count": "total"}
+        ]
+        artist_result = await self.db.content.aggregate(artists_pipeline).to_list(1)
+        artist_count = artist_result[0]["total"] if artist_result else 0
+
+        # Get genres count
+        genres_pipeline = [
+            {"$match": {"active": True, "type": "song", "genre": {"$exists": True, "$ne": ""}}},
+            {"$group": {"_id": "$genre"}},
+            {"$count": "total"}
+        ]
+        genre_result = await self.db.content.aggregate(genres_pipeline).to_list(1)
+        genre_count = genre_result[0]["total"] if genre_result else 0
+
+        # Get flows count
+        flow_count = await self.db.flows.count_documents({})
+        active_flows = await self.db.flows.count_documents({"status": "active"})
+
+        stats_he = f"""📊 סטטיסטיקות הספרייה:
+
+🎵 שירים: {song_count}
+📻 תוכניות: {show_count}
+📢 פרסומות: {commercial_count}
+🎶 ג'ינגלים: {jingle_count}
+
+🎤 אמנים: {artist_count}
+🎭 ז'אנרים: {genre_count}
+
+▶️ נוגנו ב-24 שעות: {plays_24h}
+📅 נוגנו השבוע: {plays_week}
+
+🔄 זרימות: {flow_count} ({active_flows} פעילות)"""
+
+        return {
+            "success": True,
+            "message": stats_he,
+            "message_en": f"Library: {song_count} songs, {show_count} shows, {commercial_count} commercials. {artist_count} artists, {genre_count} genres. {plays_24h} plays in 24h, {plays_week} this week. {flow_count} flows ({active_flows} active).",
+            "statistics": {
+                "songs": song_count,
+                "shows": show_count,
+                "commercials": commercial_count,
+                "jingles": jingle_count,
+                "artists": artist_count,
+                "genres": genre_count,
+                "plays_24h": plays_24h,
+                "plays_week": plays_week,
+                "flows": flow_count,
+                "active_flows": active_flows
+            }
+        }
+
+    async def _execute_get_most_played(self, task: ParsedTask) -> Dict[str, Any]:
+        """Get most played songs."""
+        limit = int(task.parameters.get("limit", 10))
+        period = task.parameters.get("period", "week")
+
+        # Determine time range
+        if period == "day":
+            since = datetime.utcnow() - timedelta(days=1)
+            period_he = "היום"
+        elif period == "month":
+            since = datetime.utcnow() - timedelta(days=30)
+            period_he = "החודש"
+        else:  # week
+            since = datetime.utcnow() - timedelta(days=7)
+            period_he = "השבוע"
+
+        # Aggregate most played
+        pipeline = [
+            {"$match": {"started_at": {"$gte": since}}},
+            {"$group": {"_id": "$content_id", "play_count": {"$sum": 1}}},
+            {"$sort": {"play_count": -1}},
+            {"$limit": limit}
+        ]
+
+        top_played = await self.db.playback_logs.aggregate(pipeline).to_list(limit)
+
+        if not top_played:
+            return {
+                "success": True,
+                "message": f"📊 אין נתוני נגינה עבור {period_he}",
+                "message_en": f"No playback data for this {period}",
+                "top_played": []
+            }
+
+        # Get content details
+        content_ids = [item["_id"] for item in top_played]
+        contents = await self.db.content.find({"_id": {"$in": content_ids}}).to_list(limit)
+        content_map = {str(c["_id"]): c for c in contents}
+
+        # Format results
+        result_lines = []
+        for i, item in enumerate(top_played, 1):
+            content_id = str(item["_id"])
+            content = content_map.get(content_id, {})
+            title = content.get("title", "Unknown")
+            artist = content.get("artist", "")
+            plays = item["play_count"]
+
+            if artist:
+                result_lines.append(f"{i}. {title} - {artist} ({plays} פעמים)")
+            else:
+                result_lines.append(f"{i}. {title} ({plays} פעמים)")
+
+        result_display = "\n".join(result_lines)
+
+        return {
+            "success": True,
+            "message": f"🏆 הכי מנוגנים {period_he}:\n{result_display}",
+            "message_en": f"Most played this {period}",
+            "top_played": top_played
+        }
+
+    # Help method
+
+    async def _execute_get_help(self, task: ParsedTask) -> Dict[str, Any]:
+        """Get help and available commands."""
+        topic = task.parameters.get("topic", "general")
+
+        help_text_he = """🤖 עזרה - פקודות זמינות:
+
+🎵 **ניגון:**
+• "תנגן [שם שיר]" - נגן שיר
+• "נגן שיר של [אמן]" - נגן שיר של אמן
+• "דלג" - דלג לשיר הבא
+• "השהה/המשך" - עצור או המשך
+• "עבור לז'אנר [שם]" - החלף ז'אנר
+
+📋 **תור:**
+• "מה בתור?" - הצג את התור
+• "הוסף [שיר] לתור" - הוסף לתור
+• "נקה תור" - רוקן את התור
+• "הסר [שיר] מתור" - הסר פריט
+
+📅 **תזמון:**
+• "תזמן [שיר] לשעה [זמן]" - תזמן שיר
+• "מה מתוזמן היום?" - הצג לוח זמנים
+• "הוסף ליומן" - הוסף לגוגל קלנדר
+
+🔄 **זרימות:**
+• "צור זרימה: [תיאור]" - צור זרימה חדשה
+• "הצג זרימות" - רשימת זרימות
+• "הפעל זרימה [שם]" - הרץ זרימה
+
+📊 **סטטיסטיקות:**
+• "סטטיסטיקות" - נתוני ספרייה
+• "הכי מנוגנים" - שירים פופולריים
+
+🔧 **ניהול:**
+• "סנכרן דרייב" - סנכרן מגוגל דרייב
+• "עדכן [שיר]" - ערוך מטאדאטא
+
+💡 **טיפ:** הקלד @ לרשימת פעולות מהירות!"""
+
+        help_text_en = """🤖 Help - Available Commands:
+
+🎵 **Playback:**
+• "Play [song name]" - Play a song
+• "Play a song by [artist]" - Play by artist
+• "Skip" - Skip to next
+• "Pause/Resume" - Control playback
+• "Switch to [genre]" - Change genre
+
+📋 **Queue:**
+• "Show queue" - View queue
+• "Add [song] to queue" - Add to queue
+• "Clear queue" - Empty queue
+• "Remove [song] from queue" - Remove item
+
+📅 **Scheduling:**
+• "Schedule [song] for [time]" - Schedule
+• "What's scheduled today?" - View schedule
+• "Add to calendar" - Google Calendar
+
+🔄 **Flows:**
+• "Create flow: [description]" - New flow
+• "List flows" - Show all flows
+• "Run flow [name]" - Execute flow
+
+📊 **Statistics:**
+• "Statistics" - Library stats
+• "Most played" - Popular songs
+
+🔧 **Admin:**
+• "Sync drive" - Sync from Google Drive
+• "Update [song]" - Edit metadata
+
+💡 **Tip:** Type @ for quick action menu!"""
+
+        return {
+            "success": True,
+            "message": help_text_he,
+            "message_en": help_text_en,
+            "topic": topic
+        }
+
+    # Admin methods
+
+    async def _execute_sync_drive(self, task: ParsedTask) -> Dict[str, Any]:
+        """Trigger Google Drive sync."""
+        if not self._content_sync:
+            return {
+                "success": False,
+                "message": "❌ שירות הסנכרון אינו זמין",
+                "message_en": "Sync service not available"
+            }
+
+        try:
+            # Start sync in background
+            import asyncio
+            asyncio.create_task(self._content_sync.sync_from_drive())
+
+            return {
+                "success": True,
+                "message": "🔄 סנכרון מגוגל דרייב התחיל... ייתכן שייקח מספר דקות",
+                "message_en": "Google Drive sync started... this may take a few minutes",
+                "action": "sync_started"
+            }
+        except Exception as e:
+            logger.error(f"Drive sync error: {e}")
+            return {
+                "success": False,
+                "message": f"❌ שגיאה בהתחלת סנכרון: {str(e)}",
+                "message_en": f"Sync error: {str(e)}"
+            }
+
+    async def _execute_get_sync_status(self, task: ParsedTask) -> Dict[str, Any]:
+        """Get sync status."""
+        if not self._content_sync:
+            return {
+                "success": False,
+                "message": "❌ שירות הסנכרון אינו זמין",
+                "message_en": "Sync service not available"
+            }
+
+        try:
+            progress = self._content_sync.get_sync_progress()
+
+            if not progress:
+                return {
+                    "success": True,
+                    "message": "ℹ️ אין סנכרון פעיל כרגע",
+                    "message_en": "No active sync",
+                    "status": "idle"
+                }
+
+            status = progress.get("status", "unknown")
+            processed = progress.get("processed_files", 0)
+            total = progress.get("total_files", 0)
+            percent = progress.get("percentage", 0)
+            current = progress.get("current_file", "")
+
+            status_he = {
+                "running": "פעיל",
+                "completed": "הושלם",
+                "error": "שגיאה",
+                "idle": "לא פעיל"
+            }.get(status, status)
+
+            if status == "running":
+                message = f"🔄 סנכרון {status_he}: {processed}/{total} ({percent:.1f}%)\n📄 {current}"
+            elif status == "completed":
+                message = f"✅ סנכרון הושלם: {processed} קבצים עובדו"
+            else:
+                message = f"ℹ️ מצב סנכרון: {status_he}"
+
+            return {
+                "success": True,
+                "message": message,
+                "message_en": f"Sync {status}: {processed}/{total} files ({percent:.1f}%)",
+                "progress": progress
+            }
+        except Exception as e:
+            logger.error(f"Get sync status error: {e}")
+            return {
+                "success": False,
+                "message": f"❌ שגיאה בקבלת סטטוס: {str(e)}",
+                "message_en": f"Error getting status: {str(e)}"
+            }

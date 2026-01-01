@@ -64,7 +64,8 @@ class ContentSyncService:
         self,
         download_files: bool = False,
         upload_to_gcs: bool = True,
-        safe_mode: bool = True
+        safe_mode: bool = True,
+        progress_callback: Optional[Any] = None
     ) -> Dict[str, Any]:
         """
         Sync all content from Google Drive.
@@ -73,6 +74,7 @@ class ContentSyncService:
             download_files: If True, download all files to local cache
             upload_to_gcs: If True, upload files to Google Cloud Storage
             safe_mode: If True, never delete content - only add/update (recommended for 24/7 radio)
+            progress_callback: Optional progress tracker for real-time updates
 
         Returns:
             Sync statistics
@@ -90,11 +92,19 @@ class ContentSyncService:
         # Store sync parameters for use in _process_file
         self._upload_to_gcs = upload_to_gcs
         self._safe_mode = safe_mode
+        self._progress = progress_callback
 
         try:
+            if self._progress:
+                self._progress.set_phase("Getting folder structure from Google Drive...")
+
             # Get folder structure
             structure = await self.drive.get_folder_structure()
-            logger.info(f"Found folder structure: {list(structure.get('children', {}).keys())}")
+            folder_names = list(structure.get('children', {}).keys())
+            logger.info(f"Found folder structure: {folder_names}")
+
+            if self._progress:
+                self._progress.log("INFO", f"Found folders: {', '.join(folder_names)}")
 
             # Process each top-level folder
             for folder_name, folder_info in structure.get("children", {}).items():
@@ -103,9 +113,13 @@ class ContentSyncService:
 
                 if not content_type:
                     logger.info(f"Skipping unknown folder: {folder_name}")
+                    if self._progress:
+                        self._progress.log("INFO", f"Skipping unknown folder: {folder_name}")
                     continue
 
                 logger.info(f"Processing {content_type} folder: {folder_name}")
+                if self._progress:
+                    self._progress.set_phase(f"Scanning {folder_name} folder...")
                 stats["folders_scanned"] += 1
 
                 # For songs, process subfolders (genres)
@@ -261,7 +275,18 @@ class ContentSyncService:
             files = await self.drive.list_audio_files(folder_id)
             stats["files_found"] = len(files)
 
+            if self._progress and len(files) > 0:
+                folder_desc = genre or show_name or content_type
+                self._progress.log("INFO", f"Found {len(files)} files in {folder_desc}")
+                self._progress.add_to_total(len(files))
+
             for file_info in files:
+                filename = file_info.get('name', 'Unknown')
+
+                # Update progress
+                if self._progress:
+                    self._progress.process_file(filename, "Processing")
+
                 try:
                     result = await self._process_file(
                         file_info,
@@ -276,6 +301,8 @@ class ContentSyncService:
                     action = result.get("action", "unchanged")
                     if action == "added":
                         stats["files_added"] += 1
+                        if self._progress:
+                            self._progress.log("FILE", f"Added: {filename}")
                     elif action == "updated":
                         stats["files_updated"] += 1
 
@@ -284,10 +311,14 @@ class ContentSyncService:
 
                     if result.get("gcs_uploaded"):
                         stats["files_uploaded_gcs"] += 1
+                        if self._progress:
+                            self._progress.file_uploaded_gcs(filename)
 
                 except Exception as e:
                     logger.error(f"Error processing file {file_info['name']}: {e}")
                     stats["errors"].append(f"{file_info['name']}: {str(e)}")
+                    if self._progress:
+                        self._progress.file_error(filename, str(e))
 
         except Exception as e:
             logger.error(f"Error listing folder {folder_id}: {e}")
@@ -386,8 +417,37 @@ class ContentSyncService:
             content_doc["show_name"] = show_name
 
         if existing:
-            # Update existing record
-            update_ops = {"$set": content_doc}
+            # Update existing record - but preserve manually edited metadata
+            # Only update technical fields, not user-editable metadata
+            update_doc = {
+                "gcs_path": gcs_path or existing.get("gcs_path"),
+                "local_cache_path": str(local_path) if local_path else existing.get("local_cache_path"),
+                "google_drive_path": filename,
+                "active": True,
+                "updated_at": datetime.utcnow()
+            }
+
+            # Only update metadata fields if they were empty before (preserve manual edits)
+            if not existing.get("title") or existing.get("title") == self._title_from_filename(existing.get("google_drive_path", "")):
+                new_title = metadata.get("title") or self._title_from_filename(filename)
+                if new_title:
+                    update_doc["title"] = new_title
+
+            if not existing.get("artist"):
+                new_artist = metadata.get("artist") or artist_name
+                if new_artist:
+                    update_doc["artist"] = new_artist
+
+            if not existing.get("genre"):
+                new_genre = genre or metadata.get("genre")
+                if new_genre:
+                    update_doc["genre"] = new_genre
+
+            # Always update duration if we have a new value (technical field)
+            if metadata.get("duration"):
+                update_doc["duration_seconds"] = metadata.get("duration")
+
+            update_ops = {"$set": update_doc}
 
             # For commercials with batch_number, add to batches array (not replace)
             if batch_number is not None and content_type == "commercial":

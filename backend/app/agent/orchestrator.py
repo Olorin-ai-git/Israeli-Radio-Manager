@@ -68,7 +68,10 @@ class OrchestratorAgent:
         calendar_service=None
     ):
         self.db = db
-        self._client = Anthropic(api_key=anthropic_api_key or settings.anthropic_api_key)
+        self._default_api_key = anthropic_api_key or settings.anthropic_api_key
+        self._client: Optional[Anthropic] = None
+        self._current_api_key: Optional[str] = None
+        self._current_model: Optional[str] = None
         self._config: Optional[AgentConfig] = None
         self._decision_engine = DecisionEngine(db)
         self._confirmation_manager = ConfirmationManager(db)
@@ -84,6 +87,39 @@ class OrchestratorAgent:
 
         # Conversation history for chat
         self._chat_history: List[Dict[str, str]] = []
+
+    async def get_llm_config(self) -> tuple[str, str]:
+        """Get the current LLM API key and model from database or defaults."""
+        llm_config = await self.db.llm_config.find_one({"_id": "default"})
+
+        # Determine API key (custom from DB takes precedence over env)
+        api_key = self._default_api_key
+        if llm_config and llm_config.get("api_key"):
+            api_key = llm_config["api_key"]
+
+        # Determine model (custom from DB takes precedence over env)
+        model = settings.anthropic_model
+        if llm_config and llm_config.get("model"):
+            model = llm_config["model"]
+
+        return api_key, model
+
+    async def get_client(self) -> Anthropic:
+        """Get or create the Anthropic client with current config."""
+        api_key, model = await self.get_llm_config()
+
+        # Recreate client if API key changed
+        if self._client is None or self._current_api_key != api_key:
+            self._client = Anthropic(api_key=api_key)
+            self._current_api_key = api_key
+
+        self._current_model = model
+        return self._client
+
+    async def get_model(self) -> str:
+        """Get the current model to use."""
+        _, model = await self.get_llm_config()
+        return model
 
     async def get_config(self) -> AgentConfig:
         """Load or get cached agent configuration."""
@@ -245,9 +281,11 @@ class OrchestratorAgent:
             *self._chat_history
         ]
 
-        # Call Claude
-        response = self._client.messages.create(
-            model="claude-haiku-4-5-20251001",
+        # Call Claude with dynamic config
+        client = await self.get_client()
+        model = await self.get_model()
+        response = client.messages.create(
+            model=model,
             max_tokens=1024,
             system=SYSTEM_PROMPT,
             messages=messages
@@ -628,8 +666,10 @@ Agent mode: {(await self.get_config()).mode.value}
         """Call Claude API and parse response."""
         import json
 
-        response = self._client.messages.create(
-            model="claude-haiku-4-5-20251001",
+        client = await self.get_client()
+        model = await self.get_model()
+        response = client.messages.create(
+            model=model,
             max_tokens=1024,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}]

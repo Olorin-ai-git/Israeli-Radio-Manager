@@ -1,14 +1,17 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Music, Radio, Megaphone, Search, Play, Plus,
-  Clock, BarChart2, Calendar, Disc3, RefreshCw, ListPlus, X as XIcon, FolderSync,
-  AudioLines, Layers, Newspaper
+  Clock, Calendar, Disc3, RefreshCw, ListPlus, X as XIcon, FolderSync,
+  AudioLines, Layers, Newspaper, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Save
 } from 'lucide-react'
 import { api } from '../services/api'
 import { usePlayerStore } from '../store/playerStore'
 import { toast } from '../store/toastStore'
+
+type SortField = 'title' | 'genre' | 'duration_seconds' | 'type' | 'created_at'
+type SortDirection = 'asc' | 'desc'
 
 // Component to display album cover with fallback
 function AlbumCover({ contentId, isPlaying, type }: { contentId: string; isPlaying: boolean; type: string }) {
@@ -54,6 +57,10 @@ export default function Library() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedGenre, setSelectedGenre] = useState('')
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
+  const [sortField, setSortField] = useState<SortField>('title')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [editingItem, setEditingItem] = useState<any>(null)
+  const [editForm, setEditForm] = useState({ title: '', artist: '', genre: '' })
   const { play, addToQueue, currentTrack } = usePlayerStore()
   const queryClient = useQueryClient()
 
@@ -124,6 +131,45 @@ export default function Library() {
     }
   })
 
+  // Update content mutation
+  const updateContentMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => api.updateContent(id, data),
+    onSuccess: () => {
+      toast.success(isRTL ? 'התוכן עודכן בהצלחה' : 'Content updated successfully')
+      queryClient.invalidateQueries({ queryKey: ['songs'] })
+      queryClient.invalidateQueries({ queryKey: ['shows'] })
+      queryClient.invalidateQueries({ queryKey: ['commercials'] })
+      queryClient.invalidateQueries({ queryKey: ['jingles'] })
+      queryClient.invalidateQueries({ queryKey: ['samples'] })
+      queryClient.invalidateQueries({ queryKey: ['newsflashes'] })
+      setEditingItem(null)
+    },
+    onError: (error: any) => {
+      toast.error(isRTL ? 'שגיאה בעדכון' : `Error: ${error.response?.data?.detail || error.message}`)
+    }
+  })
+
+  const handleEdit = (item: any) => {
+    setEditingItem(item)
+    setEditForm({
+      title: item.title || '',
+      artist: item.artist || '',
+      genre: item.genre || ''
+    })
+  }
+
+  const handleSaveEdit = () => {
+    if (!editingItem) return
+    updateContentMutation.mutate({
+      id: editingItem._id,
+      data: {
+        title: editForm.title,
+        artist: editForm.artist,
+        genre: editForm.genre
+      }
+    })
+  }
+
   const { data: songs, isLoading: loadingSongs } = useQuery({
     queryKey: ['songs'],
     queryFn: () => api.getSongs(),
@@ -187,14 +233,59 @@ export default function Library() {
 
   const content = getContent()
 
-  // Filter by search and genre
-  const filteredContent = content.filter((item: any) => {
-    const matchesSearch = !searchQuery ||
-      item.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.artist?.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesGenre = !selectedGenre || item.genre === selectedGenre
-    return matchesSearch && matchesGenre
-  })
+  // Filter by search and genre, then sort
+  const filteredContent = useMemo(() => {
+    const filtered = content.filter((item: any) => {
+      const matchesSearch = !searchQuery ||
+        item.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.artist?.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchesGenre = !selectedGenre || item.genre === selectedGenre
+      return matchesSearch && matchesGenre
+    })
+
+    // Sort the filtered content
+    return [...filtered].sort((a: any, b: any) => {
+      let aVal = a[sortField]
+      let bVal = b[sortField]
+
+      // Handle null/undefined values
+      if (aVal == null) aVal = ''
+      if (bVal == null) bVal = ''
+
+      // Convert to lowercase for string comparison
+      if (typeof aVal === 'string') aVal = aVal.toLowerCase()
+      if (typeof bVal === 'string') bVal = bVal.toLowerCase()
+
+      // Compare
+      let comparison = 0
+      if (aVal < bVal) comparison = -1
+      else if (aVal > bVal) comparison = 1
+
+      return sortDirection === 'asc' ? comparison : -comparison
+    })
+  }, [content, searchQuery, selectedGenre, sortField, sortDirection])
+
+  // Toggle sort for a column
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      // Toggle direction if same field
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      // Set new field with ascending direction
+      setSortField(field)
+      setSortDirection('asc')
+    }
+  }
+
+  // Sort indicator component
+  const SortIndicator = ({ field }: { field: SortField }) => {
+    if (sortField !== field) {
+      return <ChevronsUpDown size={14} className="text-dark-500" />
+    }
+    return sortDirection === 'asc'
+      ? <ChevronUp size={14} className="text-primary-400" />
+      : <ChevronDown size={14} className="text-primary-400" />
+  }
 
   const handlePlay = (item: any) => {
     play(item)
@@ -399,134 +490,232 @@ export default function Library() {
         </div>
       )}
 
-      {/* Content List */}
+      {/* Content Table */}
       <div className="flex-1 overflow-auto">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : filteredContent.length > 0 ? (
-          <div className="space-y-2">
-            {filteredContent.map((item: any) => {
-              const isCurrentlyPlaying = currentTrack?._id === item._id
-
-              const isSelected = selectedItems.has(item._id)
-
-              return (
-                <div
-                  key={item._id}
-                  className={`group flex items-center gap-4 p-4 rounded-xl transition-all ${
-                    isCurrentlyPlaying
-                      ? 'bg-primary-500/20 border border-primary-500/30'
-                      : isSelected
-                      ? 'bg-primary-500/10 border border-primary-500/20'
-                      : 'glass-card hover:bg-white/5'
-                  }`}
-                >
-                  {/* Checkbox */}
-                  <label className="relative flex items-center justify-center cursor-pointer" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleItemSelection(item._id)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-5 h-5 rounded-lg border-2 border-dark-500 bg-dark-800/50 backdrop-blur-sm
-                                  peer-checked:border-primary-500 peer-checked:bg-primary-500
-                                  peer-focus:ring-2 peer-focus:ring-primary-500/30
-                                  hover:border-dark-400
-                                  transition-all duration-200 flex items-center justify-center">
-                      <svg className="w-3.5 h-3.5 text-white scale-0 peer-checked:scale-100 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    </div>
-                  </label>
-
-                  {/* Play Button / Album Cover */}
-                  <div className="relative">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all overflow-hidden ${
-                      isCurrentlyPlaying
-                        ? 'ring-2 ring-primary-500'
-                        : 'bg-dark-700/50 group-hover:bg-primary-500/20'
-                    }`}>
-                      <AlbumCover
-                        contentId={item._id}
-                        isPlaying={isCurrentlyPlaying}
-                        type={item.type}
+          <div className="glass-card overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-dark-800/50 border-b border-dark-700">
+                <tr>
+                  {/* Checkbox Header */}
+                  <th className="w-12 px-4 py-3">
+                    <label className="relative flex items-center justify-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedItems.size === filteredContent.length && filteredContent.length > 0}
+                        onChange={() => selectedItems.size === filteredContent.length ? clearSelection() : selectAll()}
+                        className="sr-only peer"
                       />
-                    </div>
+                      <div className="w-5 h-5 rounded-lg border-2 border-dark-500 bg-dark-800/50
+                                    peer-checked:border-primary-500 peer-checked:bg-primary-500
+                                    transition-all duration-200 flex items-center justify-center">
+                        <svg className="w-3.5 h-3.5 text-white scale-0 peer-checked:scale-100 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      </div>
+                    </label>
+                  </th>
+                  {/* Play Button Column */}
+                  <th className="w-16 px-2 py-3"></th>
+                  {/* Name */}
+                  <th className="px-4 py-3 text-left">
                     <button
-                      onClick={() => handlePlay(item)}
-                      className={`absolute inset-0 w-12 h-12 rounded-xl flex items-center justify-center
-                        bg-primary-500/90 opacity-0 group-hover:opacity-100 transition-opacity ${
-                        isCurrentlyPlaying ? 'hidden' : ''
+                      onClick={() => handleSort('title')}
+                      className="flex items-center gap-2 text-xs font-semibold text-dark-300 uppercase tracking-wider hover:text-dark-100 transition-colors"
+                    >
+                      {isRTL ? 'שם' : 'Name'}
+                      <SortIndicator field="title" />
+                    </button>
+                  </th>
+                  {/* Genre */}
+                  <th className="hidden md:table-cell px-4 py-3 text-left">
+                    <button
+                      onClick={() => handleSort('genre')}
+                      className="flex items-center gap-2 text-xs font-semibold text-dark-300 uppercase tracking-wider hover:text-dark-100 transition-colors"
+                    >
+                      {isRTL ? "ז'אנר" : 'Genre'}
+                      <SortIndicator field="genre" />
+                    </button>
+                  </th>
+                  {/* Duration */}
+                  <th className="hidden sm:table-cell px-4 py-3 text-left w-28">
+                    <button
+                      onClick={() => handleSort('duration_seconds')}
+                      className="flex items-center gap-2 text-xs font-semibold text-dark-300 uppercase tracking-wider hover:text-dark-100 transition-colors"
+                    >
+                      {isRTL ? 'משך' : 'Duration'}
+                      <SortIndicator field="duration_seconds" />
+                    </button>
+                  </th>
+                  {/* Type */}
+                  <th className="hidden lg:table-cell px-4 py-3 text-left w-28">
+                    <button
+                      onClick={() => handleSort('type')}
+                      className="flex items-center gap-2 text-xs font-semibold text-dark-300 uppercase tracking-wider hover:text-dark-100 transition-colors"
+                    >
+                      {isRTL ? 'סוג' : 'Type'}
+                      <SortIndicator field="type" />
+                    </button>
+                  </th>
+                  {/* Date Added */}
+                  <th className="hidden xl:table-cell px-4 py-3 text-left w-32">
+                    <button
+                      onClick={() => handleSort('created_at')}
+                      className="flex items-center gap-2 text-xs font-semibold text-dark-300 uppercase tracking-wider hover:text-dark-100 transition-colors"
+                    >
+                      {isRTL ? 'נוסף' : 'Added'}
+                      <SortIndicator field="created_at" />
+                    </button>
+                  </th>
+                  {/* Actions */}
+                  <th className="w-16 px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-dark-700/50">
+                {filteredContent.map((item: any) => {
+                  const isCurrentlyPlaying = currentTrack?._id === item._id
+                  const isSelected = selectedItems.has(item._id)
+
+                  const TypeIcon = item.type === 'song' ? Music
+                    : item.type === 'commercial' ? Megaphone
+                    : item.type === 'show' ? Radio
+                    : item.type === 'jingle' ? AudioLines
+                    : item.type === 'sample' ? Layers
+                    : item.type === 'newsflash' ? Newspaper
+                    : Disc3
+
+                  return (
+                    <tr
+                      key={item._id}
+                      className={`group transition-all ${
+                        isCurrentlyPlaying
+                          ? 'bg-primary-500/10'
+                          : isSelected
+                          ? 'bg-primary-500/5'
+                          : 'hover:bg-white/5'
                       }`}
                     >
-                      <Play size={20} className="text-white ml-0.5" />
-                    </button>
-                  </div>
-
-                  {/* Title & Artist */}
-                  <div className="flex-1 min-w-0">
-                    <p className={`font-medium truncate ${isCurrentlyPlaying ? 'text-primary-400' : 'text-dark-100'}`} dir="auto">
-                      {item.title || 'Untitled'}
-                    </p>
-                    <p className="text-sm text-dark-400 truncate" dir="auto">
-                      {item.artist || (item.type === 'commercial' ? (isRTL ? 'פרסומת' : 'Commercial') : (isRTL ? 'אמן לא ידוע' : 'Unknown Artist'))}
-                    </p>
-                  </div>
-
-                  {/* Genre Badge */}
-                  {item.genre && (
-                    <span className="hidden md:inline-block px-3 py-1 text-xs rounded-full bg-dark-700/50 text-dark-300 border border-white/5">
-                      {item.genre}
-                    </span>
-                  )}
-
-                  {/* Batches Badge (for commercials) */}
-                  {item.type === 'commercial' && item.batches && item.batches.length > 0 && (
-                    <span className="hidden md:inline-block px-3 py-1 text-xs rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                      {isRTL ? 'אצוות' : 'Batches'}: {item.batches.sort((a: number, b: number) => a - b).join(', ')}
-                    </span>
-                  )}
-
-                  {/* Duration */}
-                  <div className="hidden sm:flex items-center gap-1.5 text-sm text-dark-400 min-w-[60px]">
-                    <Clock size={14} />
-                    <span className="font-mono">{formatDuration(item.duration_seconds)}</span>
-                  </div>
-
-                  {/* Play Count */}
-                  <div className="hidden md:flex items-center gap-1.5 text-sm text-dark-400 min-w-[50px]">
-                    <BarChart2 size={14} />
-                    <span>{item.play_count || 0}</span>
-                  </div>
-
-                  {/* Last Played */}
-                  {item.last_played && (
-                    <div className="hidden lg:flex items-center gap-1.5 text-xs text-dark-500 min-w-[80px]">
-                      <Calendar size={12} />
-                      <span>{new Date(item.last_played).toLocaleDateString()}</span>
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1">
-                    <div className="tooltip-trigger">
-                      <button
-                        onClick={() => handleAddToQueue(item)}
-                        className="p-2 rounded-lg text-dark-400 hover:text-dark-100 hover:bg-white/10 transition-all"
-                      >
-                        <Plus size={18} />
-                      </button>
-                      <div className="tooltip tooltip-left">
-                        {isRTL ? 'הוסף לתור' : 'Add to queue'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
+                      {/* Checkbox */}
+                      <td className="px-4 py-3">
+                        <label className="relative flex items-center justify-center cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleItemSelection(item._id)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-5 h-5 rounded-lg border-2 border-dark-500 bg-dark-800/50
+                                        peer-checked:border-primary-500 peer-checked:bg-primary-500
+                                        transition-all duration-200 flex items-center justify-center">
+                            <svg className="w-3.5 h-3.5 text-white scale-0 peer-checked:scale-100 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          </div>
+                        </label>
+                      </td>
+                      {/* Play Button / Cover */}
+                      <td className="px-2 py-3">
+                        <div className="relative">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all overflow-hidden ${
+                            isCurrentlyPlaying
+                              ? 'ring-2 ring-primary-500'
+                              : 'bg-dark-700/50 group-hover:bg-primary-500/20'
+                          }`}>
+                            <AlbumCover
+                              contentId={item._id}
+                              isPlaying={isCurrentlyPlaying}
+                              type={item.type}
+                            />
+                          </div>
+                          <button
+                            onClick={() => handlePlay(item)}
+                            className={`absolute inset-0 w-10 h-10 rounded-lg flex items-center justify-center
+                              bg-primary-500/90 opacity-0 group-hover:opacity-100 transition-opacity ${
+                              isCurrentlyPlaying ? 'hidden' : ''
+                            }`}
+                          >
+                            <Play size={16} className="text-white ml-0.5" />
+                          </button>
+                        </div>
+                      </td>
+                      {/* Name (Title + Artist) */}
+                      <td className="px-4 py-3">
+                        <div className="min-w-0">
+                          <p className={`font-medium truncate ${isCurrentlyPlaying ? 'text-primary-400' : 'text-dark-100'}`} dir="auto">
+                            {item.title || 'Untitled'}
+                          </p>
+                          <p className="text-sm text-dark-400 truncate" dir="auto">
+                            {item.artist || (item.type === 'commercial' ? (isRTL ? 'פרסומת' : 'Commercial') : (isRTL ? 'אמן לא ידוע' : 'Unknown Artist'))}
+                          </p>
+                        </div>
+                      </td>
+                      {/* Genre */}
+                      <td className="hidden md:table-cell px-4 py-3">
+                        {item.genre ? (
+                          <span className="px-2.5 py-1 text-xs rounded-full bg-dark-700/50 text-dark-300 border border-white/5">
+                            {item.genre}
+                          </span>
+                        ) : (
+                          <span className="text-dark-500 text-sm">—</span>
+                        )}
+                      </td>
+                      {/* Duration */}
+                      <td className="hidden sm:table-cell px-4 py-3">
+                        <div className="flex items-center gap-1.5 text-sm text-dark-400">
+                          <Clock size={14} />
+                          <span className="font-mono">{formatDuration(item.duration_seconds)}</span>
+                        </div>
+                      </td>
+                      {/* Type */}
+                      <td className="hidden lg:table-cell px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <TypeIcon size={14} className="text-dark-400" />
+                          <span className="text-sm text-dark-300 capitalize">{item.type}</span>
+                        </div>
+                      </td>
+                      {/* Date Added */}
+                      <td className="hidden xl:table-cell px-4 py-3">
+                        <div className="flex items-center gap-1.5 text-xs text-dark-500">
+                          <Calendar size={12} />
+                          <span>{item.created_at ? new Date(item.created_at).toLocaleDateString() : '—'}</span>
+                        </div>
+                      </td>
+                      {/* Actions */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          <div className="tooltip-trigger">
+                            <button
+                              onClick={() => handleEdit(item)}
+                              className="p-2 rounded-lg text-dark-400 hover:text-primary-400 hover:bg-white/10 transition-all"
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <div className="tooltip tooltip-left">
+                              {isRTL ? 'ערוך' : 'Edit'}
+                            </div>
+                          </div>
+                          <div className="tooltip-trigger">
+                            <button
+                              onClick={() => handleAddToQueue(item)}
+                              className="p-2 rounded-lg text-dark-400 hover:text-dark-100 hover:bg-white/10 transition-all"
+                            >
+                              <Plus size={18} />
+                            </button>
+                            <div className="tooltip tooltip-left">
+                              {isRTL ? 'הוסף לתור' : 'Add to queue'}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -545,6 +734,106 @@ export default function Library() {
           </div>
         )}
       </div>
+
+      {/* Edit Modal */}
+      {editingItem && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="glass-card p-6 w-full max-w-md mx-4">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-dark-100">
+                {isRTL ? 'עריכת פריט' : 'Edit Item'}
+              </h2>
+              <button
+                onClick={() => setEditingItem(null)}
+                className="p-2 rounded-lg text-dark-400 hover:text-dark-100 hover:bg-white/10"
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Title */}
+              <div>
+                <label className="block text-sm font-medium text-dark-300 mb-2">
+                  {isRTL ? 'כותרת' : 'Title'}
+                </label>
+                <input
+                  type="text"
+                  value={editForm.title}
+                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  className="w-full px-4 py-2 glass-input"
+                  dir="auto"
+                />
+              </div>
+
+              {/* Artist */}
+              <div>
+                <label className="block text-sm font-medium text-dark-300 mb-2">
+                  {isRTL ? 'אמן' : 'Artist'}
+                </label>
+                <input
+                  type="text"
+                  value={editForm.artist}
+                  onChange={(e) => setEditForm({ ...editForm, artist: e.target.value })}
+                  className="w-full px-4 py-2 glass-input"
+                  dir="auto"
+                />
+              </div>
+
+              {/* Genre */}
+              <div>
+                <label className="block text-sm font-medium text-dark-300 mb-2">
+                  {isRTL ? "ז'אנר" : 'Genre'}
+                </label>
+                <input
+                  type="text"
+                  value={editForm.genre}
+                  onChange={(e) => setEditForm({ ...editForm, genre: e.target.value })}
+                  className="w-full px-4 py-2 glass-input"
+                  dir="auto"
+                  list="genre-list"
+                />
+                {Array.isArray(genres) && genres.length > 0 && (
+                  <datalist id="genre-list">
+                    {genres.map((g: string) => (
+                      <option key={g} value={g} />
+                    ))}
+                  </datalist>
+                )}
+              </div>
+
+              {/* Type (read-only) */}
+              <div>
+                <label className="block text-sm font-medium text-dark-300 mb-2">
+                  {isRTL ? 'סוג' : 'Type'}
+                </label>
+                <div className="px-4 py-2 bg-dark-800/50 rounded-lg text-dark-400 capitalize">
+                  {editingItem.type}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setEditingItem(null)}
+                className="px-4 py-2 rounded-lg text-dark-300 hover:text-dark-100 hover:bg-white/10 transition-colors"
+              >
+                {isRTL ? 'ביטול' : 'Cancel'}
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={updateContentMutation.isPending}
+                className="glass-button-primary flex items-center gap-2 px-4 py-2"
+              >
+                <Save size={16} />
+                {updateContentMutation.isPending
+                  ? (isRTL ? 'שומר...' : 'Saving...')
+                  : (isRTL ? 'שמור' : 'Save')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

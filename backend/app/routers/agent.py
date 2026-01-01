@@ -450,6 +450,117 @@ async def clear_chat_history(request: Request):
     return {"message": "Chat history cleared"}
 
 
+# ==================== LLM Configuration Endpoints ====================
+
+# Available models for the frontend dropdown
+AVAILABLE_MODELS = [
+    {"id": "claude-sonnet-4-5-20250929", "name": "Claude Sonnet 4.5", "tier": "standard"},
+    {"id": "claude-opus-4-5-20251101", "name": "Claude Opus 4.5", "tier": "premium"},
+    {"id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5", "tier": "fast"},
+    {"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet", "tier": "standard"},
+    {"id": "claude-3-opus-20240229", "name": "Claude 3 Opus", "tier": "premium"},
+    {"id": "claude-3-haiku-20240307", "name": "Claude 3 Haiku", "tier": "fast"},
+]
+
+
+class LLMConfigUpdate(BaseModel):
+    """Request model for updating LLM configuration."""
+    model: Optional[str] = None
+    api_key: Optional[str] = None
+
+
+@router.get("/llm-config")
+async def get_llm_config(request: Request):
+    """Get current LLM configuration."""
+    from app.config import settings
+    db = request.app.state.db
+
+    # Get stored config from database
+    config = await db.llm_config.find_one({"_id": "default"})
+
+    # Get the currently active model (from DB or fallback to env)
+    current_model = config.get("model") if config else None
+    if not current_model:
+        current_model = settings.anthropic_model
+
+    # Check if custom API key is set
+    has_custom_api_key = bool(config and config.get("api_key"))
+
+    # Check if env API key is set
+    has_env_api_key = bool(settings.anthropic_api_key)
+
+    return {
+        "model": current_model,
+        "has_custom_api_key": has_custom_api_key,
+        "has_env_api_key": has_env_api_key,
+        "api_key_source": "custom" if has_custom_api_key else ("environment" if has_env_api_key else "none"),
+        "available_models": AVAILABLE_MODELS,
+    }
+
+
+@router.put("/llm-config")
+async def update_llm_config(request: Request, config_update: LLMConfigUpdate):
+    """Update LLM configuration (model and/or API key)."""
+    from app.services.firebase_auth import firebase_auth
+    from fastapi import Depends
+
+    db = request.app.state.db
+
+    # Get existing config
+    existing = await db.llm_config.find_one({"_id": "default"})
+    if not existing:
+        existing = {"_id": "default"}
+
+    # Update fields
+    update_doc = {"updated_at": datetime.utcnow()}
+
+    if config_update.model is not None:
+        # Validate model is in allowed list
+        valid_model_ids = [m["id"] for m in AVAILABLE_MODELS]
+        if config_update.model not in valid_model_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid model. Must be one of: {', '.join(valid_model_ids)}"
+            )
+        update_doc["model"] = config_update.model
+
+    if config_update.api_key is not None:
+        if config_update.api_key == "":
+            # Empty string means clear the custom API key
+            update_doc["api_key"] = None
+        else:
+            # Validate API key format
+            if not config_update.api_key.startswith("sk-ant-"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid API key format. Anthropic API keys start with 'sk-ant-'"
+                )
+            update_doc["api_key"] = config_update.api_key
+
+    await db.llm_config.update_one(
+        {"_id": "default"},
+        {"$set": update_doc},
+        upsert=True
+    )
+
+    # Return updated config
+    return await get_llm_config(request)
+
+
+@router.delete("/llm-config/api-key")
+async def clear_custom_api_key(request: Request):
+    """Clear the custom API key and revert to environment variable."""
+    db = request.app.state.db
+
+    await db.llm_config.update_one(
+        {"_id": "default"},
+        {"$set": {"api_key": None, "updated_at": datetime.utcnow()}},
+        upsert=True
+    )
+
+    return {"message": "Custom API key cleared. Using environment variable."}
+
+
 # ==================== Email Watcher Endpoints ====================
 
 @router.get("/email-watcher/status")
