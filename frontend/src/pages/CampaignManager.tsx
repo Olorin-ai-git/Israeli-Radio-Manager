@@ -180,8 +180,12 @@ export default function CampaignManager() {
   const [repeatStartSlot, setRepeatStartSlot] = useState<number>(0) // "Between" time (slot index 0-47)
   const [repeatEndSlot, setRepeatEndSlot] = useState<number>(47) // "Until" time (slot index 0-47)
   const [selectedSlotKeys, setSelectedSlotKeys] = useState<Set<string>>(new Set()) // Selected slot keys for deletion
-  const [useCommercialJingle, setUseCommercialJingle] = useState(true) // Add jingle before/after commercials
-  const [selectedJingleId, setSelectedJingleId] = useState<string>('') // Selected jingle ID
+  // Opening jingle settings
+  const [useOpeningJingle, setUseOpeningJingle] = useState(true)
+  const [openingJingleId, setOpeningJingleId] = useState<string>('')
+  // Closing jingle settings
+  const [useClosingJingle, setUseClosingJingle] = useState(true)
+  const [closingJingleId, setClosingJingleId] = useState<string>('')
   const [isJingleSettingsDirty, setIsJingleSettingsDirty] = useState(false) // Track if jingle settings changed
 
   // Audio preview state
@@ -231,30 +235,44 @@ export default function CampaignManager() {
   // Initialize jingle settings from saved settings
   useEffect(() => {
     if (jingleSettings) {
-      setUseCommercialJingle(jingleSettings.use_jingle ?? true)
-      if (jingleSettings.jingle_id) {
-        setSelectedJingleId(jingleSettings.jingle_id)
+      setUseOpeningJingle(jingleSettings.use_opening_jingle ?? true)
+      setUseClosingJingle(jingleSettings.use_closing_jingle ?? true)
+      if (jingleSettings.opening_jingle_id) {
+        setOpeningJingleId(jingleSettings.opening_jingle_id)
+      }
+      if (jingleSettings.closing_jingle_id) {
+        setClosingJingleId(jingleSettings.closing_jingle_id)
       }
     }
   }, [jingleSettings])
 
-  // Set default jingle when jingles are loaded (if no saved setting)
+  // Set default jingles when jingles are loaded (if no saved setting)
   useEffect(() => {
-    if (jingles.length > 0 && !selectedJingleId && !jingleSettings?.jingle_id) {
-      setSelectedJingleId(jingles[0]._id)
+    if (jingles.length > 0) {
+      if (!openingJingleId && !jingleSettings?.opening_jingle_id) {
+        setOpeningJingleId(jingles[0]._id)
+      }
+      if (!closingJingleId && !jingleSettings?.closing_jingle_id) {
+        setClosingJingleId(jingles[0]._id)
+      }
     }
-  }, [jingles, selectedJingleId, jingleSettings])
+  }, [jingles, openingJingleId, closingJingleId, jingleSettings])
 
   // Save jingle settings (called when saving all changes)
   const saveJingleSettings = useCallback(async () => {
     if (!isJingleSettingsDirty) return
     try {
-      await api.saveJingleSettings(useCommercialJingle, selectedJingleId)
+      await api.saveJingleSettings(
+        useOpeningJingle,
+        openingJingleId,
+        useClosingJingle,
+        closingJingleId
+      )
       setIsJingleSettingsDirty(false)
     } catch (error) {
       console.error('Failed to save jingle settings:', error)
     }
-  }, [isJingleSettingsDirty, useCommercialJingle, selectedJingleId])
+  }, [isJingleSettingsDirty, useOpeningJingle, openingJingleId, useClosingJingle, closingJingleId])
 
   // Fetch campaigns on mount
   useEffect(() => {
@@ -567,8 +585,10 @@ export default function CampaignManager() {
       const result = await api.runSlotNow(
         slotDate,
         slotIndex,
-        useCommercialJingle,
-        useCommercialJingle ? selectedJingleId : undefined
+        useOpeningJingle,
+        useOpeningJingle ? openingJingleId : undefined,
+        useClosingJingle,
+        useClosingJingle ? closingJingleId : undefined
       )
       if (result.success) {
         if (result.queued > 0) {
@@ -996,7 +1016,7 @@ export default function CampaignManager() {
   )
 
   return (
-    <div className="h-full flex flex-col" ref={containerRef}>
+    <div className="h-full flex flex-col overflow-hidden" ref={containerRef}>
       {/* Header */}
       <div className="flex items-center justify-between p-6 border-b border-white/10">
         <div className="flex items-center gap-3">
@@ -1414,73 +1434,131 @@ export default function CampaignManager() {
                       </button>
                     )}
                   </div>
-                  <button
-                    onClick={() => {
-                      setIsRightPanelOpen(false)
-                      setFilterSlotIndex(null)
-                    }}
-                    className="p-1 hover:bg-white/10 rounded"
-                  >
-                    <X size={14} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {isJingleSettingsDirty && (
+                      <button
+                        onClick={handleSaveAll}
+                        className="px-3 py-1 text-xs rounded-lg bg-primary-500 text-white hover:bg-primary-600 transition-colors flex items-center gap-1"
+                      >
+                        <Save size={12} />
+                        {isRTL ? 'שמור' : 'Save'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setIsRightPanelOpen(false)
+                        setFilterSlotIndex(null)
+                      }}
+                      className="p-1 hover:bg-white/10 rounded"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex-1 overflow-auto p-4">
                   {/* Commercial Jingle Settings */}
                   <div className="mb-4 pb-4 border-b border-white/10">
-                    <div className="flex items-start gap-2 mb-2">
-                      <button
-                        onClick={() => {
-                          setUseCommercialJingle(!useCommercialJingle)
-                          setIsJingleSettingsDirty(true)
-                        }}
-                        className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
-                          useCommercialJingle
-                            ? 'bg-primary-500 border-primary-500'
-                            : 'border-dark-500 hover:border-primary-500/50'
-                        }`}
-                      >
-                        {useCommercialJingle && (
-                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </button>
-                      <div className="flex-1">
-                        <span className="text-xs text-dark-200">
-                          {isRTL ? 'הוסף ג׳ינגל לפני ואחרי משבצת פרסומות' : 'Add jingle before & after commercial slot'}
-                        </span>
-                        {isJingleSettingsDirty && (
-                          <span className="text-yellow-400 ml-1">*</span>
-                        )}
-                      </div>
-                    </div>
+                    <h4 className="text-xs text-dark-400 mb-3">
+                      {isRTL ? 'הגדרות ג׳ינגל פרסומות' : 'Commercial Jingle Settings'}
+                      {isJingleSettingsDirty && <span className="text-yellow-400 ml-1">*</span>}
+                    </h4>
 
-                    {useCommercialJingle && (
-                      <div className="ml-6">
-                        <label className="text-xs text-dark-400 block mb-1">
-                          {isRTL ? 'בחר ג׳ינגל' : 'Select Jingle'}
-                        </label>
-                        <select
-                          value={selectedJingleId}
-                          onChange={(e) => {
-                            setSelectedJingleId(e.target.value)
+                    {/* Opening Jingle */}
+                    <div className="mb-3">
+                      <div className="flex items-start gap-2 mb-1">
+                        <button
+                          onClick={() => {
+                            setUseOpeningJingle(!useOpeningJingle)
                             setIsJingleSettingsDirty(true)
                           }}
-                          className="w-full px-2 py-1.5 text-xs rounded-lg bg-dark-700/50 text-dark-200 border border-dark-600/50 focus:outline-none focus:border-primary-500/50"
+                          className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
+                            useOpeningJingle
+                              ? 'bg-primary-500 border-primary-500'
+                              : 'border-dark-500 hover:border-primary-500/50'
+                          }`}
                         >
-                          {jingles.length === 0 ? (
-                            <option value="">{isRTL ? 'אין ג׳ינגלים זמינים' : 'No jingles available'}</option>
-                          ) : (
-                            jingles.map((jingle: any) => (
-                              <option key={jingle._id} value={jingle._id}>
-                                {jingle.title}
-                              </option>
-                            ))
+                          {useOpeningJingle && (
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
                           )}
-                        </select>
+                        </button>
+                        <span className="text-xs text-dark-200">
+                          {isRTL ? 'ג׳ינגל פתיחה (לפני פרסומות)' : 'Opening jingle (before commercials)'}
+                        </span>
                       </div>
-                    )}
+                      {useOpeningJingle && (
+                        <div className="ml-6">
+                          <select
+                            value={openingJingleId}
+                            onChange={(e) => {
+                              setOpeningJingleId(e.target.value)
+                              setIsJingleSettingsDirty(true)
+                            }}
+                            className="w-full px-2 py-1.5 text-xs rounded-lg bg-dark-700/50 text-dark-200 border border-dark-600/50 focus:outline-none focus:border-primary-500/50"
+                          >
+                            {jingles.length === 0 ? (
+                              <option value="">{isRTL ? 'אין ג׳ינגלים זמינים' : 'No jingles available'}</option>
+                            ) : (
+                              jingles.map((jingle: any) => (
+                                <option key={jingle._id} value={jingle._id}>
+                                  {jingle.title}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Closing Jingle */}
+                    <div>
+                      <div className="flex items-start gap-2 mb-1">
+                        <button
+                          onClick={() => {
+                            setUseClosingJingle(!useClosingJingle)
+                            setIsJingleSettingsDirty(true)
+                          }}
+                          className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
+                            useClosingJingle
+                              ? 'bg-primary-500 border-primary-500'
+                              : 'border-dark-500 hover:border-primary-500/50'
+                          }`}
+                        >
+                          {useClosingJingle && (
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </button>
+                        <span className="text-xs text-dark-200">
+                          {isRTL ? 'ג׳ינגל סיום (אחרי פרסומות)' : 'Closing jingle (after commercials)'}
+                        </span>
+                      </div>
+                      {useClosingJingle && (
+                        <div className="ml-6">
+                          <select
+                            value={closingJingleId}
+                            onChange={(e) => {
+                              setClosingJingleId(e.target.value)
+                              setIsJingleSettingsDirty(true)
+                            }}
+                            className="w-full px-2 py-1.5 text-xs rounded-lg bg-dark-700/50 text-dark-200 border border-dark-600/50 focus:outline-none focus:border-primary-500/50"
+                          >
+                            {jingles.length === 0 ? (
+                              <option value="">{isRTL ? 'אין ג׳ינגלים זמינים' : 'No jingles available'}</option>
+                            ) : (
+                              jingles.map((jingle: any) => (
+                                <option key={jingle._id} value={jingle._id}>
+                                  {jingle.title}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {selectedCampaign ? (
@@ -1558,7 +1636,7 @@ export default function CampaignManager() {
                         )}
 
                         {scheduledSlots.length > 0 ? (
-                          <div className="space-y-1 max-h-48 overflow-y-auto">
+                          <div className="space-y-1">
                             {scheduledSlots.map((slot, idx) => {
                               const slotKey = getSlotKey(slot.slotDate, slot.slotIndex)
                               const isFuture = futureSlots.some(

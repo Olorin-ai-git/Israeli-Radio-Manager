@@ -643,18 +643,20 @@ async def run_slot_now(
     request: Request,
     slot_date: str = Query(..., description="Date in YYYY-MM-DD format"),
     slot_index: int = Query(..., ge=0, le=47, description="Slot index 0-47"),
-    use_jingle: bool = Query(False, description="Add jingle before and after commercials"),
-    jingle_id: Optional[str] = Query(None, description="Jingle content ID to use"),
+    use_opening_jingle: bool = Query(False, description="Add opening jingle before commercials"),
+    opening_jingle_id: Optional[str] = Query(None, description="Opening jingle content ID"),
+    use_closing_jingle: bool = Query(False, description="Add closing jingle after commercials"),
+    closing_jingle_id: Optional[str] = Query(None, description="Closing jingle content ID"),
 ):
     """
     Manually trigger a time slot to run now, regardless of current time.
     Admin-only endpoint for testing campaign playback.
 
     This will:
-    1. Optionally add a jingle at the start
+    1. Optionally add an opening jingle at the start
     2. Get all commercials scheduled for the specified slot
     3. Insert them at the front of the playback queue
-    4. Optionally add a jingle at the end
+    4. Optionally add a closing jingle at the end
     5. Record the plays in the logs
     """
     from app.services.commercial_scheduler import get_scheduler
@@ -664,15 +666,25 @@ async def run_slot_now(
     db = request.app.state.db
     scheduler = get_scheduler(db)
 
-    # Fetch jingle content if use_jingle is True
-    jingle_content = None
-    if use_jingle and jingle_id:
+    # Fetch opening jingle content if enabled
+    opening_jingle_content = None
+    if use_opening_jingle and opening_jingle_id:
         try:
-            jingle_content = await db.content.find_one({"_id": ObjectId(jingle_id)})
-            if jingle_content:
-                jingle_content["_id"] = str(jingle_content["_id"])
+            opening_jingle_content = await db.content.find_one({"_id": ObjectId(opening_jingle_id)})
+            if opening_jingle_content:
+                opening_jingle_content["_id"] = str(opening_jingle_content["_id"])
         except Exception as e:
-            logger.warning(f"Failed to fetch jingle {jingle_id}: {e}")
+            logger.warning(f"Failed to fetch opening jingle {opening_jingle_id}: {e}")
+
+    # Fetch closing jingle content if enabled
+    closing_jingle_content = None
+    if use_closing_jingle and closing_jingle_id:
+        try:
+            closing_jingle_content = await db.content.find_one({"_id": ObjectId(closing_jingle_id)})
+            if closing_jingle_content:
+                closing_jingle_content["_id"] = str(closing_jingle_content["_id"])
+        except Exception as e:
+            logger.warning(f"Failed to fetch closing jingle {closing_jingle_id}: {e}")
 
     # Create a fake datetime for the target slot
     target_date = date.fromisoformat(slot_date)
@@ -698,15 +710,15 @@ async def run_slot_now(
     queue_items = []
 
     # Add opening jingle if enabled
-    if jingle_content:
+    if opening_jingle_content:
         queue_items.append({
-            "_id": jingle_content["_id"],
-            "title": jingle_content.get("title", "Jingle"),
-            "artist": jingle_content.get("artist"),
+            "_id": opening_jingle_content["_id"],
+            "title": opening_jingle_content.get("title", "Jingle"),
+            "artist": opening_jingle_content.get("artist"),
             "type": "jingle",
-            "duration_seconds": jingle_content.get("duration_seconds", 5),
-            "genre": jingle_content.get("genre"),
-            "metadata": jingle_content.get("metadata", {}),
+            "duration_seconds": opening_jingle_content.get("duration_seconds", 5),
+            "genre": opening_jingle_content.get("genre"),
+            "metadata": opening_jingle_content.get("metadata", {}),
             "commercial_jingle": True,
             "jingle_position": "opening"
         })
@@ -730,15 +742,15 @@ async def run_slot_now(
         })
 
     # Add closing jingle if enabled
-    if jingle_content:
+    if closing_jingle_content:
         queue_items.append({
-            "_id": jingle_content["_id"],
-            "title": jingle_content.get("title", "Jingle"),
-            "artist": jingle_content.get("artist"),
+            "_id": closing_jingle_content["_id"],
+            "title": closing_jingle_content.get("title", "Jingle"),
+            "artist": closing_jingle_content.get("artist"),
             "type": "jingle",
-            "duration_seconds": jingle_content.get("duration_seconds", 5),
-            "genre": jingle_content.get("genre"),
-            "metadata": jingle_content.get("metadata", {}),
+            "duration_seconds": closing_jingle_content.get("duration_seconds", 5),
+            "genre": closing_jingle_content.get("genre"),
+            "metadata": closing_jingle_content.get("metadata", {}),
             "commercial_jingle": True,
             "jingle_position": "closing"
         })
@@ -763,7 +775,12 @@ async def run_slot_now(
     await broadcast_queue_update(get_queue())
 
     queued_count = len(queue_items)
-    jingle_info = " (with jingle)" if jingle_content else ""
+    jingle_parts = []
+    if opening_jingle_content:
+        jingle_parts.append("opening jingle")
+    if closing_jingle_content:
+        jingle_parts.append("closing jingle")
+    jingle_info = f" (with {' and '.join(jingle_parts)})" if jingle_parts else ""
 
     return {
         "success": True,
@@ -773,7 +790,8 @@ async def run_slot_now(
             {"campaign": c.get("campaign_name"), "title": c.get("content", {}).get("title")}
             for c in commercials
         ],
-        "jingle_used": jingle_content.get("title") if jingle_content else None
+        "opening_jingle_used": opening_jingle_content.get("title") if opening_jingle_content else None,
+        "closing_jingle_used": closing_jingle_content.get("title") if closing_jingle_content else None
     }
 
 
@@ -794,8 +812,10 @@ async def get_jingle_settings(request: Request):
 @router.put("/settings/jingle", response_model=dict)
 async def save_jingle_settings(
     request: Request,
-    use_jingle: bool = Query(..., description="Whether to use jingle before/after commercials"),
-    jingle_id: Optional[str] = Query(None, description="Jingle content ID"),
+    use_opening_jingle: bool = Query(..., description="Whether to use opening jingle before commercials"),
+    opening_jingle_id: Optional[str] = Query(None, description="Opening jingle content ID"),
+    use_closing_jingle: bool = Query(..., description="Whether to use closing jingle after commercials"),
+    closing_jingle_id: Optional[str] = Query(None, description="Closing jingle content ID"),
 ):
     """
     Save the global jingle settings for commercial playback.
@@ -806,10 +826,17 @@ async def save_jingle_settings(
     db = request.app.state.db
     scheduler = get_scheduler(db)
 
-    await scheduler.save_jingle_settings(use_jingle, jingle_id)
+    await scheduler.save_jingle_settings(
+        use_opening_jingle=use_opening_jingle,
+        opening_jingle_id=opening_jingle_id,
+        use_closing_jingle=use_closing_jingle,
+        closing_jingle_id=closing_jingle_id
+    )
 
     return {
         "success": True,
-        "use_jingle": use_jingle,
-        "jingle_id": jingle_id
+        "use_opening_jingle": use_opening_jingle,
+        "opening_jingle_id": opening_jingle_id,
+        "use_closing_jingle": use_closing_jingle,
+        "closing_jingle_id": closing_jingle_id
     }

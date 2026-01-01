@@ -422,11 +422,18 @@ class FlowMonitorService:
 
             # Get jingle settings
             jingle_settings = await scheduler.get_jingle_settings()
-            jingle_content = None
-            if jingle_settings.get("use_jingle") and jingle_settings.get("jingle_id"):
-                jingle_content = await scheduler.get_jingle_content(jingle_settings["jingle_id"])
-                if jingle_content:
-                    logger.info(f"Using commercial jingle: {jingle_content.get('title')}")
+            opening_jingle = None
+            closing_jingle = None
+
+            if jingle_settings.get("use_opening_jingle") and jingle_settings.get("opening_jingle_id"):
+                opening_jingle = await scheduler.get_jingle_content(jingle_settings["opening_jingle_id"])
+                if opening_jingle:
+                    logger.info(f"Using opening jingle: {opening_jingle.get('title')}")
+
+            if jingle_settings.get("use_closing_jingle") and jingle_settings.get("closing_jingle_id"):
+                closing_jingle = await scheduler.get_jingle_content(jingle_settings["closing_jingle_id"])
+                if closing_jingle:
+                    logger.info(f"Using closing jingle: {closing_jingle.get('title')}")
 
             # Build queue items
             queue_items = []
@@ -448,8 +455,8 @@ class FlowMonitorService:
                 })
 
             # Wrap with jingles if enabled
-            if jingle_content:
-                queue_items = scheduler.wrap_with_jingle(queue_items, jingle_content)
+            if opening_jingle or closing_jingle:
+                queue_items = scheduler.wrap_with_jingles(queue_items, opening_jingle, closing_jingle)
 
             # Insert all items at front of queue
             for idx, queue_item in enumerate(queue_items):

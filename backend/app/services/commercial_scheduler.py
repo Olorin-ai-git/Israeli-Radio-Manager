@@ -444,30 +444,53 @@ class CommercialSchedulerService:
         Get the global jingle settings for commercial playback.
 
         Returns:
-            Dict with use_jingle and jingle_id settings
+            Dict with opening and closing jingle settings
         """
         settings = await self.db.settings.find_one({"type": "commercial_jingle"})
         if not settings:
-            return {"use_jingle": False, "jingle_id": None}
+            return {
+                "use_opening_jingle": False,
+                "opening_jingle_id": None,
+                "use_closing_jingle": False,
+                "closing_jingle_id": None,
+                # Legacy support
+                "use_jingle": False,
+                "jingle_id": None,
+            }
         return {
+            "use_opening_jingle": settings.get("use_opening_jingle", settings.get("use_jingle", False)),
+            "opening_jingle_id": settings.get("opening_jingle_id", settings.get("jingle_id")),
+            "use_closing_jingle": settings.get("use_closing_jingle", settings.get("use_jingle", False)),
+            "closing_jingle_id": settings.get("closing_jingle_id", settings.get("jingle_id")),
+            # Legacy support
             "use_jingle": settings.get("use_jingle", False),
             "jingle_id": settings.get("jingle_id"),
         }
 
-    async def save_jingle_settings(self, use_jingle: bool, jingle_id: Optional[str]) -> None:
+    async def save_jingle_settings(
+        self,
+        use_opening_jingle: bool,
+        opening_jingle_id: Optional[str],
+        use_closing_jingle: bool,
+        closing_jingle_id: Optional[str]
+    ) -> None:
         """
         Save the global jingle settings for commercial playback.
 
         Args:
-            use_jingle: Whether to add jingle before/after commercials
-            jingle_id: ID of the jingle to use
+            use_opening_jingle: Whether to add jingle before commercials
+            opening_jingle_id: ID of the opening jingle
+            use_closing_jingle: Whether to add jingle after commercials
+            closing_jingle_id: ID of the closing jingle
         """
         await self.db.settings.update_one(
             {"type": "commercial_jingle"},
             {"$set": {
                 "type": "commercial_jingle",
-                "use_jingle": use_jingle,
-                "jingle_id": jingle_id,
+                "use_opening_jingle": use_opening_jingle,
+                "opening_jingle_id": opening_jingle_id,
+                "use_closing_jingle": use_closing_jingle,
+                "closing_jingle_id": closing_jingle_id,
                 "updated_at": datetime.utcnow(),
             }},
             upsert=True
@@ -492,40 +515,60 @@ class CommercialSchedulerService:
             logger.warning(f"Failed to fetch jingle {jingle_id}: {e}")
         return None
 
-    def wrap_with_jingle(
+    def wrap_with_jingles(
         self,
         commercials: List[Dict[str, Any]],
-        jingle_content: Dict[str, Any]
+        opening_jingle: Optional[Dict[str, Any]] = None,
+        closing_jingle: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """
-        Wrap a list of commercial queue items with opening and closing jingles.
+        Wrap a list of commercial queue items with optional opening and closing jingles.
 
         Args:
             commercials: List of commercial queue items
-            jingle_content: Jingle content to add before and after
+            opening_jingle: Jingle content to add before commercials (optional)
+            closing_jingle: Jingle content to add after commercials (optional)
 
         Returns:
-            List with jingle at start and end
+            List with optional jingles at start and end
         """
-        if not jingle_content or not commercials:
+        if not commercials:
             return commercials
 
-        jingle_item = {
-            "_id": jingle_content["_id"],
-            "title": jingle_content.get("title", "Jingle"),
-            "artist": jingle_content.get("artist"),
-            "type": "jingle",
-            "duration_seconds": jingle_content.get("duration_seconds", 5),
-            "genre": jingle_content.get("genre"),
-            "metadata": jingle_content.get("metadata", {}),
-            "commercial_jingle": True,
-        }
+        result = []
 
-        return [
-            {**jingle_item, "jingle_position": "opening"},
-            *commercials,
-            {**jingle_item, "jingle_position": "closing"},
-        ]
+        # Add opening jingle if provided
+        if opening_jingle:
+            result.append({
+                "_id": opening_jingle["_id"],
+                "title": opening_jingle.get("title", "Jingle"),
+                "artist": opening_jingle.get("artist"),
+                "type": "jingle",
+                "duration_seconds": opening_jingle.get("duration_seconds", 5),
+                "genre": opening_jingle.get("genre"),
+                "metadata": opening_jingle.get("metadata", {}),
+                "commercial_jingle": True,
+                "jingle_position": "opening",
+            })
+
+        # Add commercials
+        result.extend(commercials)
+
+        # Add closing jingle if provided
+        if closing_jingle:
+            result.append({
+                "_id": closing_jingle["_id"],
+                "title": closing_jingle.get("title", "Jingle"),
+                "artist": closing_jingle.get("artist"),
+                "type": "jingle",
+                "duration_seconds": closing_jingle.get("duration_seconds", 5),
+                "genre": closing_jingle.get("genre"),
+                "metadata": closing_jingle.get("metadata", {}),
+                "commercial_jingle": True,
+                "jingle_position": "closing",
+            })
+
+        return result
 
 
 # Singleton instance

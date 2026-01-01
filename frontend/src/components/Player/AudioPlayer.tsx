@@ -130,10 +130,19 @@ function SortableQueueItem({
           ? 'bg-amber-500/20 text-amber-400'
           : item.type === 'show'
             ? 'bg-emerald-500/20 text-emerald-400'
-            : 'bg-primary-500/20 text-primary-400'
+            : item.type === 'jingle'
+              ? 'bg-purple-500/20 text-purple-400'
+              : item.type === 'bumper'
+                ? 'bg-cyan-500/20 text-cyan-400'
+                : item.type === 'sample'
+                  ? 'bg-pink-500/20 text-pink-400'
+                  : 'bg-primary-500/20 text-primary-400'
       }`}>
         {item.type === 'commercial' ? (isRTL ? 'פרסומת' : 'AD') :
          item.type === 'show' ? (isRTL ? 'תוכנית' : 'SHOW') :
+         item.type === 'jingle' ? (isRTL ? "ג'ינגל" : 'JINGLE') :
+         item.type === 'bumper' ? (isRTL ? 'באמפר' : 'BUMPER') :
+         item.type === 'sample' ? (isRTL ? 'סמפל' : 'SAMPLE') :
          (isRTL ? 'שיר' : 'SONG')}
       </span>
       {/* Batch badge for commercials */}
@@ -171,6 +180,11 @@ function SortableQueueItem({
 // Crossfade duration constants
 const CROSSFADE_DURATION = 1000 // 1 second crossfade (both tracks overlap)
 const CROSSFADE_START_BEFORE_END = 4 // Start crossfade 4 seconds before track ends
+
+// Helper to check if a track type should use crossfade (only songs)
+const shouldUseCrossfade = (trackType?: string): boolean => {
+  return trackType === 'song'
+}
 
 export default function AudioPlayer({
   track,
@@ -492,14 +506,22 @@ export default function AudioPlayer({
   }
 
   // Simple fade in for first track or after errors
+  // Only fades for songs - other types start at full volume immediately
   const fadeInActive = () => {
     const activeAudio = getActiveAudio()
     if (!activeAudio) return
 
     cancelCrossfade()
-    setIsCrossfading(true)
-
     const targetVolume = isMuted ? 0 : volume / 100
+
+    // For non-songs (commercials, jingles, bumpers, etc.), set volume immediately
+    if (!shouldUseCrossfade(track?.type)) {
+      activeAudio.volume = targetVolume
+      return
+    }
+
+    // For songs, fade in
+    setIsCrossfading(true)
     activeAudio.volume = 0
     let startTime: number | null = null
 
@@ -795,13 +817,15 @@ export default function AudioPlayer({
       }
 
       // Start crossfade when approaching end of track (if there's a next track in queue)
+      // Only use crossfade for songs - other types (commercials, jingles, bumpers, etc.) play without fade
       if (total && total > CROSSFADE_START_BEFORE_END + 1 && queueRef.current.length > 0) {
         const timeRemaining = total - current
         if (timeRemaining <= CROSSFADE_START_BEFORE_END && !isCrossfadingRef.current && !crossfadeTriggeredRef.current && isPlaying) {
-          console.log('[TimeUpdate] Triggering crossfade, time remaining:', timeRemaining)
-          crossfadeTriggeredRef.current = true
           const nextTrack = queueRef.current[0]
-          if (nextTrack) {
+          // Only crossfade if both current track and next track are songs
+          if (nextTrack && shouldUseCrossfade(track?.type) && shouldUseCrossfade(nextTrack.type)) {
+            console.log('[TimeUpdate] Triggering crossfade, time remaining:', timeRemaining)
+            crossfadeTriggeredRef.current = true
             // Start true crossfade - both tracks play simultaneously
             startCrossfade(nextTrack._id, () => {
               // After crossfade completes, update the track state
@@ -844,9 +868,10 @@ export default function AudioPlayer({
 
     const nextTrack = queueRef.current[0]
 
-    // If there's a next track in queue, do a quick crossfade
-    if (nextTrack) {
-      console.log('[Skip] Starting crossfade to next track')
+    // Only use crossfade if both current and next tracks are songs
+    // For other types (commercials, jingles, bumpers, etc.) skip immediately
+    if (nextTrack && shouldUseCrossfade(track?.type) && shouldUseCrossfade(nextTrack.type)) {
+      console.log('[Skip] Starting crossfade to next track (both are songs)')
       crossfadeTriggeredRef.current = true
 
       // Use faster crossfade for skip (500ms)
@@ -1170,7 +1195,13 @@ export default function AudioPlayer({
                   {track?.title || (isRTL ? 'לא מנגן' : 'Not Playing')}
                 </p>
                 <p className="text-sm text-dark-400 truncate" dir="auto">
-                  {track?.artist || (track?.type === 'commercial' ? (isRTL ? 'פרסומת' : 'Commercial') : '')}
+                  {track?.artist || (
+                    track?.type === 'commercial' ? (isRTL ? 'פרסומת' : 'Commercial') :
+                    track?.type === 'jingle' ? (isRTL ? "ג'ינגל" : 'Jingle') :
+                    track?.type === 'bumper' ? (isRTL ? 'באמפר' : 'Bumper') :
+                    track?.type === 'sample' ? (isRTL ? 'סמפל' : 'Sample') :
+                    track?.type === 'show' ? (isRTL ? 'תוכנית' : 'Show') : ''
+                  )}
                 </p>
               </>
             )}
