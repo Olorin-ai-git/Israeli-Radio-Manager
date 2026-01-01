@@ -12,6 +12,7 @@ class FlowActionType(str, Enum):
     PLAY_GENRE = "play_genre"
     PLAY_CONTENT = "play_content"
     PLAY_COMMERCIALS = "play_commercials"
+    PLAY_SCHEDULED_COMMERCIALS = "play_scheduled_commercials"  # Uses campaign scheduler
     PLAY_SHOW = "play_show"
     PLAY_JINGLE = "play_jingle"
     WAIT = "wait"
@@ -36,6 +37,12 @@ class FlowAction(BaseModel):
     # For play_commercials
     commercial_count: Optional[int] = None
     batch_number: Optional[int] = None  # Filter by commercial batch (1, 2, 3, etc.)
+
+    # For play_scheduled_commercials (uses campaign scheduler)
+    max_commercial_duration_seconds: Optional[int] = None  # Cap total duration
+    max_commercial_count: Optional[int] = None  # Cap number of commercials
+    include_campaign_types: Optional[List[str]] = None  # Only include these types
+    exclude_campaign_types: Optional[List[str]] = None  # Exclude these types
 
     # For play_genre - exact number of songs
     song_count: Optional[int] = None

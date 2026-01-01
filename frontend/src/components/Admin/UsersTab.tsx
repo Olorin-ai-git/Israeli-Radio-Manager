@@ -15,9 +15,14 @@ import {
   Pencil,
   X,
   Save,
-  UserPlus
+  UserPlus,
+  Lock
 } from 'lucide-react'
 import api from '../../services/api'
+import { useAuth } from '../../contexts/AuthContext'
+
+// Protected super admin email - cannot be modified or deactivated by other users
+const PROTECTED_ADMIN_EMAIL = 'admin@olorin.ai'
 
 interface UsersTabProps {
   isRTL: boolean
@@ -66,6 +71,7 @@ const roleIcons = {
 
 export default function UsersTab({ isRTL }: UsersTabProps) {
   const queryClient = useQueryClient()
+  const { dbUser: currentUser } = useAuth()
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('')
   const [showInactive, setShowInactive] = useState(false)
@@ -74,6 +80,24 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
   const [editForm, setEditForm] = useState<EditFormData>({ display_name: '', photo_url: '' })
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [createForm, setCreateForm] = useState<CreateFormData>({ email: '', role: 'viewer', display_name: '' })
+
+  // Check if a user is the protected super admin
+  const isProtectedAdmin = (user: User) =>
+    user.email.toLowerCase() === PROTECTED_ADMIN_EMAIL.toLowerCase()
+
+  // Check if current user can edit a target user
+  const canEditUser = (targetUser: User) => {
+    if (!isProtectedAdmin(targetUser)) return true
+    // Only the protected admin can edit themselves
+    return currentUser?.email.toLowerCase() === PROTECTED_ADMIN_EMAIL.toLowerCase()
+  }
+
+  // Check if current user can deactivate a target user
+  const canDeactivateUser = (targetUser: User) => {
+    // No one can deactivate the protected admin
+    if (isProtectedAdmin(targetUser)) return false
+    return true
+  }
 
   // Fetch users
   const { data: usersData, isLoading, error } = useQuery({
@@ -384,7 +408,15 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
                               </span>
                             </div>
                           )}
-                          <span className="font-medium text-dark-100">{user.display_name}</span>
+                          <div className="flex flex-col">
+                            <span className="font-medium text-dark-100">{user.display_name}</span>
+                            {isProtectedAdmin(user) && (
+                              <span className="inline-flex items-center gap-1 text-xs text-amber-400">
+                                <Lock size={10} />
+                                {isRTL ? 'מנהל ראשי' : 'Super Admin'}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
 
@@ -399,19 +431,31 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
                       {/* Role Dropdown */}
                       <td className="px-6 py-4">
                         <div className="relative">
-                          <button
-                            onClick={() => setOpenDropdown(openDropdown === user._id ? null : user._id)}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${roleColors[user.role]} hover:opacity-80 transition-opacity`}
-                          >
-                            <RoleIcon size={14} />
-                            <span className="text-sm font-medium">
-                              {roleLabels[user.role][isRTL ? 'he' : 'en']}
-                            </span>
-                            <ChevronDown size={14} />
-                          </button>
+                          {canEditUser(user) ? (
+                            <button
+                              onClick={() => setOpenDropdown(openDropdown === user._id ? null : user._id)}
+                              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${roleColors[user.role]} hover:opacity-80 transition-opacity`}
+                            >
+                              <RoleIcon size={14} />
+                              <span className="text-sm font-medium">
+                                {roleLabels[user.role][isRTL ? 'he' : 'en']}
+                              </span>
+                              <ChevronDown size={14} />
+                            </button>
+                          ) : (
+                            <div
+                              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${roleColors[user.role]} opacity-60 cursor-not-allowed`}
+                              title={isRTL ? 'לא ניתן לשנות תפקיד מנהל ראשי' : 'Cannot change super admin role'}
+                            >
+                              <Lock size={14} />
+                              <span className="text-sm font-medium">
+                                {roleLabels[user.role][isRTL ? 'he' : 'en']}
+                              </span>
+                            </div>
+                          )}
 
                           {/* Dropdown Menu */}
-                          {openDropdown === user._id && (
+                          {openDropdown === user._id && canEditUser(user) && (
                             <div className="absolute z-10 mt-1 w-36 bg-dark-800 border border-dark-600 rounded-lg shadow-lg overflow-hidden">
                               {(['admin', 'editor', 'viewer'] as const).map((role) => {
                                 const Icon = roleIcons[role]
@@ -465,23 +509,40 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
                         <div className="flex items-center gap-2">
                           {/* Edit Button */}
                           <button
-                            onClick={() => openEditModal(user)}
-                            className="flex items-center gap-2 px-3 py-1.5 text-sm text-primary-400 hover:bg-primary-500/10 rounded-lg transition-colors"
-                            title={isRTL ? 'ערוך משתמש' : 'Edit User'}
+                            onClick={() => canEditUser(user) && openEditModal(user)}
+                            disabled={!canEditUser(user)}
+                            className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                              canEditUser(user)
+                                ? 'text-primary-400 hover:bg-primary-500/10'
+                                : 'text-dark-500 cursor-not-allowed'
+                            }`}
+                            title={
+                              canEditUser(user)
+                                ? (isRTL ? 'ערוך משתמש' : 'Edit User')
+                                : (isRTL ? 'לא ניתן לערוך מנהל ראשי' : 'Cannot edit super admin')
+                            }
                           >
-                            <Pencil size={16} />
+                            {canEditUser(user) ? <Pencil size={16} /> : <Lock size={16} />}
                             <span>{isRTL ? 'ערוך' : 'Edit'}</span>
                           </button>
 
                           {/* Deactivate/Reactivate Button */}
                           {user.is_active ? (
                             <button
-                              onClick={() => deactivateMutation.mutate(user.firebase_uid)}
-                              disabled={deactivateMutation.isPending}
-                              className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                              title={isRTL ? 'השבת משתמש' : 'Deactivate User'}
+                              onClick={() => canDeactivateUser(user) && deactivateMutation.mutate(user.firebase_uid)}
+                              disabled={deactivateMutation.isPending || !canDeactivateUser(user)}
+                              className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                                canDeactivateUser(user)
+                                  ? 'text-red-400 hover:bg-red-500/10'
+                                  : 'text-dark-500 cursor-not-allowed'
+                              }`}
+                              title={
+                                canDeactivateUser(user)
+                                  ? (isRTL ? 'השבת משתמש' : 'Deactivate User')
+                                  : (isRTL ? 'לא ניתן להשבית מנהל ראשי' : 'Cannot deactivate super admin')
+                              }
                             >
-                              <UserX size={16} />
+                              {canDeactivateUser(user) ? <UserX size={16} /> : <Lock size={16} />}
                               <span>{isRTL ? 'השבת' : 'Deactivate'}</span>
                             </button>
                           ) : (

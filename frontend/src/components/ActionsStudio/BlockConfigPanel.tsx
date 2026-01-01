@@ -15,6 +15,7 @@ import {
   AudioLines,
   VolumeX,
   Timer,
+  CalendarClock,
 } from 'lucide-react'
 import { StudioAction, FlowActionType, useActionsStudioStore } from '../../store/actionsStudioStore'
 import { api } from '../../services/api'
@@ -30,6 +31,7 @@ const ACTION_ICONS: Record<FlowActionType, LucideIcon> = {
   play_genre: Music,
   play_content: FileAudio,
   play_commercials: Megaphone,
+  play_scheduled_commercials: CalendarClock,
   play_show: RadioIcon,
   play_jingle: AudioLines,
   wait: Clock,
@@ -78,6 +80,11 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
   const [contentSearch, setContentSearch] = useState('')
   const [selectedContentId, setSelectedContentId] = useState(action.content_id || '')
   const [selectedContentTitle, setSelectedContentTitle] = useState(action.content_title || '')
+  // For play_scheduled_commercials
+  const [maxCommercialDuration, setMaxCommercialDuration] = useState(action.max_commercial_duration_seconds || 0)
+  const [maxCommercialCount, setMaxCommercialCount] = useState(action.max_commercial_count || 0)
+  const [includeCampaignTypes, setIncludeCampaignTypes] = useState(action.include_campaign_types?.join(', ') || '')
+  const [excludeCampaignTypes, setExcludeCampaignTypes] = useState(action.exclude_campaign_types?.join(', ') || '')
 
   // Fetch content for content/show picker
   const { data: contentItems } = useQuery({
@@ -150,6 +157,16 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
       case 'play_jingle':
         updates.content_id = selectedContentId || undefined
         updates.content_title = selectedContentTitle || undefined
+        break
+      case 'play_scheduled_commercials':
+        updates.max_commercial_duration_seconds = maxCommercialDuration > 0 ? maxCommercialDuration : undefined
+        updates.max_commercial_count = maxCommercialCount > 0 ? maxCommercialCount : undefined
+        updates.include_campaign_types = includeCampaignTypes.trim()
+          ? includeCampaignTypes.split(',').map(s => s.trim()).filter(Boolean)
+          : undefined
+        updates.exclude_campaign_types = excludeCampaignTypes.trim()
+          ? excludeCampaignTypes.split(',').map(s => s.trim()).filter(Boolean)
+          : undefined
         break
     }
 
@@ -362,6 +379,53 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
               rows={4}
               showCount
             />
+          )}
+
+          {/* Play Scheduled Commercials Config */}
+          {action.action_type === 'play_scheduled_commercials' && (
+            <>
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                <p className="text-sm text-amber-400">
+                  {isRTL
+                    ? 'פעולה זו מנגנת פרסומות מקמפיינים פעילים לפי לוח הזמנים שהוגדר במנהל הקמפיינים.'
+                    : 'This action plays commercials from active campaigns based on the schedule defined in Campaign Manager.'}
+                </p>
+              </div>
+
+              <Input
+                type="number"
+                label={isRTL ? 'מקסימום משך (שניות)' : 'Max Duration (seconds)'}
+                value={maxCommercialDuration.toString()}
+                onChange={(e) => setMaxCommercialDuration(parseInt(e.target.value) || 0)}
+                placeholder={isRTL ? '0 = ללא הגבלה' : '0 = no limit'}
+                min={0}
+                max={600}
+              />
+
+              <Input
+                type="number"
+                label={isRTL ? 'מקסימום פרסומות' : 'Max Commercials'}
+                value={maxCommercialCount.toString()}
+                onChange={(e) => setMaxCommercialCount(parseInt(e.target.value) || 0)}
+                placeholder={isRTL ? '0 = ללא הגבלה' : '0 = no limit'}
+                min={0}
+                max={20}
+              />
+
+              <Input
+                label={isRTL ? 'כלול סוגי קמפיין (מופרדים בפסיק)' : 'Include Campaign Types (comma-separated)'}
+                value={includeCampaignTypes}
+                onChange={(e) => setIncludeCampaignTypes(e.target.value)}
+                placeholder={isRTL ? 'למשל: ספונסר, חג' : 'e.g., sponsor, holiday'}
+              />
+
+              <Input
+                label={isRTL ? 'החרג סוגי קמפיין (מופרדים בפסיק)' : 'Exclude Campaign Types (comma-separated)'}
+                value={excludeCampaignTypes}
+                onChange={(e) => setExcludeCampaignTypes(e.target.value)}
+                placeholder={isRTL ? 'למשל: בדיקה' : 'e.g., test'}
+              />
+            </>
           )}
 
           {/* Play Jingle Config */}

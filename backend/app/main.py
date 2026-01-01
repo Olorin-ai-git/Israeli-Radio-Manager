@@ -9,7 +9,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 
 from app.config import settings
-from app.routers import content, schedule, playback, upload, agent, websocket, calendar, flows, settings as settings_router, admin, users, voices
+from app.routers import content, schedule, playback, upload, agent, websocket, calendar, flows, settings as settings_router, admin, users, voices, campaigns
 from app.services.audio_player import AudioPlayerService
 from app.services.chatterbox import ChatterboxService
 from app.services.notifications import NotificationService
@@ -324,6 +324,14 @@ async def init_database(db):
     await db.voice_presets.create_index("name", unique=True)
     await db.voice_presets.create_index("is_default")
 
+    # Commercial campaigns collection indexes
+    await db.commercial_campaigns.create_index([("status", 1), ("start_date", 1), ("end_date", 1)])
+    await db.commercial_campaigns.create_index("priority")
+
+    # Commercial play logs collection indexes
+    await db.commercial_play_logs.create_index([("campaign_id", 1), ("slot_date", 1), ("slot_index", 1)])
+    await db.commercial_play_logs.create_index("played_at")
+
     logger.info("Database indexes created")
 
 
@@ -363,6 +371,7 @@ app.include_router(settings_router.router, prefix="/api/settings", tags=["Settin
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(voices.router, prefix="/api/voices", tags=["TTS Voices"])
+app.include_router(campaigns.router, prefix="/api/campaigns", tags=["Campaigns"])
 
 
 @app.get("/")

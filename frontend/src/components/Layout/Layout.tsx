@@ -15,7 +15,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Shield,
-  Mic
+  Mic,
+  Megaphone
 } from 'lucide-react'
 import ChatSidebar from '../Agent/ChatSidebar'
 import AudioPlayer from '../Player/AudioPlayer'
@@ -266,6 +267,7 @@ export default function Layout({ children }: LayoutProps) {
   const navItems = [
     { path: '/', icon: LayoutDashboard, label: t('nav.dashboard') },
     { path: '/calendar', icon: CalendarDays, label: isRTL ? 'לוח שידורים' : 'Broadcast Schedule' },
+    { path: '/campaigns', icon: Megaphone, label: isRTL ? 'קמפיינים' : 'Campaigns' },
     { path: '/actions-studio', icon: Blocks, label: isRTL ? 'סטודיו פעולות' : 'Actions Studio' },
     { path: '/library', icon: Library, label: t('nav.library') },
     { path: '/upload', icon: Upload, label: t('nav.upload') },

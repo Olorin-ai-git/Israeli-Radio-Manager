@@ -417,7 +417,7 @@ export default function CalendarPlaylist() {
                 {/* Day Header */}
                 <div className="text-center mb-4 pb-2 border-b border-white/10">
                   <p className="text-xs text-dark-400 uppercase">
-                    {isRTL ? dayData?.day_name_he : dayData?.day_name || date.toLocaleDateString('en-US', { weekday: 'short' })}
+                    {isRTL ? dayData?.day_name_he : dayData?.day_name || date.toLocaleDateString(undefined, { weekday: 'short' })}
                   </p>
                   <p className={`text-lg font-bold ${isToday(date) ? 'text-primary-400' : 'text-dark-100'}`}>
                     {date.getDate()}

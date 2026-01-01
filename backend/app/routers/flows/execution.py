@@ -50,6 +50,13 @@ async def run_flow_actions(db, flow: dict, audio_player=None, chatterbox_service
             if first_action_done:
                 is_first_playback_action = False
 
+        elif action_type == FlowActionType.PLAY_SCHEDULED_COMMERCIALS.value:
+            first_action_done = await _execute_play_scheduled_commercials(
+                db, action, is_first_playback_action, audio_player
+            )
+            if first_action_done:
+                is_first_playback_action = False
+
         elif action_type == FlowActionType.PLAY_CONTENT.value:
             first_action_done = await _execute_play_content(
                 db, action, is_first_playback_action, audio_player
@@ -307,6 +314,95 @@ async def _execute_play_commercials(
     # Also add to VLC queue if available
     if audio_player:
         _add_commercials_to_vlc(audio_player, all_commercials)
+
+    return True
+
+
+async def _execute_play_scheduled_commercials(
+    db, action: dict, is_first_playback_action: bool, audio_player=None
+) -> bool:
+    """
+    Execute a play_scheduled_commercials action using the campaign scheduler.
+    Returns True if playback was triggered.
+
+    This action uses the commercial scheduler to determine which commercials
+    should play based on active campaigns, time slots, and priorities.
+    """
+    from app.services.commercial_scheduler import CommercialSchedulerService
+
+    scheduler = CommercialSchedulerService(db)
+
+    # Get parameters from action
+    max_duration = action.get("max_commercial_duration_seconds")
+    max_count = action.get("max_commercial_count")
+    include_types = action.get("include_campaign_types")
+    exclude_types = action.get("exclude_campaign_types")
+
+    logger.info(f"Getting scheduled commercials (max_duration={max_duration}, max_count={max_count})")
+
+    # Get commercials for current slot
+    commercials = await scheduler.get_commercials_for_slot(
+        max_duration_seconds=max_duration,
+        max_count=max_count,
+        include_campaign_types=include_types,
+        exclude_campaign_types=exclude_types,
+    )
+
+    if not commercials:
+        logger.info("No scheduled commercials for current slot")
+        return False
+
+    logger.info(f"Found {len(commercials)} scheduled commercials to play")
+
+    # Convert to queue format and play
+    all_content = []
+    for item in commercials:
+        content = item.get("content")
+        if not content:
+            continue
+        all_content.append(content)
+
+        # Record the play
+        await scheduler.record_play(
+            campaign_id=item["campaign_id"],
+            content_id=str(content.get("_id", "")),
+            slot_index=item["slot_index"],
+            slot_date=item["slot_date"],
+            triggered_by="flow",
+        )
+
+    if not all_content:
+        return False
+
+    if is_first_playback_action:
+        # First action: broadcast first commercial for immediate playback
+        first_content = all_content[0]
+        content_data = {
+            "_id": str(first_content.get("_id", "")),
+            "title": first_content.get("title", "Commercial"),
+            "artist": first_content.get("artist"),
+            "type": "commercial",
+            "duration_seconds": first_content.get("duration_seconds", 0),
+            "genre": first_content.get("genre"),
+            "metadata": first_content.get("metadata", {})
+        }
+        await broadcast_scheduled_playback(content_data)
+        notify_playback_started(content_data, first_content.get("duration_seconds", 0))
+
+        # Queue remaining commercials at the TOP of the queue
+        if len(all_content) > 1:
+            for idx, content in enumerate(all_content[1:]):
+                add_to_backend_queue(_commercial_to_queue_item(content), position=idx)
+            await broadcast_queue_update(get_backend_queue())
+    else:
+        # Subsequent actions: insert all commercials at TOP of queue
+        for idx, content in enumerate(all_content):
+            add_to_backend_queue(_commercial_to_queue_item(content), position=idx)
+        await broadcast_queue_update(get_backend_queue())
+
+    # Also add to VLC queue if available
+    if audio_player:
+        _add_commercials_to_vlc(audio_player, all_content)
 
     return True
 

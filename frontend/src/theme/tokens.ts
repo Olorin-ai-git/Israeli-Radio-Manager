@@ -85,6 +85,12 @@ export const COLORS = {
       text: 'text-orange-400',
       icon: 'text-orange-400',
     },
+    play_scheduled_commercials: {
+      bg: 'bg-amber-500/20',
+      border: 'border-amber-500/30',
+      text: 'text-amber-400',
+      icon: 'text-amber-400',
+    },
     play_show: {
       bg: 'bg-purple-500/20',
       border: 'border-purple-500/30',

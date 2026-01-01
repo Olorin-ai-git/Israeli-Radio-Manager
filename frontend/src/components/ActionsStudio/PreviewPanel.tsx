@@ -15,6 +15,7 @@ import {
   AudioLines,
   VolumeX,
   Timer,
+  CalendarClock,
 } from 'lucide-react'
 import {
   useActionsStudioStore,
@@ -33,6 +34,7 @@ const ACTION_SOLID_COLORS: Record<FlowActionType, string> = {
   play_genre: 'bg-sky-500',
   play_content: 'bg-blue-500',
   play_commercials: 'bg-orange-500',
+  play_scheduled_commercials: 'bg-amber-500',
   play_show: 'bg-purple-500',
   play_jingle: 'bg-pink-500',
   wait: 'bg-gray-500',
@@ -46,6 +48,7 @@ const ACTION_ICONS: Record<FlowActionType, LucideIcon> = {
   play_genre: Music,
   play_content: FileAudio,
   play_commercials: Megaphone,
+  play_scheduled_commercials: CalendarClock,
   play_show: Radio,
   play_jingle: AudioLines,
   wait: Clock,
@@ -78,6 +81,10 @@ function getActionPreviewText(action: StudioAction, isRTL: boolean): string {
       return isRTL
         ? `מנגן ${action.commercial_count || 0} פרסומות`
         : `Playing ${action.commercial_count || 0} commercials`
+    case 'play_scheduled_commercials':
+      return isRTL
+        ? 'מנגן פרסומות מתוזמנות מקמפיינים'
+        : 'Playing scheduled commercials from campaigns'
     case 'play_show':
       return action.content_title || (isRTL ? 'מנגן תוכנית' : 'Playing show')
     case 'wait':

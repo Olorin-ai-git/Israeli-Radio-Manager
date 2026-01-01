@@ -16,6 +16,7 @@ import {
   AudioLines,
   VolumeX,
   Timer,
+  CalendarClock,
 } from 'lucide-react'
 import { FlowActionType, getActionDisplayName } from '../../store/actionsStudioStore'
 import { Input } from '../Form'
@@ -34,6 +35,7 @@ const ACTION_ICONS: Record<FlowActionType, LucideIcon> = {
   play_genre: Music,
   play_content: FileAudio,
   play_commercials: Megaphone,
+  play_scheduled_commercials: CalendarClock,
   play_show: Radio,
   play_jingle: AudioLines,
   wait: Clock,
@@ -51,7 +53,7 @@ const CATEGORY_LABELS = {
 
 const CATEGORIES: { id: 'playback' | 'control' | 'audio'; types: FlowActionType[] }[] = [
   { id: 'playback', types: ['play_genre', 'play_content', 'play_show', 'play_jingle'] },
-  { id: 'control', types: ['play_commercials', 'wait'] },
+  { id: 'control', types: ['play_commercials', 'play_scheduled_commercials', 'wait'] },
   { id: 'audio', types: ['set_volume', 'fade_volume', 'announcement', 'time_check'] },
 ]
 

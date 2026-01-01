@@ -12,6 +12,7 @@ import {
   AudioLines,
   VolumeX,
   Timer,
+  CalendarClock,
 } from 'lucide-react'
 import { StudioAction, FlowActionType, getActionDisplayName, getActionDuration } from '../../store/actionsStudioStore'
 import { getActionTypeColors } from '../../theme/tokens'
@@ -29,6 +30,7 @@ const ACTION_ICONS: Record<FlowActionType, LucideIcon> = {
   play_genre: Music,
   play_content: FileAudio,
   play_commercials: Megaphone,
+  play_scheduled_commercials: CalendarClock,
   play_show: Radio,
   play_jingle: AudioLines,
   wait: Clock,
@@ -74,6 +76,18 @@ function getActionSummary(action: StudioAction, isRTL: boolean): string {
         : (isRTL ? 'הכל' : 'All')
       const repeatText = count > 1 ? ` × ${count}` : ''
       return `${batchText}${repeatText}`
+    }
+
+    case 'play_scheduled_commercials': {
+      const maxCount = action.max_commercial_count
+      const includeTypes = action.include_campaign_types
+      if (maxCount && maxCount > 0) {
+        return isRTL ? `עד ${maxCount} פרסומות` : `Up to ${maxCount} ads`
+      }
+      if (includeTypes && includeTypes.length > 0) {
+        return includeTypes.join(', ')
+      }
+      return isRTL ? 'לפי לוח זמנים' : 'By schedule'
     }
 
     case 'wait':

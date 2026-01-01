@@ -6,6 +6,7 @@ export type FlowActionType =
   | 'play_genre'
   | 'play_content'
   | 'play_commercials'
+  | 'play_scheduled_commercials'
   | 'play_show'
   | 'play_jingle'
   | 'wait'
@@ -35,6 +36,11 @@ export interface StudioAction {
   // For time_check
   time_format?: string // "12h" or "24h"
   time_language?: string // "en" or "he"
+  // For play_scheduled_commercials
+  max_commercial_duration_seconds?: number
+  max_commercial_count?: number
+  include_campaign_types?: string[]
+  exclude_campaign_types?: string[]
   // Display
   description?: string
   description_he?: string
@@ -139,6 +145,9 @@ const validateAction = (action: StudioAction): { isValid: boolean; errors: strin
         errors.push('At least 1 commercial is required')
       }
       break
+    case 'play_scheduled_commercials':
+      // No required fields - uses campaign scheduler
+      break
     case 'wait':
       if (!action.duration_minutes || action.duration_minutes < 1) {
         errors.push('Wait duration is required')
@@ -185,6 +194,8 @@ export const getActionDuration = (action: StudioAction): number => {
       return 180 // Default 3 min for content
     case 'play_commercials':
       return (action.commercial_count || 1) * 30 // ~30s per commercial
+    case 'play_scheduled_commercials':
+      return (action.max_commercial_count || 3) * 30 // ~30s per commercial, default 3
     case 'wait':
       return (action.duration_minutes || 0) * 60
     case 'set_volume':
@@ -209,6 +220,7 @@ export const getActionDisplayName = (type: FlowActionType, isRTL: boolean = fals
     play_genre: { en: 'Play Genre', he: 'נגן ז\'אנר' },
     play_content: { en: 'Play Content', he: 'נגן תוכן' },
     play_commercials: { en: 'Play Commercials', he: 'נגן פרסומות' },
+    play_scheduled_commercials: { en: 'Scheduled Commercials', he: 'פרסומות מתוזמנות' },
     play_show: { en: 'Play Show', he: 'נגן תוכנית' },
     play_jingle: { en: 'Play Jingle', he: 'נגן ג\'ינגל' },
     wait: { en: 'Wait', he: 'המתן' },
@@ -229,6 +241,7 @@ export const getActionCategory = (type: FlowActionType): 'playback' | 'control' 
     case 'play_jingle':
       return 'playback'
     case 'play_commercials':
+    case 'play_scheduled_commercials':
     case 'wait':
       return 'control'
     case 'set_volume':

@@ -350,7 +350,7 @@ class TaskExecutor:
                 suggestions = await self._find_similar(artist, limit=5, search_type="artist")
                 # Format artists as readable list
                 if suggestions:
-                    artist_list = ", ".join([s["artist"] for s in suggestions])
+                    artist_list = ", ".join([s.get("artist") or "Unknown" for s in suggestions if s.get("artist")])
                     return {
                         "success": False,
                         "message": f"❌ לא מצאתי שירים של '{artist}'. האמנים הזמינים: {artist_list}",
@@ -367,7 +367,7 @@ class TaskExecutor:
             search_term = title or ""
             suggestions = await self._find_similar(search_term)
             if suggestions:
-                suggestion_list = ", ".join([f"{s['title']} - {s.get('artist', 'Unknown')}" for s in suggestions[:3]])
+                suggestion_list = ", ".join([f"{s.get('title', 'Unknown')} - {s.get('artist', 'Unknown')}" for s in suggestions[:3] if s.get('title')])
                 return {
                     "success": False,
                     "message": f"❌ לא מצאתי את '{search_term}'. אולי התכוונת ל: {suggestion_list}",
@@ -557,8 +557,8 @@ class TaskExecutor:
             if content:
                 return {
                     "success": True,
-                    "message": f"🎵 מתנגן עכשיו: '{content['title']}' מאת {content.get('artist', 'לא ידוע')}",
-                    "message_en": f"Now playing: '{content['title']}' by {content.get('artist', 'Unknown')}",
+                    "message": f"🎵 מתנגן עכשיו: '{content.get('title', 'Unknown')}' מאת {content.get('artist', 'לא ידוע')}",
+                    "message_en": f"Now playing: '{content.get('title', 'Unknown')}' by {content.get('artist', 'Unknown')}",
                     "current_track": content
                 }
 
@@ -747,7 +747,7 @@ class TaskExecutor:
 
         if results:
             result_list = "\n".join([
-                f"• {r['title']} - {r.get('artist', '')}" for r in results
+                f"• {r.get('title', 'Unknown')} - {r.get('artist', '')}" for r in results if r.get('title')
             ])
             return {
                 "success": True,
@@ -785,7 +785,7 @@ class TaskExecutor:
                 {"$limit": limit}
             ]
             artist_results = await self.db.content.aggregate(pipeline).to_list(limit)
-            return [{"artist": r["_id"], "song_count": r["count"]} for r in artist_results]
+            return [{"artist": r["_id"] or "Unknown", "song_count": r["count"]} for r in artist_results if r.get("_id")]
 
         if search_type == "artist":
             # Find artists with similar names
@@ -796,7 +796,7 @@ class TaskExecutor:
                 {"$limit": limit * 2}
             ]
             all_artists = await self.db.content.aggregate(pipeline).to_list(limit * 2)
-            return [{"artist": r["_id"], "song_count": r["count"]} for r in all_artists[:limit]]
+            return [{"artist": r["_id"] or "Unknown", "song_count": r["count"]} for r in all_artists[:limit] if r.get("_id")]
 
         # Default: find by title
         results = await self.db.content.find({
@@ -807,7 +807,7 @@ class TaskExecutor:
             ]
         }).limit(limit).to_list(limit)
 
-        return [{"title": r["title"], "artist": r.get("artist")} for r in results]
+        return [{"title": r.get("title") or "Unknown", "artist": r.get("artist") or "Unknown"} for r in results if r.get("title")]
 
     async def _get_all_artists(self, limit: int = 20) -> List[Dict]:
         """Get all unique artists in the library."""
@@ -818,7 +818,7 @@ class TaskExecutor:
             {"$limit": limit}
         ]
         results = await self.db.content.aggregate(pipeline).to_list(limit)
-        return [{"artist": r["_id"], "song_count": r["count"]} for r in results]
+        return [{"artist": r["_id"] or "Unknown", "song_count": r["count"]} for r in results if r.get("_id")]
 
     async def _execute_list_artists(self, task: ParsedTask) -> Dict[str, Any]:
         """List all artists in the library."""
@@ -866,7 +866,7 @@ class TaskExecutor:
                 "genres": []
             }
 
-        genres = [{"genre": r["_id"], "song_count": r["count"]} for r in results]
+        genres = [{"genre": r["_id"] or "Unknown", "song_count": r["count"]} for r in results if r.get("_id")]
 
         # Format genre list
         genre_lines = []
@@ -1497,7 +1497,7 @@ Return the JSON array:"""
         result = await self.db.flows.insert_one(flow_doc)
         flow_doc["_id"] = str(result.inserted_id)
 
-        actions_summary = ", ".join([a.get("description", a.get("action_type")) for a in actions])
+        actions_summary = ", ".join([a.get("description") or a.get("action_type") or "action" for a in actions])
 
         return {
             "success": True,
@@ -1528,7 +1528,7 @@ Return the JSON array:"""
         for flow in flows:
             status_emoji = {"active": "✅", "paused": "⏸️", "disabled": "❌", "running": "▶️"}.get(flow.get("status", ""), "❓")
             actions_count = len(flow.get("actions", []))
-            flow_list.append(f"{status_emoji} {flow['name']} ({actions_count} פעולות)")
+            flow_list.append(f"{status_emoji} {flow.get('name', 'Unnamed')} ({actions_count} פעולות)")
 
         return {
             "success": True,

@@ -9,6 +9,7 @@ import AgentControl from './pages/AgentControl'
 import Settings from './pages/Settings'
 import CalendarPlaylist from './pages/CalendarPlaylist'
 import ActionsStudio from './pages/ActionsStudio'
+import CampaignManager from './pages/CampaignManager'
 import Admin from './pages/Admin'
 import Login from './pages/Login'
 import VoiceManagement from './pages/VoiceManagement'
@@ -61,6 +62,7 @@ function App() {
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/calendar" element={<CalendarPlaylist />} />
+                  <Route path="/campaigns" element={<CampaignManager />} />
                   <Route path="/library" element={<Library />} />
                   <Route path="/upload" element={<Upload />} />
                   <Route path="/agent" element={<AgentControl />} />

@@ -314,6 +314,55 @@ export const api = {
     client.delete(`/users/${firebaseUid}`).then((r) => r.data),
   reactivateUser: (firebaseUid: string) =>
     client.post(`/users/${firebaseUid}/reactivate`).then((r) => r.data),
+
+  // Campaigns - Commercial Scheduling
+  getCampaigns: (status?: string) =>
+    client.get('/campaigns/', { params: { status } }).then((r) => r.data),
+  getCampaign: (campaignId: string) =>
+    client.get(`/campaigns/${campaignId}`).then((r) => r.data),
+  createCampaign: (data: {
+    name: string
+    name_he?: string
+    campaign_type?: string
+    comment?: string
+    start_date: string
+    end_date: string
+    priority?: number
+    content_refs?: Array<{
+      content_id?: string
+      file_google_drive_id?: string
+      file_local_path?: string
+      file_title?: string
+      file_duration_seconds?: number
+    }>
+    schedule_grid?: Array<{
+      slot_date: string
+      slot_index: number
+      play_count: number
+    }>
+  }) => client.post('/campaigns/', data).then((r) => r.data),
+  updateCampaign: (campaignId: string, data: any) =>
+    client.put(`/campaigns/${campaignId}`, data).then((r) => r.data),
+  deleteCampaign: (campaignId: string, hardDelete = false) =>
+    client.delete(`/campaigns/${campaignId}`, { params: { hard_delete: hardDelete } }).then((r) => r.data),
+  toggleCampaignStatus: (campaignId: string) =>
+    client.patch(`/campaigns/${campaignId}/status`).then((r) => r.data),
+  updateCampaignGrid: (campaignId: string, grid: Array<{ slot_date: string; slot_index: number; play_count: number }>) =>
+    client.put(`/campaigns/${campaignId}/schedule-grid`, grid).then((r) => r.data),
+  updateCampaignSlot: (campaignId: string, slotDate: string, slotIndex: number, playCount: number) =>
+    client.patch(`/campaigns/${campaignId}/schedule-slot`, null, { params: { slot_date: slotDate, slot_index: slotIndex, play_count: playCount } }).then((r) => r.data),
+  addCampaignContent: (campaignId: string, contentRef: { content_id?: string; file_google_drive_id?: string; file_title?: string }) =>
+    client.post(`/campaigns/${campaignId}/content`, contentRef).then((r) => r.data),
+  removeCampaignContent: (campaignId: string, contentIndex: number) =>
+    client.delete(`/campaigns/${campaignId}/content/${contentIndex}`).then((r) => r.data),
+  getCampaignDailyPreview: (date?: string) =>
+    client.get('/campaigns/preview/daily', { params: { target_date: date } }).then((r) => r.data),
+  syncCampaignToCalendar: (campaignId: string) =>
+    client.post(`/campaigns/${campaignId}/sync-calendar`).then((r) => r.data),
+  syncAllCampaignsToCalendar: () =>
+    client.post('/campaigns/sync-all-calendar').then((r) => r.data),
+  getCampaignStats: (campaignId: string) =>
+    client.get(`/campaigns/${campaignId}/stats`).then((r) => r.data),
 }
 
 export default api
