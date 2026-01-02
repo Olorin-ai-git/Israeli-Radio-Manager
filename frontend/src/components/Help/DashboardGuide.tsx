@@ -16,7 +16,7 @@ export default function DashboardGuide() {
       </p>
 
       <HelpScreenshot
-        src="/help/Dashboard.jpg"
+        src="/help/Dashboard-2.jpg"
         alt="Dashboard overview"
         caption="The main dashboard view"
         captionHe="תצוגת לוח הבקרה הראשית"
@@ -76,7 +76,7 @@ export default function DashboardGuide() {
         </div>
 
         <HelpScreenshot
-          src="/help/Dashboard.jpg"
+          src="/help/Dashboard-2.jpg"
           alt="Audio player controls"
           caption="Player controls and track info"
           captionHe="פקדי הנגן ומידע על הרצועה"

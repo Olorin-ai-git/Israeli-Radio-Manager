@@ -27,7 +27,7 @@ export default function QuickStartGuide() {
         </p>
         <div className="mr-9">
           <HelpScreenshot
-            src="/help/Dashboard.jpg"
+            src="/help/Dashboard-2.jpg"
             alt="Dashboard overview"
             caption="Main dashboard with player and queue"
             captionHe="לוח הבקרה עם הנגן ותור ההשמעה"

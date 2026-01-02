@@ -215,7 +215,7 @@ function OperatorsGuide({ isRTL }: { isRTL: boolean }) {
         </ul>
 
         <HelpScreenshot
-          src="/help/Dashboard.jpg"
+          src="/help/Dashboard-2.jpg"
           alt="Player controls"
           caption="Dashboard player controls"
           captionHe="פקדי הנגן בלוח הבקרה"
@@ -274,7 +274,7 @@ function AnchorsGuide({ isRTL }: { isRTL: boolean }) {
         </div>
 
         <HelpScreenshot
-          src="/help/Dashboard.jpg"
+          src="/help/Dashboard-2.jpg"
           alt="Dashboard"
           caption="The main dashboard"
           captionHe="לוח הבקרה הראשי"
