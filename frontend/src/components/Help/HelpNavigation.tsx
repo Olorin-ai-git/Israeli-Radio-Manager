@@ -8,7 +8,11 @@ import {
   Calendar,
   Megaphone,
   Users,
-  HelpCircle
+  HelpCircle,
+  Settings,
+  Bot,
+  Mic,
+  Shield
 } from 'lucide-react'
 
 interface NavItem {
@@ -25,6 +29,10 @@ const navItems: NavItem[] = [
   { id: 'content', title: 'Content', titleHe: 'ניהול תוכן', icon: Music },
   { id: 'calendar', title: 'Calendar', titleHe: 'לוח שנה', icon: Calendar },
   { id: 'campaigns', title: 'Campaigns', titleHe: 'קמפיינים', icon: Megaphone },
+  { id: 'agent', title: 'Agent Control', titleHe: 'בקרת סוכן', icon: Bot },
+  { id: 'settings', title: 'Settings', titleHe: 'הגדרות', icon: Settings },
+  { id: 'voices', title: 'Voice Studio', titleHe: 'סטודיו קולות', icon: Mic },
+  { id: 'admin', title: 'Admin', titleHe: 'ניהול מערכת', icon: Shield },
   { id: 'roles', title: 'By Role', titleHe: 'לפי תפקיד', icon: Users },
   { id: 'support', title: 'Support', titleHe: 'תמיכה', icon: HelpCircle },
 ]

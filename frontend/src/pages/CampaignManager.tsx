@@ -199,9 +199,13 @@ export default function CampaignManager() {
     const campaign = await createCampaign(data)
     if (campaign) {
       setShowFormModal(false)
+      // Ensure the new campaign's status is visible in the filter
+      if (!statusFilter.includes(campaign.status)) {
+        setStatusFilter(prev => [...prev, campaign.status])
+      }
       selectCampaign(campaign)
     }
-  }, [createCampaign, selectCampaign])
+  }, [createCampaign, selectCampaign, statusFilter])
 
   // Handle campaign update
   const handleUpdateCampaign = useCallback(async (data: CampaignCreate) => {

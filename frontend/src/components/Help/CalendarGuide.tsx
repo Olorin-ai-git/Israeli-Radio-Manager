@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import HelpScreenshot from './HelpScreenshot'
-import { Calendar, RefreshCw, Clock, Repeat } from 'lucide-react'
+import { Calendar, RefreshCw, Repeat, Music, Play, Plus, Filter } from 'lucide-react'
 
 export default function CalendarGuide() {
   const { i18n } = useTranslation()
@@ -22,54 +22,128 @@ export default function CalendarGuide() {
         captionHe="סקירת לוח השנה"
       />
 
-      {/* Views */}
+      {/* Week View */}
       <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-dark-100">
-          {isRTL ? 'תצוגות' : 'Views'}
+        <h3 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
+          <Calendar size={20} className="text-primary-400" />
+          {isRTL ? 'תצוגת שבוע' : 'Week View'}
         </h3>
         <p className="text-dark-300">
           {isRTL
-            ? 'תוכלו לעבור בין תצוגות שונות:'
-            : 'You can switch between different views:'}
+            ? 'הלוח מציג שבוע שלם עם 7 עמודות - עמודה לכל יום. תוכלו:'
+            : 'The calendar shows a full week with 7 columns - one for each day. You can:'}
+        </p>
+        <ul className="list-disc list-inside text-dark-300 space-y-1 mr-4">
+          <li>{isRTL ? 'נווטו בין שבועות עם החיצים' : 'Navigate between weeks using arrows'}</li>
+          <li>{isRTL ? 'לחצו על "היום" לחזרה לשבוע הנוכחי' : 'Click "Today" to return to the current week'}</li>
+          <li>{isRTL ? 'לחצו על אירוע לפרטים נוספים' : 'Click an event for more details'}</li>
+          <li>{isRTL ? 'לחיצה כפולה על יום לתזמון מהיר' : 'Double-click a day for quick scheduling'}</li>
+        </ul>
+      </div>
+
+      {/* Scheduling Content */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
+          <Plus size={20} className="text-emerald-400" />
+          {isRTL ? 'תזמון תוכן' : 'Scheduling Content'}
+        </h3>
+        <p className="text-dark-300">
+          {isRTL
+            ? 'לחצו על "הוסף לתזמון" לפתיחת חלון התזמון. תוכלו לתזמן:'
+            : 'Click "Add to Schedule" to open the scheduling modal. You can schedule:'}
         </p>
 
         <div className="grid gap-3 mt-4">
-          <div className="flex items-start gap-3 p-3 rounded-lg bg-dark-800/50">
-            <div className="p-2 rounded-lg bg-dark-700">
-              <Calendar size={18} className="text-primary-400" />
+          {/* Content Type */}
+          <div className="p-4 rounded-lg bg-dark-800/50 border border-white/5">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-lg bg-blue-500/20">
+                <Music size={18} className="text-blue-400" />
+              </div>
+              <h4 className="font-medium text-dark-100">{isRTL ? 'תוכן' : 'Content'}</h4>
             </div>
-            <div>
-              <h4 className="font-medium text-dark-100">{isRTL ? 'יום' : 'Day'}</h4>
-              <p className="text-sm text-dark-400">
-                {isRTL ? 'תצוגה מפורטת של יום אחד' : 'Detailed view of a single day'}
-              </p>
-            </div>
+            <p className="text-sm text-dark-400">
+              {isRTL
+                ? 'שיר, תוכנית או פרסומת ספציפיים מהספרייה. סננו לפי סוג תוכן וז\'אנר.'
+                : 'A specific song, show, or commercial from your library. Filter by content type and genre.'}
+            </p>
           </div>
 
-          <div className="flex items-start gap-3 p-3 rounded-lg bg-dark-800/50">
-            <div className="p-2 rounded-lg bg-dark-700">
-              <Clock size={18} className="text-primary-400" />
+          {/* Flow Type */}
+          <div className="p-4 rounded-lg bg-dark-800/50 border border-white/5">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-lg bg-purple-500/20">
+                <Play size={18} className="text-purple-400" />
+              </div>
+              <h4 className="font-medium text-dark-100">{isRTL ? 'זרימה' : 'Flow'}</h4>
             </div>
-            <div>
-              <h4 className="font-medium text-dark-100">{isRTL ? 'שבוע' : 'Week'}</h4>
-              <p className="text-sm text-dark-400">
-                {isRTL ? 'תצוגת שבוע מלא' : 'Full week view'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3 p-3 rounded-lg bg-dark-800/50">
-            <div className="p-2 rounded-lg bg-dark-700">
-              <Repeat size={18} className="text-primary-400" />
-            </div>
-            <div>
-              <h4 className="font-medium text-dark-100">{isRTL ? 'חודש' : 'Month'}</h4>
-              <p className="text-sm text-dark-400">
-                {isRTL ? 'סקירה חודשית' : 'Monthly overview'}
-              </p>
-            </div>
+            <p className="text-sm text-dark-400">
+              {isRTL
+                ? 'רצף פעולות שלם מסטודיו הפעולות. מושלם לתוכניות קבועות.'
+                : 'A complete action sequence from Actions Studio. Perfect for regular shows.'}
+            </p>
           </div>
         </div>
+      </div>
+
+      {/* Recurring Events */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
+          <Repeat size={20} className="text-amber-400" />
+          {isRTL ? 'אירועים חוזרים' : 'Recurring Events'}
+        </h3>
+        <p className="text-dark-300">
+          {isRTL
+            ? 'בעת תזמון, בחרו תדירות חזרה:'
+            : 'When scheduling, select a recurrence frequency:'}
+        </p>
+
+        <div className="grid gap-2 mt-4">
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-dark-800/50">
+            <span className="font-medium text-dark-100 w-20">{isRTL ? 'פעם אחת' : 'Once'}</span>
+            <span className="text-dark-400 text-sm">
+              {isRTL ? 'אירוע חד-פעמי בתאריך ושעה ספציפיים' : 'One-time event at a specific date and time'}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-dark-800/50">
+            <span className="font-medium text-dark-100 w-20">{isRTL ? 'יומי' : 'Daily'}</span>
+            <span className="text-dark-400 text-sm">
+              {isRTL ? 'חוזר כל יום באותה שעה' : 'Repeats every day at the same time'}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-dark-800/50">
+            <span className="font-medium text-dark-100 w-20">{isRTL ? 'שבועי' : 'Weekly'}</span>
+            <span className="text-dark-400 text-sm">
+              {isRTL ? 'בחרו ימים ספציפיים בשבוע (למשל: א\'-ה\')' : 'Select specific days of the week (e.g., Sun-Thu)'}
+            </span>
+          </div>
+        </div>
+
+        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 mt-3">
+          <p className="text-sm text-amber-400">
+            {isRTL
+              ? 'אירועים חוזרים מסומנים עם אייקון חזרה. לחצו על אירוע חוזר כדי לראות את כל המופעים.'
+              : 'Recurring events are marked with a repeat icon. Click a recurring event to see all instances.'}
+          </p>
+        </div>
+      </div>
+
+      {/* Content Filters */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
+          <Filter size={20} className="text-purple-400" />
+          {isRTL ? 'סינון תוכן' : 'Content Filters'}
+        </h3>
+        <p className="text-dark-300">
+          {isRTL
+            ? 'בעת תזמון תוכן, סננו לפי:'
+            : 'When scheduling content, filter by:'}
+        </p>
+        <ul className="list-disc list-inside text-dark-300 space-y-1 mr-4">
+          <li>{isRTL ? 'סוג תוכן (שיר, תוכנית, פרסומת)' : 'Content type (song, show, commercial)'}</li>
+          <li>{isRTL ? 'ז\'אנר (לשירים)' : 'Genre (for songs)'}</li>
+          <li>{isRTL ? 'מספר אצווה (לפרסומות)' : 'Batch number (for commercials)'}</li>
+        </ul>
       </div>
 
       {/* Color Coding */}

@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Music, Radio, Megaphone, Search, Play, Plus,
   Clock, Calendar, Disc3, RefreshCw, ListPlus, X as XIcon, FolderSync,
-  AudioLines, Layers, Newspaper, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Save
+  AudioLines, Layers, Newspaper, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Save, Trash2, AlertTriangle
 } from 'lucide-react'
 import { api } from '../services/api'
 import { usePlayerStore } from '../store/playerStore'
@@ -62,6 +62,8 @@ export default function Library() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [editingItem, setEditingItem] = useState<any>(null)
   const [editForm, setEditForm] = useState({ title: '', artist: '', genre: '' })
+  const [confirmDelete, setConfirmDelete] = useState<any>(null)
+  const [confirmBatchDelete, setConfirmBatchDelete] = useState(false)
   const { play, addToQueue, currentTrack } = usePlayerStore()
   const queryClient = useQueryClient()
 
@@ -149,6 +151,54 @@ export default function Library() {
       toast.error(isRTL ? 'שגיאה בעדכון' : `Error: ${error.response?.data?.detail || error.message}`)
     }
   })
+
+  // Delete content mutation
+  const deleteContentMutation = useMutation({
+    mutationFn: (id: string) => api.deleteContent(id),
+    onSuccess: async () => {
+      toast.success(isRTL ? 'התוכן נמחק בהצלחה' : 'Content deleted successfully')
+      // Refetch only the active tab's content
+      await queryClient.refetchQueries({ queryKey: [activeTab] })
+    },
+    onError: (error: any) => {
+      toast.error(isRTL ? 'שגיאה במחיקה' : `Error: ${error.response?.data?.detail || error.message}`)
+    }
+  })
+
+  const handleDelete = (item: any) => {
+    setConfirmDelete(item)
+  }
+
+  const confirmDeleteAction = () => {
+    if (confirmDelete) {
+      deleteContentMutation.mutate(confirmDelete._id)
+      setConfirmDelete(null)
+    }
+  }
+
+  // Batch delete
+  const handleDeleteSelected = () => {
+    if (selectedItems.size > 0) {
+      setConfirmBatchDelete(true)
+    }
+  }
+
+  const confirmBatchDeleteAction = async () => {
+    const itemsToDelete = Array.from(selectedItems)
+    setConfirmBatchDelete(false)
+
+    try {
+      const result = await api.batchDeleteContent(itemsToDelete)
+      const deletedCount = result.deleted_count || itemsToDelete.length
+      toast.success(isRTL ? `${deletedCount} פריטים נמחקו בהצלחה` : `${deletedCount} items deleted successfully`)
+    } catch (error: any) {
+      toast.error(isRTL ? 'שגיאה במחיקת פריטים' : `Error: ${error.response?.data?.detail || error.message}`)
+    }
+
+    // Clear selection and refetch
+    clearSelection()
+    await queryClient.refetchQueries({ queryKey: [activeTab] })
+  }
 
   const handleEdit = (item: any) => {
     setEditingItem(item)
@@ -499,6 +549,13 @@ export default function Library() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={handleDeleteSelected}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-colors"
+            >
+              <Trash2 size={18} />
+              {isRTL ? 'מחק נבחרים' : 'Delete Selected'}
+            </button>
+            <button
               onClick={handleAddSelectedToQueue}
               className="glass-button-primary flex items-center gap-2 px-4 py-2"
             >
@@ -728,6 +785,17 @@ export default function Library() {
                               {isRTL ? 'הוסף לתור' : 'Add to queue'}
                             </div>
                           </div>
+                          <div className="tooltip-trigger">
+                            <button
+                              onClick={() => handleDelete(item)}
+                              className="p-2 rounded-lg text-dark-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                            <div className="tooltip tooltip-left">
+                              {isRTL ? 'מחק' : 'Delete'}
+                            </div>
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -848,6 +916,75 @@ export default function Library() {
                 {updateContentMutation.isPending
                   ? (isRTL ? 'שומר...' : 'Saving...')
                   : (isRTL ? 'שמור' : 'Save')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center">
+          <div className="glass-card p-6 w-full max-w-sm mx-4">
+            <h3 className="font-semibold text-dark-100 mb-4">
+              {isRTL ? 'מחיקת פריט' : 'Delete Item'}
+            </h3>
+            <p className="text-dark-300 mb-2" dir="auto">
+              {isRTL ? `האם למחוק את "${confirmDelete.title}"?` : `Delete "${confirmDelete.title}"?`}
+            </p>
+            <p className="text-yellow-400 text-sm mb-6 flex items-center gap-2">
+              <AlertTriangle size={16} />
+              {isRTL ? 'פעולה זו אינה ניתנת לביטול' : 'This action cannot be undone'}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="flex-1 glass-button py-2"
+              >
+                {isRTL ? 'ביטול' : 'Cancel'}
+              </button>
+              <button
+                onClick={confirmDeleteAction}
+                disabled={deleteContentMutation.isPending}
+                className="flex-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg py-2 transition-colors"
+              >
+                {deleteContentMutation.isPending
+                  ? (isRTL ? 'מוחק...' : 'Deleting...')
+                  : (isRTL ? 'מחק' : 'Delete')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Delete Confirmation Modal */}
+      {confirmBatchDelete && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center">
+          <div className="glass-card p-6 w-full max-w-sm mx-4">
+            <h3 className="font-semibold text-dark-100 mb-4">
+              {isRTL ? 'מחיקת פריטים' : 'Delete Items'}
+            </h3>
+            <p className="text-dark-300 mb-2">
+              {isRTL
+                ? `האם למחוק ${selectedItems.size} פריטים?`
+                : `Delete ${selectedItems.size} items?`}
+            </p>
+            <p className="text-yellow-400 text-sm mb-6 flex items-center gap-2">
+              <AlertTriangle size={16} />
+              {isRTL ? 'פעולה זו אינה ניתנת לביטול' : 'This action cannot be undone'}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmBatchDelete(false)}
+                className="flex-1 glass-button py-2"
+              >
+                {isRTL ? 'ביטול' : 'Cancel'}
+              </button>
+              <button
+                onClick={confirmBatchDeleteAction}
+                className="flex-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg py-2 transition-colors"
+              >
+                {isRTL ? 'מחק הכל' : 'Delete All'}
               </button>
             </div>
           </div>

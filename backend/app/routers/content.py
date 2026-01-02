@@ -228,6 +228,33 @@ async def delete_content(request: Request, content_id: str, hard_delete: bool = 
         return {"message": "Content deactivated"}
 
 
+@router.post("/batch-delete")
+async def batch_delete_content(request: Request, ids: List[str], hard_delete: bool = True):
+    """Delete multiple content items at once."""
+    db = request.app.state.db
+
+    if not ids:
+        raise HTTPException(status_code=400, detail="No IDs provided")
+
+    object_ids = [ObjectId(id) for id in ids]
+
+    if hard_delete:
+        result = await db.content.delete_many({"_id": {"$in": object_ids}})
+        return {
+            "message": f"Permanently deleted {result.deleted_count} items",
+            "deleted_count": result.deleted_count
+        }
+    else:
+        result = await db.content.update_many(
+            {"_id": {"$in": object_ids}},
+            {"$set": {"active": False}}
+        )
+        return {
+            "message": f"Deactivated {result.modified_count} items",
+            "modified_count": result.modified_count
+        }
+
+
 # ==================== Google Drive Sync Endpoints ====================
 
 @router.get("/sync/status")
@@ -243,6 +270,43 @@ async def get_folder_structure(request: Request):
     content_sync = request.app.state.content_sync
     structure = await content_sync.drive.get_folder_structure()
     return structure
+
+
+@router.get("/sync/debug/{folder_name}")
+async def debug_folder_files(request: Request, folder_name: str):
+    """Debug: List all files in a specific folder from Google Drive."""
+    content_sync = request.app.state.content_sync
+
+    # Get folder structure to find the folder ID
+    structure = await content_sync.drive.get_folder_structure()
+
+    # Find the folder (case-insensitive)
+    folder_info = None
+    for name, info in structure.get("children", {}).items():
+        if name.lower() == folder_name.lower():
+            folder_info = info
+            break
+
+    if not folder_info:
+        return {"error": f"Folder '{folder_name}' not found", "available": list(structure.get("children", {}).keys())}
+
+    # List all audio files in the folder
+    files = await content_sync.drive.list_audio_files(folder_info["id"])
+
+    return {
+        "folder_name": folder_name,
+        "folder_id": folder_info["id"],
+        "file_count": len(files),
+        "files": [
+            {
+                "id": f.get("id"),
+                "name": f.get("name"),
+                "size": f.get("size"),
+                "mimeType": f.get("mimeType")
+            }
+            for f in files
+        ]
+    }
 
 
 @router.post("/sync/start")

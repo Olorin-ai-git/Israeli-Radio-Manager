@@ -9,7 +9,11 @@ import {
   Megaphone,
   Users,
   HelpCircle,
-  BookOpen
+  BookOpen,
+  Bot,
+  Settings,
+  Mic,
+  Shield
 } from 'lucide-react'
 import HelpSection from '../components/Help/HelpSection'
 import HelpNavigation from '../components/Help/HelpNavigation'
@@ -19,6 +23,10 @@ import ActionsStudioGuide from '../components/Help/ActionsStudioGuide'
 import ContentGuide from '../components/Help/ContentGuide'
 import CalendarGuide from '../components/Help/CalendarGuide'
 import CampaignGuide from '../components/Help/CampaignGuide'
+import AgentControlGuide from '../components/Help/AgentControlGuide'
+import SettingsGuide from '../components/Help/SettingsGuide'
+import VoiceStudioGuide from '../components/Help/VoiceStudioGuide'
+import AdminGuide from '../components/Help/AdminGuide'
 import RoleGuide from '../components/Help/RoleGuide'
 import SupportSection from '../components/Help/SupportSection'
 
@@ -131,6 +139,42 @@ export default function HelpPage() {
               icon={Megaphone}
             >
               <CampaignGuide />
+            </HelpSection>
+
+            <HelpSection
+              id="agent"
+              title="Agent Control"
+              titleHe="בקרת סוכן"
+              icon={Bot}
+            >
+              <AgentControlGuide />
+            </HelpSection>
+
+            <HelpSection
+              id="settings"
+              title="Settings"
+              titleHe="הגדרות"
+              icon={Settings}
+            >
+              <SettingsGuide />
+            </HelpSection>
+
+            <HelpSection
+              id="voices"
+              title="Voice Studio"
+              titleHe="סטודיו קולות"
+              icon={Mic}
+            >
+              <VoiceStudioGuide />
+            </HelpSection>
+
+            <HelpSection
+              id="admin"
+              title="Admin Dashboard"
+              titleHe="לוח ניהול"
+              icon={Shield}
+            >
+              <AdminGuide />
             </HelpSection>
 
             <HelpSection

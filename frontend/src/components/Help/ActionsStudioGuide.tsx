@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import HelpScreenshot from './HelpScreenshot'
-import { Music, Play, Megaphone, Radio, Mic, Clock, Volume2, MessageSquare } from 'lucide-react'
+import { Music, Play, Megaphone, Radio, Mic, Clock, Volume2, MessageSquare, Sparkles, MousePointer, ToggleLeft } from 'lucide-react'
 
 export default function ActionsStudioGuide() {
   const { i18n } = useTranslation()
@@ -32,6 +32,74 @@ export default function ActionsStudioGuide() {
         caption="The Actions Studio interface"
         captionHe="ממשק סטודיו הפעולות"
       />
+
+      {/* Build Modes */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
+          <ToggleLeft size={20} className="text-primary-400" />
+          {isRTL ? 'מצבי בנייה' : 'Build Modes'}
+        </h3>
+        <p className="text-dark-300">
+          {isRTL
+            ? 'סטודיו הפעולות מציע שני מצבי בנייה:'
+            : 'Actions Studio offers two build modes:'}
+        </p>
+
+        <div className="grid gap-3 mt-4">
+          {/* Manual Mode */}
+          <div className="p-4 rounded-xl bg-dark-800/50 border border-white/5">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-lg bg-blue-500/20">
+                <MousePointer size={18} className="text-blue-400" />
+              </div>
+              <h4 className="font-semibold text-dark-100">
+                {isRTL ? 'מצב ידני' : 'Manual Mode'}
+              </h4>
+            </div>
+            <p className="text-sm text-dark-400 mr-11">
+              {isRTL
+                ? 'גררו בלוקים מהפלטה אל הקנבס, סדרו אותם ידנית והגדירו כל בלוק בנפרד.'
+                : 'Drag blocks from the palette to the canvas, arrange them manually, and configure each block individually.'}
+            </p>
+          </div>
+
+          {/* AI Mode */}
+          <div className="p-4 rounded-xl bg-gradient-to-r from-amber-500/10 to-purple-500/10 border border-amber-500/20">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-lg bg-amber-500/20">
+                <Sparkles size={18} className="text-amber-400" />
+              </div>
+              <h4 className="font-semibold text-dark-100">
+                {isRTL ? 'מצב AI' : 'AI Mode'}
+              </h4>
+              <span className="px-2 py-0.5 text-xs bg-amber-500/20 text-amber-400 rounded-full">
+                {isRTL ? 'חדש!' : 'New!'}
+              </span>
+            </div>
+            <p className="text-sm text-dark-400 mr-11 mb-3">
+              {isRTL
+                ? 'תארו את הזרימה שלכם בשפה טבעית והבינה המלאכותית תיצור אותה עבורכם!'
+                : 'Describe your flow in natural language and AI will create it for you!'}
+            </p>
+            <div className="mr-11 p-3 rounded-lg bg-dark-900/50 border border-white/5">
+              <p className="text-xs text-dark-500 mb-1">{isRTL ? 'דוגמה:' : 'Example:'}</p>
+              <p className="text-sm text-dark-300 italic">
+                {isRTL
+                  ? '"נגן ג\'ינגל בוקר, אחר כך 3 שירי רוק, הכרזת מזג אוויר ואז פרסומות"'
+                  : '"Play morning jingle, then 3 rock songs, weather announcement, then commercials"'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-3 rounded-lg bg-primary-500/10 border border-primary-500/20 mt-4">
+          <p className="text-sm text-primary-400">
+            {isRTL
+              ? 'טיפ: החליפו בין מצבים בכל עת באמצעות הלחצן בראש הקנבס. תוכלו להתחיל עם AI ולערוך ידנית.'
+              : 'Tip: Switch between modes anytime using the toggle at the top. You can start with AI and fine-tune manually.'}
+          </p>
+        </div>
+      </div>
 
       {/* Creating a Flow */}
       <div className="space-y-3">

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import HelpScreenshot from './HelpScreenshot'
-import { Calendar, Grid, Mic, Play, AlertCircle } from 'lucide-react'
+import { Calendar, Grid, Mic, Play, AlertCircle, Copy, Save, CheckCircle, Clock } from 'lucide-react'
 
 export default function CampaignGuide() {
   const { i18n } = useTranslation()
@@ -186,6 +186,97 @@ export default function CampaignGuide() {
           <li>{isRTL ? 'לא נספר כהשמעה מתוזמנת' : 'Does NOT count against scheduled plays'}</li>
           <li>{isRTL ? 'מושלם לבדיקות' : 'Perfect for testing'}</li>
         </ul>
+      </div>
+
+      {/* Advanced Features */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-dark-100">
+          {isRTL ? 'תכונות מתקדמות' : 'Advanced Features'}
+        </h3>
+
+        <div className="grid gap-3">
+          {/* Copy from Previous Week */}
+          <div className="p-4 rounded-lg bg-dark-800/50 border border-white/5">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-lg bg-blue-500/20">
+                <Copy size={18} className="text-blue-400" />
+              </div>
+              <h4 className="font-medium text-dark-100">
+                {isRTL ? 'העתקה מהשבוע הקודם' : 'Copy from Previous Week'}
+              </h4>
+            </div>
+            <p className="text-sm text-dark-400">
+              {isRTL
+                ? 'לחצו על "העתק מהשבוע הקודם" כדי להעתיק את לוח התזמון של השבוע הקודם לשבוע הנוכחי. חוסך זמן בהגדרת קמפיינים חוזרים.'
+                : 'Click "Copy from Previous Week" to duplicate last week\'s schedule to the current week. Saves time setting up recurring campaigns.'}
+            </p>
+          </div>
+
+          {/* Campaign Cloning */}
+          <div className="p-4 rounded-lg bg-dark-800/50 border border-white/5">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-lg bg-purple-500/20">
+                <Copy size={18} className="text-purple-400" />
+              </div>
+              <h4 className="font-medium text-dark-100">
+                {isRTL ? 'שכפול קמפיין' : 'Campaign Cloning'}
+              </h4>
+            </div>
+            <p className="text-sm text-dark-400">
+              {isRTL
+                ? 'לחצו על כפתור השכפול ליד כל קמפיין ליצירת עותק. שימושי ליצירת גרסאות דומות עם שינויים קטנים.'
+                : 'Click the clone button next to any campaign to create a copy. Useful for creating similar versions with minor changes.'}
+            </p>
+          </div>
+
+          {/* Bulk Save */}
+          <div className="p-4 rounded-lg bg-dark-800/50 border border-white/5">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-lg bg-emerald-500/20">
+                <Save size={18} className="text-emerald-400" />
+              </div>
+              <h4 className="font-medium text-dark-100">
+                {isRTL ? 'שמירה מרובה' : 'Bulk Save'}
+              </h4>
+            </div>
+            <p className="text-sm text-dark-400">
+              {isRTL
+                ? 'כאשר יש שינויים במספר קמפיינים, לחצו "שמור הכל" לשמירת כולם בבת אחת. אזהרה צהובה תופיע כאשר יש שינויים שלא נשמרו.'
+                : 'When multiple campaigns have changes, click "Save All" to save them all at once. A yellow warning appears when there are unsaved changes.'}
+            </p>
+          </div>
+
+          {/* Slot Execution Status */}
+          <div className="p-4 rounded-lg bg-dark-800/50 border border-white/5">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-lg bg-amber-500/20">
+                <CheckCircle size={18} className="text-amber-400" />
+              </div>
+              <h4 className="font-medium text-dark-100">
+                {isRTL ? 'סטטוס ביצוע משבצות' : 'Slot Execution Status'}
+              </h4>
+            </div>
+            <p className="text-sm text-dark-400">
+              {isRTL
+                ? 'רשת התזמון מציגה אייקונים המסמנים אם משבצות הושמעו בהצלחה, נכשלו, או עדיין ממתינות.'
+                : 'The schedule grid displays icons indicating whether slots were successfully played, failed, or are still pending.'}
+            </p>
+            <div className="flex gap-4 mt-2 text-xs">
+              <div className="flex items-center gap-1">
+                <CheckCircle size={12} className="text-emerald-400" />
+                <span className="text-dark-400">{isRTL ? 'הושמע' : 'Played'}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <AlertCircle size={12} className="text-red-400" />
+                <span className="text-dark-400">{isRTL ? 'נכשל' : 'Failed'}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Clock size={12} className="text-dark-400" />
+                <span className="text-dark-400">{isRTL ? 'ממתין' : 'Pending'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Campaign Status */}

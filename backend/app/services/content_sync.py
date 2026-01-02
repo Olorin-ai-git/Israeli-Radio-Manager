@@ -373,10 +373,12 @@ class ContentSyncService:
             try:
                 # Stream directly from Drive to GCS
                 stream = self.drive.download_to_stream(drive_id)
+                # Use drive_id prefix to ensure unique GCS paths (prevents overwrites for same filenames)
+                unique_filename = f"{drive_id[:8]}_{filename}"
                 gcs_path = self.gcs.upload_from_stream(
                     stream=stream,
                     folder=gcs_folder,
-                    filename=filename,
+                    filename=unique_filename,
                     file_extension=file_ext,
                     metadata={"google_drive_id": drive_id}
                 )
@@ -393,11 +395,18 @@ class ContentSyncService:
                 metadata = self._extract_metadata(local_path)
 
         # Build content document
+        # For jingles/samples/newsflashes, always use filename as title (ignore embedded metadata)
+        # This preserves the original naming from Google Drive
+        if content_type in ("jingle", "sample", "newsflash"):
+            display_title = self._title_from_filename(filename)
+        else:
+            display_title = metadata.get("title") or self._title_from_filename(filename)
+
         content_doc = {
             "google_drive_id": drive_id,
             "google_drive_path": filename,
             "type": content_type,
-            "title": metadata.get("title") or self._title_from_filename(filename),
+            "title": display_title,
             "artist": metadata.get("artist") or artist_name,
             "genre": genre or metadata.get("genre"),
             "duration_seconds": metadata.get("duration", 0),
@@ -428,8 +437,17 @@ class ContentSyncService:
             }
 
             # Only update metadata fields if they were empty before (preserve manual edits)
-            if not existing.get("title") or existing.get("title") == self._title_from_filename(existing.get("google_drive_path", "")):
-                new_title = metadata.get("title") or self._title_from_filename(filename)
+            # Check if existing title is auto-generated (matches filename pattern)
+            existing_title = existing.get("title", "")
+            old_auto_title = self._title_from_filename(existing.get("google_drive_path", ""))
+            is_auto_generated = not existing_title or existing_title == old_auto_title or existing_title.startswith(old_auto_title + " (")
+
+            if is_auto_generated:
+                # For jingles/samples/newsflashes, always use filename as title
+                if content_type in ("jingle", "sample", "newsflash"):
+                    new_title = self._title_from_filename(filename)
+                else:
+                    new_title = metadata.get("title") or self._title_from_filename(filename)
                 if new_title:
                     update_doc["title"] = new_title
 

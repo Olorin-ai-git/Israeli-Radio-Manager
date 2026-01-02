@@ -41,7 +41,8 @@ export const api = {
   getContentById: (id: string) => client.get(`/content/${id}`).then((r) => r.data),
   updateContent: (id: string, data: any) =>
     client.patch(`/content/${id}`, data).then((r) => r.data),
-  deleteContent: (id: string) => client.delete(`/content/${id}`).then((r) => r.data),
+  deleteContent: (id: string) => client.delete(`/content/${id}?hard_delete=true`).then((r) => r.data),
+  batchDeleteContent: (ids: string[]) => client.post('/content/batch-delete', ids, { params: { hard_delete: true } }).then((r) => r.data),
 
   // Sync
   getSyncStatus: () => client.get('/content/sync/status').then((r) => r.data),
