@@ -132,5 +132,22 @@
     "generic": "An error occurred",
     "network": "Network error",
     "notFound": "Not found"
+  },
+  "demo": {
+    "banner": "You are viewing Demo Mode",
+    "signUpPrompt": "Contact us for full access",
+    "readOnly": "This action is not available in demo mode",
+    "viewerRestriction": "As a viewer, you can browse but not modify content",
+    "learnMore": "Learn More",
+    "dismiss": "Dismiss",
+    "simulatedPlayback": "Demo mode - playback is simulated",
+    "addedToQueue": "Added to demo queue",
+    "cannotModifyCalendar": "Demo mode - calendar changes are not saved",
+    "cannotModifyFlows": "Demo mode - flow changes are not saved",
+    "cannotModifyCampaigns": "Demo mode - campaign changes are not saved",
+    "cannotSync": "Demo mode - sync is disabled",
+    "cannotUpload": "Demo mode - uploads are disabled",
+    "cannotDelete": "Demo mode - deletions are disabled",
+    "cannotEdit": "Demo mode - edits are not saved"
   }
 }

@@ -348,6 +348,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://radio.olorin.ai",
+        "https://demo.radio.olorin.ai",  # Demo site
         "https://israeli-radio-475c9.web.app",
         "https://israeli-radio-475c9.firebaseapp.com",
         "http://localhost:5173",

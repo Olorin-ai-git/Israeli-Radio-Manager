@@ -37,13 +37,16 @@ import BlockConfigPanel from '../components/ActionsStudio/BlockConfigPanel'
 import ActionBlockCard from '../components/ActionsStudio/ActionBlockCard'
 import { api } from '../services/api'
 import { useToastStore } from '../store/toastStore'
+import { useDemoMode } from '../hooks/useDemoMode'
 
 export default function ActionsStudio() {
   const { flowId } = useParams<{ flowId?: string }>()
   const navigate = useNavigate()
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
   const { addToast } = useToastStore()
+  const { isViewer, isDemoHost } = useDemoMode()
+  const isInDemoMode = isViewer && isDemoHost
 
   // Build mode state
   const [buildMode, setBuildMode] = useState<'manual' | 'ai'>('manual')
@@ -136,6 +139,11 @@ export default function ActionsStudio() {
 
   // Handle save
   const handleSave = async () => {
+    if (isInDemoMode) {
+      addToast(t('demo.cannotModifyFlows'), 'info')
+      return
+    }
+
     if (!flowName.trim()) {
       addToast(isRTL ? 'נא להזין שם לזרימה' : 'Please enter a flow name', 'warning')
       return
@@ -154,6 +162,11 @@ export default function ActionsStudio() {
 
   // Handle run
   const handleRun = async () => {
+    if (isInDemoMode) {
+      addToast(t('demo.cannotModifyFlows'), 'info')
+      return
+    }
+
     if (!flowId) {
       addToast(isRTL ? 'נא לשמור את הזרימה תחילה' : 'Please save the flow first', 'warning')
       return
@@ -389,8 +402,9 @@ export default function ActionsStudio() {
           <div className="flex items-center gap-2">
             <button
               onClick={handleSave}
-              disabled={isSaving || !flowName.trim()}
+              disabled={isSaving || !flowName.trim() || isInDemoMode}
               className="glass-button-primary px-4 py-2 flex items-center gap-2 disabled:opacity-50"
+              title={isInDemoMode ? t('demo.cannotModifyFlows') : undefined}
             >
               {isSaving ? (
                 <Loader2 size={18} className="animate-spin" />
@@ -403,7 +417,9 @@ export default function ActionsStudio() {
             {flowId && (
               <button
                 onClick={handleRun}
-                className="glass-button px-4 py-2 flex items-center gap-2 text-green-400 hover:bg-green-500/20"
+                disabled={isInDemoMode}
+                className={`glass-button px-4 py-2 flex items-center gap-2 text-green-400 hover:bg-green-500/20 ${isInDemoMode ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title={isInDemoMode ? t('demo.cannotModifyFlows') : undefined}
               >
                 <Play size={18} />
                 <span>{isRTL ? 'הפעל' : 'Run'}</span>

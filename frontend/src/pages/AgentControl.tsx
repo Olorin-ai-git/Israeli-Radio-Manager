@@ -2,10 +2,15 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bot, Zap, Hand, Check, X, Clock, AlertCircle } from 'lucide-react'
 import { api } from '../services/api'
+import { useDemoMode } from '../hooks/useDemoMode'
+import { toast } from '../store/toastStore'
 
 export default function AgentControl() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const isRTL = i18n.language === 'he'
   const queryClient = useQueryClient()
+  const { isViewer, isDemoHost } = useDemoMode()
+  const isInDemoMode = isViewer && isDemoHost
 
   const { data: config } = useQuery({
     queryKey: ['agentConfig'],
@@ -65,12 +70,19 @@ export default function AgentControl() {
           <div className="grid grid-cols-2 gap-4">
             {/* Full Automation Mode */}
             <button
-              onClick={() => setModeMutation.mutate('full_automation')}
+              onClick={() => {
+                if (isInDemoMode) {
+                  toast.info(isRTL ? 'מצב הדגמה - שינויים בסוכן לא נשמרים' : 'Demo mode - agent changes are not saved')
+                  return
+                }
+                setModeMutation.mutate('full_automation')
+              }}
+              disabled={isInDemoMode}
               className={`p-6 rounded-xl border-2 text-left transition-all ${
                 currentMode === 'full_automation'
                   ? 'border-primary-500/50 bg-primary-500/10'
                   : 'border-white/10 hover:border-white/20 bg-dark-700/30'
-              }`}
+              } ${isInDemoMode ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
               <div className="flex items-center gap-3 mb-3">
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
@@ -92,12 +104,19 @@ export default function AgentControl() {
 
             {/* Prompt Mode */}
             <button
-              onClick={() => setModeMutation.mutate('prompt')}
+              onClick={() => {
+                if (isInDemoMode) {
+                  toast.info(isRTL ? 'מצב הדגמה - שינויים בסוכן לא נשמרים' : 'Demo mode - agent changes are not saved')
+                  return
+                }
+                setModeMutation.mutate('prompt')
+              }}
+              disabled={isInDemoMode}
               className={`p-6 rounded-xl border-2 text-left transition-all ${
                 currentMode === 'prompt'
                   ? 'border-primary-500/50 bg-primary-500/10'
                   : 'border-white/10 hover:border-white/20 bg-dark-700/30'
-              }`}
+              } ${isInDemoMode ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
               <div className="flex items-center gap-3 mb-3">
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
@@ -186,17 +205,29 @@ export default function AgentControl() {
                     </div>
                     <div className="flex gap-2 ml-4">
                       <button
-                        onClick={() => approveMutation.mutate(action._id)}
-                        disabled={approveMutation.isPending}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-emerald-500/20 text-emerald-400 text-sm font-medium rounded-xl border border-emerald-500/30 hover:bg-emerald-500/30 disabled:opacity-50 transition-colors"
+                        onClick={() => {
+                          if (isInDemoMode) {
+                            toast.info(isRTL ? 'מצב הדגמה - שינויים בסוכן לא נשמרים' : 'Demo mode - agent changes are not saved')
+                            return
+                          }
+                          approveMutation.mutate(action._id)
+                        }}
+                        disabled={approveMutation.isPending || isInDemoMode}
+                        className={`flex items-center gap-1 px-3 py-1.5 bg-emerald-500/20 text-emerald-400 text-sm font-medium rounded-xl border border-emerald-500/30 hover:bg-emerald-500/30 disabled:opacity-50 transition-colors ${isInDemoMode ? 'cursor-not-allowed' : ''}`}
                       >
                         <Check size={14} />
                         {t('agent.approve')}
                       </button>
                       <button
-                        onClick={() => rejectMutation.mutate(action._id)}
-                        disabled={rejectMutation.isPending}
-                        className="flex items-center gap-1 px-3 py-1.5 glass-button text-sm font-medium disabled:opacity-50"
+                        onClick={() => {
+                          if (isInDemoMode) {
+                            toast.info(isRTL ? 'מצב הדגמה - שינויים בסוכן לא נשמרים' : 'Demo mode - agent changes are not saved')
+                            return
+                          }
+                          rejectMutation.mutate(action._id)
+                        }}
+                        disabled={rejectMutation.isPending || isInDemoMode}
+                        className={`flex items-center gap-1 px-3 py-1.5 glass-button text-sm font-medium disabled:opacity-50 ${isInDemoMode ? 'cursor-not-allowed' : ''}`}
                       >
                         <X size={14} />
                         {t('agent.reject')}

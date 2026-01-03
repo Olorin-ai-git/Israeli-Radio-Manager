@@ -37,10 +37,13 @@ import {
   getWeekEnd,
   isCampaignActiveInWeek,
 } from '../components/Campaigns/utils/campaignUtils'
+import { useDemoMode } from '../hooks/useDemoMode'
 
 export default function CampaignManager() {
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
+  const { isViewer, isDemoHost } = useDemoMode()
+  const isInDemoMode = isViewer && isDemoHost
 
   // Store state
   const {
@@ -196,6 +199,10 @@ export default function CampaignManager() {
 
   // Handle campaign creation
   const handleCreateCampaign = useCallback(async (data: CampaignCreate) => {
+    if (isInDemoMode) {
+      toast.info(t('demo.cannotModifyCampaigns'))
+      return
+    }
     const campaign = await createCampaign(data)
     if (campaign) {
       setShowFormModal(false)
@@ -205,20 +212,29 @@ export default function CampaignManager() {
       }
       selectCampaign(campaign)
     }
-  }, [createCampaign, selectCampaign, statusFilter])
+  }, [createCampaign, selectCampaign, statusFilter, isInDemoMode, t])
 
   // Handle campaign update
   const handleUpdateCampaign = useCallback(async (data: CampaignCreate) => {
+    if (isInDemoMode) {
+      toast.info(t('demo.cannotModifyCampaigns'))
+      return
+    }
     if (!editingCampaign) return
     const campaign = await updateCampaign(editingCampaign._id, data)
     if (campaign) {
       setShowFormModal(false)
       setEditingCampaign(null)
     }
-  }, [editingCampaign, updateCampaign])
+  }, [editingCampaign, updateCampaign, isInDemoMode, t])
 
   // Handle delete
   const handleDeleteCampaign = useCallback(async (campaignId: string) => {
+    if (isInDemoMode) {
+      toast.info(t('demo.cannotModifyCampaigns'))
+      setConfirmDelete(null)
+      return
+    }
     await saveAllGrids()
     try {
       await api.updateCampaignGrid(campaignId, [])
@@ -231,10 +247,15 @@ export default function CampaignManager() {
       toast.success(isRTL ? 'הקמפיין נמחק והמשבצות הוסרו' : 'Campaign deleted and slots removed')
       fetchCampaigns()
     }
-  }, [deleteCampaign, isRTL, fetchCampaigns, saveAllGrids])
+  }, [deleteCampaign, isRTL, fetchCampaigns, saveAllGrids, isInDemoMode, t])
 
   // Handle pause
   const handlePauseCampaign = useCallback(async (campaignId: string) => {
+    if (isInDemoMode) {
+      toast.info(t('demo.cannotModifyCampaigns'))
+      setConfirmPause(null)
+      return
+    }
     await saveAllGrids()
     try {
       await api.updateCampaignGrid(campaignId, [])
@@ -247,33 +268,51 @@ export default function CampaignManager() {
       toast.success(isRTL ? 'הקמפיין הושהה והמשבצות הוסרו' : 'Campaign paused and slots removed')
       fetchCampaigns()
     }
-  }, [toggleCampaignStatus, isRTL, fetchCampaigns, saveAllGrids])
+  }, [toggleCampaignStatus, isRTL, fetchCampaigns, saveAllGrids, isInDemoMode, t])
 
   // Handle toggle status
   const handleToggleStatus = useCallback((campaign: Campaign) => {
+    if (isInDemoMode) {
+      toast.info(t('demo.cannotModifyCampaigns'))
+      return
+    }
     if (campaign.status === 'active') {
       setConfirmPause(campaign._id)
     } else {
       toggleCampaignStatus(campaign._id)
     }
-  }, [toggleCampaignStatus])
+  }, [toggleCampaignStatus, isInDemoMode, t])
 
   // Handle clone
   const handleCloneCampaign = useCallback(async (campaignId: string) => {
+    if (isInDemoMode) {
+      toast.info(t('demo.cannotModifyCampaigns'))
+      return
+    }
     const cloned = await cloneCampaign(campaignId)
     if (cloned) {
       toast.success(isRTL ? `קמפיין "${cloned.name}" נוצר בהצלחה` : `Campaign "${cloned.name}" created successfully`)
     }
-  }, [cloneCampaign, isRTL])
+  }, [cloneCampaign, isRTL, isInDemoMode, t])
 
   // Handle save all
   const handleSaveAll = useCallback(async () => {
+    if (isInDemoMode) {
+      toast.info(t('demo.cannotModifyCampaigns'))
+      return
+    }
     await saveAllGrids()
     await saveJingleSettings()
-  }, [saveAllGrids, saveJingleSettings])
+  }, [saveAllGrids, saveJingleSettings, isInDemoMode, t])
 
   // Handle run slot now
   const handleRunSlotNow = async (slotDate: string, slotIndex: number) => {
+    // In demo mode, use local audio playback instead of production API
+    if (isInDemoMode) {
+      handlePlaySlot(slotDate, slotIndex)
+      return
+    }
+
     setIsRunningSlot(true)
     try {
       const result = await api.runSlotNow(
@@ -349,6 +388,10 @@ export default function CampaignManager() {
   // If a campaign is selected, copies only that campaign's slots
   // If no campaign is selected, copies all active campaigns' slots
   const handleCopyFromPreviousWeek = useCallback(() => {
+    if (isInDemoMode) {
+      toast.info(t('demo.cannotModifyCampaigns'))
+      return
+    }
     // Calculate previous week dates
     const prevWeekDate = new Date(heatmapBaseDate)
     prevWeekDate.setDate(prevWeekDate.getDate() - 7)
@@ -432,7 +475,7 @@ export default function CampaignManager() {
         : (isRTL ? `הועתקו ${totalSlotsCopied} משבצות מ-${campaignsUpdated} קמפיינים` : `Copied ${totalSlotsCopied} slots from ${campaignsUpdated} campaigns`)
       toast.success(message)
     }
-  }, [selectedCampaign, campaigns, heatmapBaseDate, editingGrid, editingGrids, setEditingGrid, setCampaignGrid, isRTL])
+  }, [selectedCampaign, campaigns, heatmapBaseDate, editingGrid, editingGrids, setEditingGrid, setCampaignGrid, isRTL, isInDemoMode, t])
 
   // Handle week change
   const handleWeekChange = useCallback((direction: 'prev' | 'next') => {

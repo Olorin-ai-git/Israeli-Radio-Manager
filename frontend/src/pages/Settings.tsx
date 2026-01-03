@@ -6,6 +6,7 @@ import Input from '../components/Form/Input'
 import api from '../services/api'
 import { useToastStore } from '../store/toastStore'
 import { useAuth } from '../contexts/AuthContext'
+import { useDemoMode } from '../hooks/useDemoMode'
 
 interface Settings {
   notifications: {
@@ -24,6 +25,9 @@ export default function Settings() {
   const { t, i18n } = useTranslation()
   const { addToast } = useToastStore()
   const { refreshUser } = useAuth()
+  const { isViewer, isDemoHost } = useDemoMode()
+  const isInDemoMode = isViewer && isDemoHost
+  const isRTL = i18n.language === 'he'
 
   // Loading states
   const [loading, setLoading] = useState(true)
@@ -75,6 +79,11 @@ export default function Settings() {
   const saveSettings = async () => {
     if (!settings) return
 
+    if (isInDemoMode) {
+      addToast(isRTL ? 'מצב הדגמה - שינויים לא נשמרים' : 'Demo mode - changes are not saved', 'info')
+      return
+    }
+
     setSaving(true)
     try {
       await api.updateSettings({
@@ -90,6 +99,11 @@ export default function Settings() {
   }
 
   const subscribeToPush = async () => {
+    if (isInDemoMode) {
+      addToast(isRTL ? 'מצב הדגמה - שינויים לא נשמרים' : 'Demo mode - changes are not saved', 'info')
+      return
+    }
+
     if (!settings?.vapid_public_key) {
       addToast('Push notifications not configured on server', 'error')
       return
@@ -115,6 +129,11 @@ export default function Settings() {
   }
 
   const testNotification = async (channel: 'email' | 'push' | 'sms') => {
+    if (isInDemoMode) {
+      addToast(isRTL ? 'מצב הדגמה - שינויים לא נשמרים' : 'Demo mode - changes are not saved', 'info')
+      return
+    }
+
     setTestingChannel(channel)
     try {
       const result = await api.testNotification(channel)
@@ -137,6 +156,13 @@ export default function Settings() {
   const saveLanguage = async () => {
     // Don't save if nothing changed
     if (selectedLanguage === i18n.language) return
+
+    if (isInDemoMode) {
+      // In demo mode, allow language change locally but don't save to server
+      i18n.changeLanguage(selectedLanguage)
+      addToast(isRTL ? 'מצב הדגמה - שפה שונתה זמנית' : 'Demo mode - language changed temporarily', 'info')
+      return
+    }
 
     setSavingLanguage(true)
     try {
@@ -365,6 +391,7 @@ export default function Settings() {
                 updateAdminContact('email', e.target.value)
               }
               icon={Mail}
+              disabled={isInDemoMode}
             />
             <Input
               type="tel"
@@ -375,11 +402,13 @@ export default function Settings() {
                 updateAdminContact('phone', e.target.value)
               }
               icon={Smartphone}
+              disabled={isInDemoMode}
             />
             <button
               onClick={saveSettings}
-              disabled={saving}
-              className="px-4 py-2 glass-button-primary flex items-center gap-2"
+              disabled={saving || isInDemoMode}
+              className={`px-4 py-2 glass-button-primary flex items-center gap-2 ${isInDemoMode ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title={isInDemoMode ? (isRTL ? 'מצב הדגמה' : 'Demo mode') : undefined}
             >
               {saving ? (
                 <Loader2 size={16} className="animate-spin" />

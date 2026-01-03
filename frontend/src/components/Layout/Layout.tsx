@@ -21,8 +21,10 @@ import {
 import ChatSidebar from '../Agent/ChatSidebar'
 import AudioPlayer from '../Player/AudioPlayer'
 import FlowsPanel from '../Flows/FlowsPanel'
+import { DemoBanner } from '../Demo'
 import { usePlayerStore } from '../../store/playerStore'
 import { useAuth } from '../../contexts/AuthContext'
+import { useDemoMode } from '../../hooks/useDemoMode'
 
 interface LayoutProps {
   children: ReactNode
@@ -33,6 +35,7 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const queryClient = useQueryClient()
   const { role } = useAuth()
+  const { showDemoBanner } = useDemoMode()
   const [chatExpanded, setChatExpanded] = useState(false)
   const [flowsCollapsed, setFlowsCollapsed] = useState(true)
   const [navCollapsed, setNavCollapsed] = useState(() => {
@@ -355,7 +358,14 @@ export default function Layout({ children }: LayoutProps) {
   }, [flowsPanelWidth, chatPanelWidth])
 
   return (
-    <div className="h-screen bg-dark-950 overflow-hidden">
+    <div className="h-screen bg-dark-950 overflow-hidden flex flex-col">
+      {/* Demo Mode Banner */}
+      {showDemoBanner && (
+        <div className="flex-shrink-0 z-50">
+          <DemoBanner />
+        </div>
+      )}
+
       {/* Background gradient overlay */}
       <div className="fixed inset-0 bg-gradient-dark pointer-events-none z-0" />
 

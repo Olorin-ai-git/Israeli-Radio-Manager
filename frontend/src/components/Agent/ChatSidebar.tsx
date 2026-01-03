@@ -10,6 +10,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../services/api'
 import { usePlayerStore } from '../../store/playerStore'
 import { Input } from '../Form'
+import { useDemoMode } from '../../hooks/useDemoMode'
+import { toast } from '../../store/toastStore'
 
 interface ChatMessage {
   id: string
@@ -159,6 +161,8 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
   const inputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
   const { play } = usePlayerStore()
+  const { isViewer, isDemoHost } = useDemoMode()
+  const isInDemoMode = isViewer && isDemoHost
 
   // @ action popup state
   const [showActionPopup, setShowActionPopup] = useState(false)
@@ -340,6 +344,11 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
 
   const handleSend = () => {
     if (!message.trim() || sendMutation.isPending) return
+
+    if (isInDemoMode) {
+      toast.info(isRTL ? 'מצב הדגמה - פקודות צ\'אט לא משפיעות על המערכת' : 'Demo mode - chat commands do not affect the system')
+      return
+    }
 
     setShowExamples(false)
     setErrorMessage(null)
@@ -606,13 +615,15 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
             <div className="tooltip-trigger">
               <button
                 onClick={handleSend}
-                disabled={!message.trim() || sendMutation.isPending}
-                className="px-4 py-3 glass-button-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!message.trim() || sendMutation.isPending || isInDemoMode}
+                className={`px-4 py-3 glass-button-primary disabled:opacity-50 disabled:cursor-not-allowed ${isInDemoMode ? 'opacity-60' : ''}`}
               >
                 <Send size={20} />
               </button>
               <div className="tooltip tooltip-top">
-                {t('chat.send')}
+                {isInDemoMode
+                  ? (isRTL ? 'מצב הדגמה - צ\'אט מושבת' : 'Demo mode - chat disabled')
+                  : t('chat.send')}
               </div>
             </div>
           </div>

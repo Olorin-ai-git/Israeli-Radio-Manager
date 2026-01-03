@@ -35,6 +35,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { api } from '../../services/api'
 import { toast } from '../../store/toastStore'
 import { usePlayerStore } from '../../store/playerStore'
+import { useDemoAwarePlayer } from '../../hooks/useDemoAwarePlayer'
 
 interface Track {
   _id: string
@@ -229,7 +230,16 @@ export default function AudioPlayer({
   // Queue popover ref for click outside detection
   const queuePopoverRef = useRef<HTMLDivElement>(null)
 
-  const { queue, removeFromQueue, clearQueue, reorderQueue, hasUserInteracted, setUserInteracted } = usePlayerStore()
+  // Use demo-aware player for sandboxed queue in demo mode
+  const demoPlayer = useDemoAwarePlayer()
+  const { hasUserInteracted, setUserInteracted } = usePlayerStore()
+
+  // Use demo-aware queue and actions
+  const queue = demoPlayer.queue
+  const removeFromQueue = demoPlayer.removeFromQueue
+  const clearQueue = demoPlayer.clearQueue
+  const reorderQueue = demoPlayer.reorderQueue
+
   const isRTL = i18n.language === 'he'
 
   // Ref to access current queue in callbacks/timeouts

@@ -143,5 +143,22 @@
     "generic": "אירעה שגיאה",
     "network": "שגיאת רשת",
     "notFound": "לא נמצא"
+  },
+  "demo": {
+    "banner": "אתה צופה במצב הדגמה",
+    "signUpPrompt": "צור קשר לגישה מלאה",
+    "readOnly": "פעולה זו אינה זמינה במצב הדגמה",
+    "viewerRestriction": "כצופה, ניתן לגלוש אך לא לשנות תוכן",
+    "learnMore": "למידע נוסף",
+    "dismiss": "סגור",
+    "simulatedPlayback": "מצב הדגמה - הנגינה מדומה",
+    "addedToQueue": "נוסף לתור ההדגמה",
+    "cannotModifyCalendar": "מצב הדגמה - שינויים ביומן לא נשמרים",
+    "cannotModifyFlows": "מצב הדגמה - שינויים בתהליכים לא נשמרים",
+    "cannotModifyCampaigns": "מצב הדגמה - שינויים בקמפיינים לא נשמרים",
+    "cannotSync": "מצב הדגמה - סנכרון מושבת",
+    "cannotUpload": "מצב הדגמה - העלאות מושבתות",
+    "cannotDelete": "מצב הדגמה - מחיקות מושבתות",
+    "cannotEdit": "מצב הדגמה - עריכות לא נשמרות"
   }
 }

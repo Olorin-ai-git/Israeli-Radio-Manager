@@ -17,8 +17,10 @@ import {
   Repeat
 } from 'lucide-react'
 import { api } from '../services/api'
+import { toast } from '../store/toastStore'
 import Checkbox from '../components/Form/Checkbox'
 import { Select } from '../components/Form'
+import { useDemoMode } from '../hooks/useDemoMode'
 
 interface CalendarEvent {
   id: string
@@ -60,9 +62,10 @@ const ContentTypeIcon = ({ type }: { type?: string }) => {
 }
 
 export default function CalendarPlaylist() {
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
   const isRTL = i18n.language === 'he'
+  const { canWrite } = useDemoMode()
 
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
     const today = new Date()
@@ -216,6 +219,13 @@ export default function CalendarPlaylist() {
 
   const handleScheduleContent = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
+
+    // Block in demo mode
+    if (!canWrite) {
+      toast.info(t('demo.cannotModifyCalendar'))
+      return
+    }
+
     const formData = new FormData(e.currentTarget)
 
     if (scheduleType === 'flow') {
@@ -523,18 +533,28 @@ export default function CalendarPlaylist() {
             )}
 
             <div className="pt-4 border-t border-white/10 flex gap-2">
-              <button
-                onClick={() => deleteMutation.mutate(selectedEvent.id)}
-                disabled={deleteMutation.isPending}
-                className="flex-1 glass-button text-red-400 hover:bg-red-500/20 flex items-center justify-center gap-2 py-2"
-              >
-                {deleteMutation.isPending ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
+              {canWrite ? (
+                <button
+                  onClick={() => deleteMutation.mutate(selectedEvent.id)}
+                  disabled={deleteMutation.isPending}
+                  className="flex-1 glass-button text-red-400 hover:bg-red-500/20 flex items-center justify-center gap-2 py-2"
+                >
+                  {deleteMutation.isPending ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={16} />
+                  )}
+                  <span>{isRTL ? 'מחק' : 'Delete'}</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => toast.info(t('demo.cannotModifyCalendar'))}
+                  className="flex-1 glass-button text-dark-500 cursor-not-allowed flex items-center justify-center gap-2 py-2 opacity-50"
+                >
                   <Trash2 size={16} />
-                )}
-                <span>{isRTL ? 'מחק' : 'Delete'}</span>
-              </button>
+                  <span>{isRTL ? 'מחק' : 'Delete'}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

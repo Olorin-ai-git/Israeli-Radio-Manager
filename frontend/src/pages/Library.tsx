@@ -7,9 +7,10 @@ import {
   AudioLines, Layers, Newspaper, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Save, Trash2, AlertTriangle
 } from 'lucide-react'
 import { api } from '../services/api'
-import { usePlayerStore } from '../store/playerStore'
 import { toast } from '../store/toastStore'
 import { Select } from '../components/Form'
+import { useDemoMode } from '../hooks/useDemoMode'
+import { useDemoAwarePlayer } from '../hooks/useDemoAwarePlayer'
 
 type SortField = 'title' | 'genre' | 'duration_seconds' | 'type' | 'created_at'
 type SortDirection = 'asc' | 'desc'
@@ -54,6 +55,7 @@ type ContentTab = 'songs' | 'shows' | 'commercials' | 'jingles' | 'samples' | 'n
 export default function Library() {
   const { i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
+  const { canWrite } = useDemoMode()
   const [activeTab, setActiveTab] = useState<ContentTab>('songs')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedGenre, setSelectedGenre] = useState('')
@@ -64,7 +66,9 @@ export default function Library() {
   const [editForm, setEditForm] = useState({ title: '', artist: '', genre: '' })
   const [confirmDelete, setConfirmDelete] = useState<any>(null)
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false)
-  const { play, addToQueue, currentTrack } = usePlayerStore()
+
+  // Use demo-aware player for sandboxed playback in demo mode
+  const { play, addToQueue, currentTrack } = useDemoAwarePlayer()
   const queryClient = useQueryClient()
 
   // Metadata refresh mutation
@@ -412,41 +416,43 @@ export default function Library() {
         <h1 className="text-2xl font-bold text-dark-100">
           {isRTL ? 'ספריית מדיה' : 'Media Library'}
         </h1>
-        <div className="flex items-center gap-4">
-          <div className="tooltip-trigger">
-            <button
-              onClick={() => {
-                console.log('Sync button clicked!')
-                syncMutation.mutate()
-              }}
-              disabled={syncMutation.isPending}
-              className="glass-button-primary flex items-center gap-2 px-4 py-2"
-            >
-              <FolderSync size={16} className={syncMutation.isPending ? 'animate-spin' : ''} />
-              <span className="hidden sm:inline">
-                {isRTL ? 'סנכרן עם Drive' : 'Sync with Drive'}
-              </span>
-            </button>
-            <div className="tooltip tooltip-bottom">
-              {isRTL ? 'סנכרן עם Google Drive' : 'Sync with Google Drive'}
+        {canWrite && (
+          <div className="flex items-center gap-4">
+            <div className="tooltip-trigger">
+              <button
+                onClick={() => {
+                  console.log('Sync button clicked!')
+                  syncMutation.mutate()
+                }}
+                disabled={syncMutation.isPending}
+                className="glass-button-primary flex items-center gap-2 px-4 py-2"
+              >
+                <FolderSync size={16} className={syncMutation.isPending ? 'animate-spin' : ''} />
+                <span className="hidden sm:inline">
+                  {isRTL ? 'סנכרן עם Drive' : 'Sync with Drive'}
+                </span>
+              </button>
+              <div className="tooltip tooltip-bottom">
+                {isRTL ? 'סנכרן עם Google Drive' : 'Sync with Google Drive'}
+              </div>
+            </div>
+            <div className="tooltip-trigger">
+              <button
+                onClick={() => refreshMetadataMutation.mutate()}
+                disabled={refreshMetadataMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-dark-800 text-dark-100 hover:bg-dark-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RefreshCw size={16} className={refreshMetadataMutation.isPending ? 'animate-spin' : ''} />
+                <span className="hidden sm:inline">
+                  {isRTL ? 'רענן מטה-דאטה' : 'Refresh Metadata'}
+                </span>
+              </button>
+              <div className="tooltip tooltip-bottom">
+                {isRTL ? 'רענן מטה-דאטה מקבצי שמע' : 'Refresh metadata from audio files'}
+              </div>
             </div>
           </div>
-          <div className="tooltip-trigger">
-            <button
-              onClick={() => refreshMetadataMutation.mutate()}
-              disabled={refreshMetadataMutation.isPending}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-dark-800 text-dark-100 hover:bg-dark-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <RefreshCw size={16} className={refreshMetadataMutation.isPending ? 'animate-spin' : ''} />
-              <span className="hidden sm:inline">
-                {isRTL ? 'רענן מטה-דאטה' : 'Refresh Metadata'}
-              </span>
-            </button>
-            <div className="tooltip tooltip-bottom">
-              {isRTL ? 'רענן מטה-דאטה מקבצי שמע' : 'Refresh metadata from audio files'}
-            </div>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -548,13 +554,15 @@ export default function Library() {
             </button>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleDeleteSelected}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-colors"
-            >
-              <Trash2 size={18} />
-              {isRTL ? 'מחק נבחרים' : 'Delete Selected'}
-            </button>
+            {canWrite && (
+              <button
+                onClick={handleDeleteSelected}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-colors"
+              >
+                <Trash2 size={18} />
+                {isRTL ? 'מחק נבחרים' : 'Delete Selected'}
+              </button>
+            )}
             <button
               onClick={handleAddSelectedToQueue}
               className="glass-button-primary flex items-center gap-2 px-4 py-2"
@@ -763,17 +771,19 @@ export default function Library() {
                       {/* Actions */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
-                          <div className="tooltip-trigger">
-                            <button
-                              onClick={() => handleEdit(item)}
-                              className="p-2 rounded-lg text-dark-400 hover:text-primary-400 hover:bg-white/10 transition-all"
-                            >
-                              <Pencil size={16} />
-                            </button>
-                            <div className="tooltip tooltip-left">
-                              {isRTL ? 'ערוך' : 'Edit'}
+                          {canWrite && (
+                            <div className="tooltip-trigger">
+                              <button
+                                onClick={() => handleEdit(item)}
+                                className="p-2 rounded-lg text-dark-400 hover:text-primary-400 hover:bg-white/10 transition-all"
+                              >
+                                <Pencil size={16} />
+                              </button>
+                              <div className="tooltip tooltip-left">
+                                {isRTL ? 'ערוך' : 'Edit'}
+                              </div>
                             </div>
-                          </div>
+                          )}
                           <div className="tooltip-trigger">
                             <button
                               onClick={() => handleAddToQueue(item)}
@@ -785,17 +795,19 @@ export default function Library() {
                               {isRTL ? 'הוסף לתור' : 'Add to queue'}
                             </div>
                           </div>
-                          <div className="tooltip-trigger">
-                            <button
-                              onClick={() => handleDelete(item)}
-                              className="p-2 rounded-lg text-dark-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                            <div className="tooltip tooltip-left">
-                              {isRTL ? 'מחק' : 'Delete'}
+                          {canWrite && (
+                            <div className="tooltip-trigger">
+                              <button
+                                onClick={() => handleDelete(item)}
+                                className="p-2 rounded-lg text-dark-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                              <div className="tooltip tooltip-left">
+                                {isRTL ? 'מחק' : 'Delete'}
+                              </div>
                             </div>
-                          </div>
+                          )}
                         </div>
                       </td>
                     </tr>

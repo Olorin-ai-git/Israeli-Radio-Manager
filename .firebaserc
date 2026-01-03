@@ -1,5 +1,17 @@
 {
   "projects": {
     "default": "israeli-radio-475c9"
+  },
+  "targets": {
+    "israeli-radio-475c9": {
+      "hosting": {
+        "prod": [
+          "israeli-radio-475c9"
+        ],
+        "demo": [
+          "israeli-radio-demo"
+        ]
+      }
+    }
   }
 }

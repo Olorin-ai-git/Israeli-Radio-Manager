@@ -65,7 +65,14 @@ function App() {
                   <Route path="/calendar" element={<CalendarPlaylist />} />
                   <Route path="/campaigns" element={<CampaignManager />} />
                   <Route path="/library" element={<Library />} />
-                  <Route path="/upload" element={<Upload />} />
+                  <Route
+                    path="/upload"
+                    element={
+                      <ProtectedRoute requireWrite>
+                        <Upload />
+                      </ProtectedRoute>
+                    }
+                  />
                   <Route path="/agent" element={<AgentControl />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route
