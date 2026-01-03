@@ -500,7 +500,7 @@ export default function Layout({ children }: LayoutProps) {
           {/* Copyright Footer */}
           <div className="flex-shrink-0 px-4 py-2 border-t border-white/5 bg-dark-900/50">
             <p className="text-base text-center text-dark-500">
-              Powered by <a href="https://olorin.ai" target="_blank" rel="noopener noreferrer" className="text-purple-500 font-medium hover:text-purple-400 transition-colors">Olorin.ai LLC</a> © 2026 All rights reserved
+              Powered by <a href="https://marketing.radio.olorin.ai" target="_blank" rel="noopener noreferrer" className="text-purple-500 font-medium hover:text-purple-400 transition-colors">Olorin.ai LLC</a> © 2026 All rights reserved
             </p>
           </div>
         </main>
