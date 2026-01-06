@@ -22,10 +22,10 @@ import {
   getSlotPlayCount,
   slotIndexToTime,
 } from '../store/campaignStore'
-import { api } from '../services/api'
+import { useService, useServiceMode } from '../services'
 import { toast } from '../store/toastStore'
 import CampaignFormModal from '../components/Campaigns/CampaignFormModal'
-import ScheduleHeatmap, { CampaignSlotInfo, SlotExecutionStatus } from '../components/Campaigns/ScheduleHeatmap'
+import ScheduleHeatmap, { CampaignSlotInfo } from '../components/Campaigns/ScheduleHeatmap'
 import CampaignListPanel from '../components/Campaigns/CampaignListPanel'
 import CampaignStatsBar from '../components/Campaigns/CampaignStatsBar'
 import ScheduleDetailsPanel from '../components/Campaigns/ScheduleDetailsPanel'
@@ -37,13 +37,12 @@ import {
   getWeekEnd,
   isCampaignActiveInWeek,
 } from '../components/Campaigns/utils/campaignUtils'
-import { useDemoMode } from '../hooks/useDemoMode'
 
 export default function CampaignManager() {
   const { t, i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
-  const { isViewer, isDemoHost } = useDemoMode()
-  const isInDemoMode = isViewer && isDemoHost
+  const service = useService()
+  const { isDemoMode: isInDemoMode } = useServiceMode()
 
   // Store state
   const {
@@ -119,20 +118,20 @@ export default function CampaignManager() {
   // Get user role
   const { data: currentUser } = useQuery({
     queryKey: ['currentUser'],
-    queryFn: api.getCurrentUser,
+    queryFn: () => service.getCurrentUser(),
   })
   const isAdmin = currentUser?.role === 'admin'
 
   // Fetch jingles
   const { data: jingles = [] } = useQuery({
     queryKey: ['jingles'],
-    queryFn: api.getJingles,
+    queryFn: () => service.getJingles(),
   })
 
   // Fetch saved jingle settings
   const { data: jingleSettings } = useQuery({
     queryKey: ['jingleSettings'],
-    queryFn: api.getJingleSettings,
+    queryFn: () => service.getJingleSettings(),
   })
 
   // Initialize jingle settings
@@ -157,12 +156,12 @@ export default function CampaignManager() {
   const saveJingleSettings = useCallback(async () => {
     if (!isJingleSettingsDirty) return
     try {
-      await api.saveJingleSettings(useOpeningJingle, openingJingleId, useClosingJingle, closingJingleId)
+      await service.saveJingleSettings(useOpeningJingle, openingJingleId, useClosingJingle, closingJingleId)
       setIsJingleSettingsDirty(false)
     } catch (error) {
       console.error('Failed to save jingle settings:', error)
     }
-  }, [isJingleSettingsDirty, useOpeningJingle, openingJingleId, useClosingJingle, closingJingleId])
+  }, [isJingleSettingsDirty, useOpeningJingle, openingJingleId, useClosingJingle, closingJingleId, service])
 
   // Fetch campaigns on mount
   useEffect(() => {
@@ -237,7 +236,7 @@ export default function CampaignManager() {
     }
     await saveAllGrids()
     try {
-      await api.updateCampaignGrid(campaignId, [])
+      await service.updateCampaignGrid(campaignId, [])
     } catch (e) {
       console.error('Failed to clear schedule:', e)
     }
@@ -258,7 +257,7 @@ export default function CampaignManager() {
     }
     await saveAllGrids()
     try {
-      await api.updateCampaignGrid(campaignId, [])
+      await service.updateCampaignGrid(campaignId, [])
     } catch (e) {
       console.error('Failed to clear schedule:', e)
     }
@@ -315,7 +314,7 @@ export default function CampaignManager() {
 
     setIsRunningSlot(true)
     try {
-      const result = await api.runSlotNow(
+      const result = await service.runSlotNow(
         slotDate, slotIndex,
         useOpeningJingle, useOpeningJingle ? openingJingleId : undefined,
         useClosingJingle, useClosingJingle ? closingJingleId : undefined
@@ -359,9 +358,9 @@ export default function CampaignManager() {
   }, [heatmapBaseDate])
 
   // Fetch slot execution status for the current week
-  const { data: slotExecutionData } = useQuery<{ slots: SlotExecutionStatus[] }>({
+  const { data: slotExecutionData } = useQuery({
     queryKey: ['slotExecutionStatus', weekDateRange.startDate, weekDateRange.endDate],
-    queryFn: () => api.getSlotExecutionStatus(weekDateRange.startDate, weekDateRange.endDate),
+    queryFn: () => service.getSlotExecutionStatus(weekDateRange.startDate, weekDateRange.endDate),
     staleTime: 30000, // Cache for 30 seconds
   })
 

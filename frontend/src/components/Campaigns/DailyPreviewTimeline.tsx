@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Calendar, ChevronLeft, ChevronRight, RefreshCw, Loader2, Clock } from 'lucide-react'
-import { api } from '../../services/api'
+import { useService } from '../../services'
 
 interface DailyPreviewTimelineProps {
   initialDate?: string // YYYY-MM-DD format
@@ -51,6 +51,7 @@ export default function DailyPreviewTimeline({
   onDateChange,
 }: DailyPreviewTimelineProps) {
   const { i18n } = useTranslation()
+  const service = useService()
   const isRTL = i18n.language === 'he'
 
   // Helper to format date as YYYY-MM-DD in local timezone
@@ -76,7 +77,7 @@ export default function DailyPreviewTimeline({
   // Fetch daily preview
   const { data: preview, isLoading, refetch } = useQuery<DailyPreviewResponse>({
     queryKey: ['campaignDailyPreview', selectedDate],
-    queryFn: () => api.getCampaignDailyPreview(selectedDate),
+    queryFn: () => service.getCampaignDailyPreview(selectedDate) as Promise<DailyPreviewResponse>,
   })
 
   // Navigation helpers

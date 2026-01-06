@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { getIdToken } from '../lib/firebase'
+import type { RadioService } from './types'
 
 // Use Cloud Run backend in production, local proxy in development
 const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -22,6 +23,24 @@ client.interceptors.request.use(async (config) => {
   }
   return config
 })
+
+// Production mode: Fail fast with clear error logging
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Log production errors clearly for debugging
+    console.error('[Production API Error]', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      message: error.message,
+      data: error.response?.data,
+    })
+
+    // Re-throw to let calling code handle it
+    return Promise.reject(error)
+  }
+)
 
 export const api = {
   // Health check
@@ -421,6 +440,31 @@ export const api = {
         closing_jingle_id: closingJingleId
       }
     }).then((r) => r.data),
-}
+
+  // Voice/TTS (optional - admin only)
+  getTTSStatus: () =>
+    client.get('/tts/status').then((r) => r.data),
+  getVoicePresets: () =>
+    client.get('/tts/voices').then((r) => r.data),
+  createVoicePreset: (data: { name: string; display_name: string; reference_audio: File }) => {
+    const formData = new FormData()
+    formData.append('name', data.name)
+    formData.append('display_name', data.display_name)
+    formData.append('reference_audio', data.reference_audio)
+    return client.post('/tts/voices', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data)
+  },
+  deleteVoicePreset: (id: string) =>
+    client.delete(`/tts/voices/${id}`).then((r) => r.data),
+  setDefaultVoice: (id: string) =>
+    client.post(`/tts/voices/${id}/set-default`).then((r) => r.data),
+  generateVoicePreview: async (text: string, voiceId?: string) => {
+    const response = await client.post('/tts/preview', { text, voice_id: voiceId }, {
+      responseType: 'blob',
+    })
+    return response.data as Blob
+  },
+} satisfies RadioService
 
 export default api

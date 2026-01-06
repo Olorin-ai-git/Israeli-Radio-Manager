@@ -6,7 +6,7 @@ import { useState, useEffect, FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { X, Plus } from 'lucide-react'
 import { Checkbox, Input, Select, Slider, Textarea } from '../../Form'
-import { api } from '../../../services/api'
+import { useService } from '../../../services'
 import { FlowAction } from '../types'
 import { FLOW_GENRES, ACTION_TYPE_OPTIONS, JINGLE_STYLE_OPTIONS, TIME_FORMAT_OPTIONS, TIME_LANGUAGE_OPTIONS, TTS_LANGUAGE_OPTIONS } from '../constants'
 
@@ -32,6 +32,7 @@ export default function AddActionModal({
   onClose,
   onAdd,
 }: AddActionModalProps) {
+  const service = useService()
   const [selectedActionType, setSelectedActionType] = useState('play_genre')
   const [genre, setGenre] = useState('')
   const [durationMinutes, setDurationMinutes] = useState(30)
@@ -61,14 +62,14 @@ export default function AddActionModal({
   // Fetch commercials for selection
   const { data: commercials } = useQuery({
     queryKey: ['commercials'],
-    queryFn: api.getCommercials,
+    queryFn: () => service.getCommercials(),
     enabled: isOpen && selectedActionType === 'play_commercials'
   })
 
   // Fetch jingles for selection
   const { data: jingles } = useQuery({
     queryKey: ['jingles'],
-    queryFn: api.getJingles,
+    queryFn: () => service.getJingles(),
     enabled: isOpen && selectedActionType === 'play_jingle'
   })
 

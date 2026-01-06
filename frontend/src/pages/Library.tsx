@@ -6,19 +6,17 @@ import {
   Clock, Calendar, Disc3, RefreshCw, ListPlus, X as XIcon, FolderSync,
   AudioLines, Layers, Newspaper, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Save, Trash2, AlertTriangle
 } from 'lucide-react'
-import { api } from '../services/api'
+import { useService, useServiceMode } from '../services'
 import { toast } from '../store/toastStore'
 import { Select } from '../components/Form'
-import { useDemoMode } from '../hooks/useDemoMode'
 import { useDemoAwarePlayer } from '../hooks/useDemoAwarePlayer'
 
 type SortField = 'title' | 'genre' | 'duration_seconds' | 'type' | 'created_at'
 type SortDirection = 'asc' | 'desc'
 
 // Component to display album cover with fallback
-function AlbumCover({ contentId, isPlaying, type }: { contentId: string; isPlaying: boolean; type: string }) {
+function AlbumCover({ isPlaying, type, coverUrl }: { contentId: string; isPlaying: boolean; type: string; coverUrl: string }) {
   const [hasError, setHasError] = useState(false)
-  const coverUrl = api.getCoverUrl(contentId)
 
   const TypeIcon = type === 'song' ? Music
     : type === 'commercial' ? Megaphone
@@ -55,7 +53,8 @@ type ContentTab = 'songs' | 'shows' | 'commercials' | 'jingles' | 'samples' | 'n
 export default function Library() {
   const { i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
-  const { canWrite } = useDemoMode()
+  const service = useService()
+  const { canWrite } = useServiceMode()
   const [activeTab, setActiveTab] = useState<ContentTab>('songs')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedGenre, setSelectedGenre] = useState('')
@@ -73,8 +72,8 @@ export default function Library() {
 
   // Metadata refresh mutation
   const refreshMetadataMutation = useMutation({
-    mutationFn: api.refreshMetadata,
-    onSuccess: (data) => {
+    mutationFn: () => service.refreshMetadata(),
+    onSuccess: (data: any) => {
       // Invalidate queries to refetch with new metadata
       queryClient.invalidateQueries({ queryKey: ['songs'] })
       queryClient.invalidateQueries({ queryKey: ['shows'] })
@@ -83,10 +82,11 @@ export default function Library() {
       queryClient.invalidateQueries({ queryKey: ['samples'] })
       queryClient.invalidateQueries({ queryKey: ['newsflashes'] })
 
+      const updated = data?.stats?.updated ?? data?.updated ?? 0
       toast.success(
         isRTL
-          ? `מטה-דאטה עודכן: ${data.stats.updated} פריטים`
-          : `Metadata updated: ${data.stats.updated} items`
+          ? `מטה-דאטה עודכן: ${updated} פריטים`
+          : `Metadata updated: ${updated} items`
       )
     },
     onError: () => {
@@ -102,11 +102,11 @@ export default function Library() {
   const syncMutation = useMutation({
     mutationFn: async () => {
       console.log('Starting Google Drive sync...')
-      const result = await api.startSync(true) // downloadFiles = true
+      const result = await service.startSync(true) // downloadFiles = true
       console.log('Sync result:', result)
       return result
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       console.log('Sync completed successfully:', data)
       // Invalidate queries to refetch with new content
       queryClient.invalidateQueries({ queryKey: ['songs'] })
@@ -117,7 +117,7 @@ export default function Library() {
       queryClient.invalidateQueries({ queryKey: ['newsflashes'] })
       queryClient.invalidateQueries({ queryKey: ['genres'] })
 
-      const stats = data.stats || {}
+      const stats = data?.stats || {}
       const filesFound = stats.files_found || 0
       const filesAdded = stats.files_added || 0
       const filesUpdated = stats.files_updated || 0
@@ -140,7 +140,7 @@ export default function Library() {
 
   // Update content mutation
   const updateContentMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) => api.updateContent(id, data),
+    mutationFn: ({ id, data }: { id: string; data: any }) => service.updateContent(id, data),
     onSuccess: () => {
       toast.success(isRTL ? 'התוכן עודכן בהצלחה' : 'Content updated successfully')
       queryClient.invalidateQueries({ queryKey: ['songs'] })
@@ -158,7 +158,7 @@ export default function Library() {
 
   // Delete content mutation
   const deleteContentMutation = useMutation({
-    mutationFn: (id: string) => api.deleteContent(id),
+    mutationFn: (id: string) => service.deleteContent(id),
     onSuccess: async () => {
       toast.success(isRTL ? 'התוכן נמחק בהצלחה' : 'Content deleted successfully')
       // Refetch only the active tab's content
@@ -192,8 +192,8 @@ export default function Library() {
     setConfirmBatchDelete(false)
 
     try {
-      const result = await api.batchDeleteContent(itemsToDelete)
-      const deletedCount = result.deleted_count || itemsToDelete.length
+      const result: any = await service.batchDeleteContent(itemsToDelete)
+      const deletedCount = result?.deleted_count ?? result?.deleted ?? itemsToDelete.length
       toast.success(isRTL ? `${deletedCount} פריטים נמחקו בהצלחה` : `${deletedCount} items deleted successfully`)
     } catch (error: any) {
       toast.error(isRTL ? 'שגיאה במחיקת פריטים' : `Error: ${error.response?.data?.detail || error.message}`)
@@ -227,37 +227,37 @@ export default function Library() {
 
   const { data: songs, isLoading: loadingSongs } = useQuery({
     queryKey: ['songs'],
-    queryFn: () => api.getSongs(),
+    queryFn: () => service.getSongs(),
   })
 
   const { data: shows, isLoading: loadingShows } = useQuery({
     queryKey: ['shows'],
-    queryFn: api.getShows,
+    queryFn: () => service.getShows(),
   })
 
   const { data: commercials, isLoading: loadingCommercials } = useQuery({
     queryKey: ['commercials'],
-    queryFn: api.getCommercials,
+    queryFn: () => service.getCommercials(),
   })
 
   const { data: jingles, isLoading: loadingJingles } = useQuery({
     queryKey: ['jingles'],
-    queryFn: api.getJingles,
+    queryFn: () => service.getJingles(),
   })
 
   const { data: samples, isLoading: loadingSamples } = useQuery({
     queryKey: ['samples'],
-    queryFn: api.getSamples,
+    queryFn: () => service.getSamples(),
   })
 
   const { data: newsflashes, isLoading: loadingNewsflashes } = useQuery({
     queryKey: ['newsflashes'],
-    queryFn: api.getNewsflashes,
+    queryFn: () => service.getNewsflashes(),
   })
 
   const { data: genres } = useQuery({
     queryKey: ['genres'],
-    queryFn: api.getGenres,
+    queryFn: () => service.getGenres(),
   })
 
   const getContent = (): any[] => {
@@ -713,6 +713,7 @@ export default function Library() {
                               contentId={item._id}
                               isPlaying={isCurrentlyPlaying}
                               type={item.type}
+                              coverUrl={service.getCoverUrl(item._id)}
                             />
                           </div>
                           <button

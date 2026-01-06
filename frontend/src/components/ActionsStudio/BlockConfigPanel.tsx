@@ -16,7 +16,7 @@ import {
   Timer,
 } from 'lucide-react'
 import { StudioAction, FlowActionType, useActionsStudioStore } from '../../store/actionsStudioStore'
-import { api } from '../../services/api'
+import { useService } from '../../services'
 import { Input, Textarea, Slider, ButtonGroup, Radio, RadioGroup } from '../Form'
 
 interface BlockConfigPanelProps {
@@ -45,6 +45,7 @@ const GENRES = [
 
 export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfigPanelProps) {
   const { updateAction } = useActionsStudioStore()
+  const service = useService()
 
   // Local state for form
   const [genre, setGenre] = useState(action.genre || '')
@@ -62,8 +63,8 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
   const { data: contentItems } = useQuery({
     queryKey: ['content', action.action_type],
     queryFn: () => action.action_type === 'play_show'
-      ? api.getShows()
-      : api.getContent(),
+      ? service.getShows()
+      : service.getContent(),
     enabled: action.action_type === 'play_content' || action.action_type === 'play_show',
   })
 
@@ -80,7 +81,7 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
   // Fetch jingles for jingle picker
   const { data: jingles } = useQuery({
     queryKey: ['jingles'],
-    queryFn: api.getJingles,
+    queryFn: () => service.getJingles(),
     enabled: action.action_type === 'play_jingle',
   })
 

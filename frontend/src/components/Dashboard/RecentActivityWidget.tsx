@@ -2,24 +2,17 @@ import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Clock, Music, Radio, Megaphone, ChevronRight, ChevronLeft } from 'lucide-react'
-import { api } from '../../services/api'
-
-interface PlaybackHistoryItem {
-  _id: string
-  title: string
-  artist?: string
-  type: string
-  started_at: string
-}
+import { useService } from '../../services'
 
 export default function RecentActivityWidget() {
   const { i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
   const navigate = useNavigate()
+  const service = useService()
 
-  const { data: playbackHistory = [] } = useQuery<PlaybackHistoryItem[]>({
+  const { data: playbackHistory = [] } = useQuery({
     queryKey: ['playbackHistory'],
-    queryFn: () => api.getPlaybackHistory(8),
+    queryFn: () => service.getPlaybackHistory(8),
     refetchInterval: 15000,
   })
 

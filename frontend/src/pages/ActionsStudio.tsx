@@ -35,9 +35,8 @@ import StudioCanvas from '../components/ActionsStudio/StudioCanvas'
 import PreviewPanel from '../components/ActionsStudio/PreviewPanel'
 import BlockConfigPanel from '../components/ActionsStudio/BlockConfigPanel'
 import ActionBlockCard from '../components/ActionsStudio/ActionBlockCard'
-import { api } from '../services/api'
+import { useService, useServiceMode } from '../services'
 import { useToastStore } from '../store/toastStore'
-import { useDemoMode } from '../hooks/useDemoMode'
 
 export default function ActionsStudio() {
   const { flowId } = useParams<{ flowId?: string }>()
@@ -45,8 +44,8 @@ export default function ActionsStudio() {
   const { t, i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
   const { addToast } = useToastStore()
-  const { isViewer, isDemoHost } = useDemoMode()
-  const isInDemoMode = isViewer && isDemoHost
+  const service = useService()
+  const { isDemoMode: isInDemoMode } = useServiceMode()
 
   // Build mode state
   const [buildMode, setBuildMode] = useState<'manual' | 'ai'>('manual')
@@ -80,6 +79,12 @@ export default function ActionsStudio() {
   } = useActionsStudioStore()
 
   // AI mode: Parse description to actions
+  // Supported action types in the studio (commercials are handled by Campaign Manager)
+  const supportedActionTypes = new Set([
+    'play_genre', 'play_content', 'play_show', 'play_jingle',
+    'wait', 'set_volume', 'fade_volume', 'announcement', 'time_check'
+  ])
+
   useEffect(() => {
     if (buildMode !== 'ai' || !aiDescription.trim()) {
       return
@@ -88,9 +93,13 @@ export default function ActionsStudio() {
     const timer = setTimeout(async () => {
       setIsParsingAI(true)
       try {
-        const result = await api.parseNaturalFlow(aiDescription)
+        const result = await service.parseNaturalFlow(aiDescription)
         if (result.actions && Array.isArray(result.actions)) {
-          setActions(result.actions)
+          // Filter to only supported action types (commercials handled by Campaign Manager)
+          const filteredActions = result.actions.filter(
+            action => supportedActionTypes.has(action.action_type)
+          )
+          setActions(filteredActions as any)
         }
       } catch (error) {
         console.error('Failed to parse flow description:', error)
@@ -173,7 +182,7 @@ export default function ActionsStudio() {
     }
 
     try {
-      await api.runFlow(flowId)
+      await service.runFlow(flowId)
       addToast(isRTL ? 'הזרימה הופעלה' : 'Flow started', 'success')
     } catch (error) {
       addToast(isRTL ? 'שגיאה בהפעלת הזרימה' : 'Failed to run flow', 'error')

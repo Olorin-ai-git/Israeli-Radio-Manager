@@ -32,7 +32,7 @@ import {
   verticalListSortingStrategy
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { api } from '../../services/api'
+import { useService } from '../../services'
 import { toast } from '../../store/toastStore'
 import { usePlayerStore } from '../../store/playerStore'
 import { useDemoAwarePlayer } from '../../hooks/useDemoAwarePlayer'
@@ -195,6 +195,7 @@ export default function AudioPlayer({
   autoPlay = true
 }: AudioPlayerProps) {
   const { i18n } = useTranslation()
+  const service = useService()
   // Two audio elements for true crossfade
   const audioARef = useRef<HTMLAudioElement>(null)
   const audioBRef = useRef<HTMLAudioElement>(null)
@@ -207,7 +208,7 @@ export default function AudioPlayer({
   const consecutiveErrorsRef = useRef(0) // Track consecutive errors to prevent infinite loops
   const MAX_CONSECUTIVE_ERRORS = 5 // Stop auto-skipping after this many consecutive errors
   const [emergencyMode, setEmergencyMode] = useState(false) // Emergency fallback mode
-  const [emergencyPlaylist, setEmergencyPlaylist] = useState<Array<{name: string, url: string}>>([])
+  const [emergencyPlaylist, setEmergencyPlaylist] = useState<Track[]>([])
   const emergencyIndexRef = useRef(0) // Current position in emergency playlist
   const emergencyErrorsRef = useRef(0) // Track consecutive emergency errors
   const MAX_EMERGENCY_ERRORS = 3 // Stop trying emergency songs after this many failures
@@ -405,7 +406,7 @@ export default function AudioPlayer({
     setIsCrossfading(true)
 
     // Load next track on inactive audio element
-    const streamUrl = api.getStreamUrl(nextTrackId)
+    const streamUrl = service.getStreamUrl(nextTrackId)
     inactiveAudio.src = streamUrl
     inactiveAudio.volume = 0
 
@@ -552,7 +553,7 @@ export default function AudioPlayer({
       crossfadeTriggeredRef.current = false
       setIsCrossfading(false)
 
-      const streamUrl = api.getStreamUrl(track._id)
+      const streamUrl = service.getStreamUrl(track._id)
       activeAudio.src = streamUrl
       activeAudio.volume = 0 // Start at 0 for fade in
       setIsLoading(true)
@@ -583,7 +584,7 @@ export default function AudioPlayer({
       }
 
       // Log playback start
-      api.logPlayStart(track._id).catch(console.error)
+      service.logPlayStart(track._id).catch(console.error)
     } else if (!track) {
       // Reset when track is cleared
       currentTrackIdRef.current = null
@@ -602,17 +603,17 @@ export default function AudioPlayer({
     setEmergencyMode(true)
 
     // Report emergency mode to backend for notifications
-    api.reportEmergencyMode().catch(err => {
+    service.reportEmergencyMode().catch(err => {
       console.error('Failed to report emergency mode:', err)
     })
 
     // Fetch emergency playlist
     try {
-      const response = await api.getEmergencyPlaylist()
-      if (response.songs && response.songs.length > 0) {
-        setEmergencyPlaylist(response.songs)
+      const songs = await service.getEmergencyPlaylist()
+      if (songs && songs.length > 0) {
+        setEmergencyPlaylist(songs)
         emergencyIndexRef.current = 0
-        playEmergencySong(0, response.songs)
+        playEmergencySong(0, songs)
 
         // Set up retry interval to check if normal playback can resume
         emergencyRetryIntervalRef.current = setInterval(async () => {
@@ -621,7 +622,7 @@ export default function AudioPlayer({
             const testTrack = queueRef.current[0]
             try {
               // Test if we can fetch the stream URL
-              const testResponse = await fetch(api.getStreamUrl(testTrack._id), { method: 'HEAD' })
+              const testResponse = await fetch(service.getStreamUrl(testTrack._id), { method: 'HEAD' })
               if (testResponse.ok) {
                 exitEmergencyMode()
               }
@@ -641,14 +642,14 @@ export default function AudioPlayer({
 
   // Play a song from the emergency playlist
   const lastEmergencyToastRef = useRef<number>(0)
-  const playEmergencySong = (index: number, playlist: Array<{name: string, url: string}>) => {
+  const playEmergencySong = (index: number, playlist: Track[]) => {
     const activeAudio = getActiveAudio()
     if (!activeAudio || playlist.length === 0) return
 
     const song = playlist[index % playlist.length]
-    // Convert relative URL to absolute URL with backend base
-    const absoluteUrl = api.getEmergencyStreamUrl(song.url)
-    activeAudio.src = absoluteUrl
+    // Get stream URL for emergency track
+    const streamUrl = service.getStreamUrl(song._id)
+    activeAudio.src = streamUrl
     activeAudio.volume = isMuted ? 0 : volume / 100
     activeAudio.play()
       .then(() => {
@@ -663,7 +664,7 @@ export default function AudioPlayer({
     const now = Date.now()
     if (now - lastEmergencyToastRef.current > 10000) {
       lastEmergencyToastRef.current = now
-      toast.info(isRTL ? `מצב חירום: ${song.name}` : `Emergency: ${song.name}`)
+      toast.info(isRTL ? `מצב חירום: ${song.title}` : `Emergency: ${song.title}`)
     }
   }
 
@@ -861,7 +862,7 @@ export default function AudioPlayer({
       setIsCrossfading(true)
 
       // Load next track
-      const streamUrl = api.getStreamUrl(nextTrack._id)
+      const streamUrl = service.getStreamUrl(nextTrack._id)
       inactiveAudio.src = streamUrl
       inactiveAudio.volume = 0
 

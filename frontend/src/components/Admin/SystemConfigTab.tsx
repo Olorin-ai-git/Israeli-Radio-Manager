@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Eye, EyeOff, Edit, Save, Database, Cloud, Bot, Bell, Settings } from 'lucide-react'
-import api from '../../services/api'
+import { useService } from '../../services'
 import { toast } from '../../store/toastStore'
 
 interface SystemConfigTabProps {
@@ -10,6 +10,7 @@ interface SystemConfigTabProps {
 
 export default function SystemConfigTab({ isRTL }: SystemConfigTabProps) {
   const queryClient = useQueryClient()
+  const service = useService()
   const [showSensitive, setShowSensitive] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [configData, setConfigData] = useState<Record<string, Record<string, string>>>({})
@@ -17,8 +18,8 @@ export default function SystemConfigTab({ isRTL }: SystemConfigTabProps) {
   const { data: config, isLoading, error } = useQuery({
     queryKey: ['admin', 'config'],
     queryFn: async () => {
-      const data = await api.getAdminEnvConfig()
-      setConfigData(data)
+      const data = await service.getAdminEnvConfig()
+      setConfigData(data as unknown as Record<string, Record<string, string>>)
       return data
     },
     retry: false
@@ -26,7 +27,7 @@ export default function SystemConfigTab({ isRTL }: SystemConfigTabProps) {
 
   const updateMutation = useMutation({
     mutationFn: async (updates: Record<string, string>) => {
-      return await api.updateAdminEnvConfig(updates)
+      return await service.updateAdminEnvConfig(updates)
     },
     onSuccess: () => {
       toast.success(isRTL ? 'תצורה עודכנה בהצלחה' : 'Configuration updated successfully')
@@ -63,9 +64,10 @@ export default function SystemConfigTab({ isRTL }: SystemConfigTabProps) {
   const handleSave = () => {
     // Flatten the config data for the API
     const updates: Record<string, string> = {}
+    const configRecord = config as Record<string, Record<string, string>> | undefined
     Object.entries(configData).forEach(([category, values]) => {
       Object.entries(values).forEach(([key, value]) => {
-        if (value !== config?.[category]?.[key] && !isSensitive(key)) {
+        if (value !== configRecord?.[category]?.[key] && !isSensitive(key)) {
           updates[key] = value
         }
       })
@@ -144,7 +146,7 @@ export default function SystemConfigTab({ isRTL }: SystemConfigTabProps) {
             <>
               <button
                 onClick={() => {
-                  setConfigData(config || {})
+                  setConfigData((config as unknown as Record<string, Record<string, string>>) || {})
                   setEditMode(false)
                 }}
                 className="glass-button flex items-center gap-2 px-4 py-2"

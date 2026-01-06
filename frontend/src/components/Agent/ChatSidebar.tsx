@@ -7,10 +7,9 @@ import {
   TrendingUp, RefreshCw, Activity, type LucideIcon
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '../../services/api'
+import { useService, useServiceMode } from '../../services'
 import { usePlayerStore } from '../../store/playerStore'
 import { Input } from '../Form'
-import { useDemoMode } from '../../hooks/useDemoMode'
 import { toast } from '../../store/toastStore'
 
 interface ChatMessage {
@@ -161,8 +160,8 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
   const inputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
   const { play } = usePlayerStore()
-  const { isViewer, isDemoHost } = useDemoMode()
-  const isInDemoMode = isViewer && isDemoHost
+  const service = useService()
+  const { isDemoMode: isInDemoMode } = useServiceMode()
 
   // @ action popup state
   const [showActionPopup, setShowActionPopup] = useState(false)
@@ -177,7 +176,7 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
   // Fetch chat history
   const { data: history } = useQuery({
     queryKey: ['chatHistory'],
-    queryFn: () => api.getChatHistory(),
+    queryFn: () => service.getChatHistory(),
     enabled: expanded,
   })
 
@@ -199,7 +198,7 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
 
   // Send message mutation
   const sendMutation = useMutation({
-    mutationFn: (msg: string) => api.sendChatMessage(msg),
+    mutationFn: (msg: string) => service.sendChatMessage(msg),
     onSuccess: (data: any) => {
       setErrorMessage(null)
       queryClient.invalidateQueries({ queryKey: ['chatHistory'] })
@@ -219,7 +218,7 @@ export default function ChatSidebar({ expanded, onToggle, width = 384, onResizeS
 
   // Clear chat mutation
   const clearMutation = useMutation({
-    mutationFn: () => api.clearChatHistory(),
+    mutationFn: () => service.clearChatHistory(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['chatHistory'] })
       setShowExamples(true)

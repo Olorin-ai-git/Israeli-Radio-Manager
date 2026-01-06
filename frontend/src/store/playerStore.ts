@@ -269,16 +269,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setUserInteracted: () => set({ hasUserInteracted: true })
 }))
 
-// Fetch and validate queue on store initialization (gracefully handle missing backend)
-api.getQueue().then(async (queue) => {
-  if (Array.isArray(queue) && queue.length > 0) {
-    // Validate queue items exist before setting
-    const validatedQueue = await usePlayerStore.getState().validateQueue(queue)
-    usePlayerStore.setState({ queue: validatedQueue })
-  } else {
+// Check if in demo mode at module load (hostname-based check only)
+// Full demo mode check requires auth state, but hostname check prevents unnecessary API calls
+const isDemoHost = typeof window !== 'undefined' && window.location.hostname.includes('demo')
+
+// Fetch and validate queue on store initialization (skip in demo mode, gracefully handle missing backend)
+if (!isDemoHost) {
+  api.getQueue().then(async (queue) => {
+    if (Array.isArray(queue) && queue.length > 0) {
+      // Validate queue items exist before setting
+      const validatedQueue = await usePlayerStore.getState().validateQueue(queue)
+      usePlayerStore.setState({ queue: validatedQueue })
+    } else {
+      usePlayerStore.setState({ queue: [] })
+    }
+  }).catch(error => {
+    console.warn('Backend not available, using empty queue:', error.message)
     usePlayerStore.setState({ queue: [] })
-  }
-}).catch(error => {
-  console.warn('Backend not available, using empty queue:', error.message)
-  usePlayerStore.setState({ queue: [] })
-})
+  })
+}

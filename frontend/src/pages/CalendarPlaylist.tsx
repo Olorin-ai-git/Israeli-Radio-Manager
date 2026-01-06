@@ -16,11 +16,10 @@ import {
   RefreshCw,
   Repeat
 } from 'lucide-react'
-import { api } from '../services/api'
+import { useService, useServiceMode } from '../services'
 import { toast } from '../store/toastStore'
 import Checkbox from '../components/Form/Checkbox'
 import { Select } from '../components/Form'
-import { useDemoMode } from '../hooks/useDemoMode'
 
 interface CalendarEvent {
   id: string
@@ -65,7 +64,8 @@ export default function CalendarPlaylist() {
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
   const isRTL = i18n.language === 'he'
-  const { canWrite } = useDemoMode()
+  const service = useService()
+  const { canWrite } = useServiceMode()
 
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
     const today = new Date()
@@ -100,25 +100,25 @@ export default function CalendarPlaylist() {
   // Fetch week schedule
   const { data: weekSchedule, isLoading, refetch } = useQuery<WeekSchedule>({
     queryKey: ['weekSchedule', formatDateForApi(currentWeekStart)],
-    queryFn: () => api.getWeekSchedule(formatDateForApi(currentWeekStart)),
+    queryFn: () => service.getWeekSchedule(formatDateForApi(currentWeekStart)),
   })
 
   // Fetch content for scheduling
   const { data: allContent } = useQuery({
     queryKey: ['allContent'],
-    queryFn: () => api.getContent(),
+    queryFn: () => service.getContent(),
   })
 
   // Fetch flows for scheduling
   const { data: allFlows } = useQuery({
     queryKey: ['flows'],
-    queryFn: () => api.getFlows(),
+    queryFn: () => service.getFlows(),
   })
 
   // Fetch commercials for batch info
   const { data: commercials } = useQuery({
     queryKey: ['commercials'],
-    queryFn: () => api.getCommercials(),
+    queryFn: () => service.getCommercials(),
   })
 
   // Filter content based on type and genre
@@ -140,7 +140,7 @@ export default function CalendarPlaylist() {
 
   // Delete event mutation
   const deleteMutation = useMutation({
-    mutationFn: (eventId: string) => api.deleteCalendarEvent(eventId),
+    mutationFn: (eventId: string) => service.deleteCalendarEvent(eventId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
       setSelectedEvent(null)
@@ -151,7 +151,7 @@ export default function CalendarPlaylist() {
   const [scheduleError, setScheduleError] = useState<string | null>(null)
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createCalendarEvent(data),
+    mutationFn: (data: any) => service.createCalendarEvent(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
       refetch()

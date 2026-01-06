@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { X, Plus, Trash2, Loader2, ExternalLink, FileAudio, Clock, Check } from 'lucide-react'
 import { Campaign, CampaignCreate, ContentRef } from '../../store/campaignStore'
-import { api } from '../../services/api'
+import { useService } from '../../services'
 import { Textarea } from '../Form'
 
 // Format duration in mm:ss
@@ -30,6 +30,7 @@ export default function CampaignFormModal({
   isAdmin = false,
 }: CampaignFormModalProps) {
   const { i18n } = useTranslation()
+  const service = useService()
   const isRTL = i18n.language === 'he'
   const isEditing = !!campaign
 
@@ -50,7 +51,7 @@ export default function CampaignFormModal({
   // Fetch commercials for content selection
   const { data: commercials = [] } = useQuery({
     queryKey: ['commercials'],
-    queryFn: api.getCommercials,
+    queryFn: () => service.getCommercials(),
   })
 
   // Set default dates for new campaign

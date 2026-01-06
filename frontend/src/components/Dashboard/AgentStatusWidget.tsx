@@ -2,37 +2,23 @@ import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Bot, Zap, Clock, Activity, ChevronRight, ChevronLeft, AlertCircle } from 'lucide-react'
-import { api } from '../../services/api'
-
-interface AgentStatus {
-  active: boolean
-  mode: 'full_automation' | 'prompt'
-  pending_actions: number
-  decisions_today?: number
-}
-
-interface Decision {
-  _id: string
-  action_type: string
-  reasoning: string
-  result: string
-  created_at: string
-}
+import { useService } from '../../services'
 
 export default function AgentStatusWidget() {
   const { i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
   const navigate = useNavigate()
+  const service = useService()
 
-  const { data: agentStatus } = useQuery<AgentStatus>({
+  const { data: agentStatus } = useQuery({
     queryKey: ['agentStatus'],
-    queryFn: api.getAgentStatus,
+    queryFn: () => service.getAgentStatus(),
     refetchInterval: 10000,
   })
 
-  const { data: recentDecisions = [] } = useQuery<Decision[]>({
+  const { data: recentDecisions = [] } = useQuery({
     queryKey: ['agentDecisions'],
-    queryFn: () => api.getDecisions(5),
+    queryFn: () => service.getDecisions(5),
     refetchInterval: 30000,
   })
 

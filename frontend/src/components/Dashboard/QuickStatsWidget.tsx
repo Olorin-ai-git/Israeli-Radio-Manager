@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { Music, Radio, Megaphone, Bot } from 'lucide-react'
-import { api } from '../../services/api'
+import { useService } from '../../services'
 
 interface PlaybackStats {
   today: {
@@ -14,16 +14,17 @@ interface PlaybackStats {
 export default function QuickStatsWidget() {
   const { i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
+  const service = useService()
 
   const { data: playbackStats } = useQuery<PlaybackStats>({
     queryKey: ['playbackStats'],
-    queryFn: api.getPlaybackStats,
+    queryFn: () => service.getPlaybackStats(),
     refetchInterval: 30000,
   })
 
   const { data: agentStatus } = useQuery({
     queryKey: ['agentStatus'],
-    queryFn: api.getAgentStatus,
+    queryFn: () => service.getAgentStatus(),
     refetchInterval: 10000,
   })
 
@@ -97,11 +98,11 @@ export default function QuickStatsWidget() {
       </div>
 
       {/* Pending Actions Alert */}
-      {agentStatus?.pending_actions > 0 && (
+      {(agentStatus?.pending_actions ?? 0) > 0 && (
         <div className="mt-3 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
           <p className="text-xs text-amber-400 flex items-center gap-1">
             <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse"></span>
-            {agentStatus.pending_actions} {isRTL ? 'פעולות ממתינות' : 'pending actions'}
+            {agentStatus?.pending_actions} {isRTL ? 'פעולות ממתינות' : 'pending actions'}
           </p>
         </div>
       )}

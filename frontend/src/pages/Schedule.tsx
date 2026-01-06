@@ -2,20 +2,21 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Edit, Trash2, Calendar } from 'lucide-react'
-import { api } from '../services/api'
+import { useService } from '../services'
 
 export default function Schedule() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [showAddModal, setShowAddModal] = useState(false)
+  const service = useService()
 
   const { data: slots, isLoading } = useQuery({
     queryKey: ['schedule'],
-    queryFn: api.getSchedule,
+    queryFn: () => service.getSchedule(),
   })
 
   const deleteSlot = useMutation({
-    mutationFn: (id: string) => api.deleteSlot(id),
+    mutationFn: (id: string) => service.deleteSlot(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedule'] })
     },

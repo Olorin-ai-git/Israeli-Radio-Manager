@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { HardDrive, RefreshCw, Trash2, AlertTriangle, Cloud, FolderOpen, Upload, Clock, CheckCircle, Loader2 } from 'lucide-react'
-import api from '../../services/api'
+import { useService } from '../../services'
 import { toast } from '../../store/toastStore'
 
 interface SyncLogEntry {
@@ -53,35 +53,37 @@ const logLevelStyles: Record<string, { color: string; bg: string }> = {
 }
 
 export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
+  const service = useService()
+
   const { data: storageStats, isLoading, error, refetch } = useQuery({
     queryKey: ['admin', 'storage', 'stats'],
-    queryFn: api.getAdminStorageStats,
+    queryFn: () => service.getAdminStorageStats(),
     refetchInterval: 30000, // Refresh every 30 seconds
     retry: false
   })
 
   const { data: orphanedFiles } = useQuery({
     queryKey: ['admin', 'storage', 'orphaned'],
-    queryFn: api.getAdminOrphanedFiles,
+    queryFn: () => service.getAdminOrphanedFiles(),
     retry: false
   })
 
   const { data: syncSchedulerStatus, refetch: refetchSyncStatus } = useQuery({
     queryKey: ['admin', 'sync', 'scheduler', 'status'],
-    queryFn: api.getSyncSchedulerStatus,
+    queryFn: () => service.getSyncSchedulerStatus(),
     refetchInterval: 10000, // Refresh every 10 seconds
     retry: false
   })
 
   const { data: syncProgress } = useQuery({
     queryKey: ['admin', 'sync', 'progress'],
-    queryFn: api.getSyncProgress,
+    queryFn: () => service.getSyncProgress(),
     refetchInterval: (query) => query.state.data?.is_syncing ? 1000 : 5000, // Poll faster during sync
     retry: false
   })
 
   const clearCacheMutation = useMutation({
-    mutationFn: api.clearAdminCache,
+    mutationFn: () => service.clearAdminCache(),
     onSuccess: (data) => {
       toast.success(isRTL
         ? `נוקו ${data.files_deleted} קבצים (${formatBytes(data.bytes_freed)})`
@@ -95,7 +97,7 @@ export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
   })
 
   const syncMutation = useMutation({
-    mutationFn: api.startSync,
+    mutationFn: () => service.startSync(),
     onSuccess: () => {
       toast.success(isRTL ? 'הסנכרון החל' : 'Sync started')
       refetch()
@@ -106,7 +108,7 @@ export default function StorageSyncTab({ isRTL }: StorageSyncTabProps) {
   })
 
   const gcsSyncMutation = useMutation({
-    mutationFn: api.triggerGcsSync,
+    mutationFn: () => service.triggerGcsSync(),
     onSuccess: () => {
       toast.success(isRTL ? 'סנכרון GCS החל' : 'GCS sync started')
       refetchSyncStatus()

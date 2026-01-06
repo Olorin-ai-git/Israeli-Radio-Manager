@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Music, ListMusic } from 'lucide-react'
-import { api } from '../../services/api'
+import { useService } from '../../services'
 import { usePlayerStore } from '../../store/playerStore'
 
 interface CompactNowPlayingBarProps {
@@ -13,19 +13,20 @@ export default function CompactNowPlayingBar({ onQueueClick }: CompactNowPlaying
   const isRTL = i18n.language === 'he'
   const [coverUrl, setCoverUrl] = useState<string | null>(null)
   const [coverError, setCoverError] = useState(false)
+  const service = useService()
 
   const { currentTrack, queue, isPlaying } = usePlayerStore()
 
   // Load album cover when track changes
   useEffect(() => {
     if (currentTrack?._id) {
-      setCoverUrl(api.getCoverUrl(currentTrack._id))
+      setCoverUrl(service.getCoverUrl(currentTrack._id))
       setCoverError(false)
     } else {
       setCoverUrl(null)
       setCoverError(false)
     }
-  }, [currentTrack?._id])
+  }, [currentTrack?._id, service])
 
   const formatTime = (seconds?: number) => {
     if (!seconds) return '--:--'

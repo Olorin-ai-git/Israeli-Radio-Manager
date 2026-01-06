@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bot, Settings as SettingsIcon, Bell, Cpu, Key, Eye, EyeOff, Trash2 } from 'lucide-react'
-import api from '../../services/api'
+import { useService } from '../../services'
 import { toast } from '../../store/toastStore'
 import { Select } from '../Form'
 
@@ -25,23 +25,24 @@ interface LLMConfig {
 
 export default function AgentSettingsTab({ isRTL }: AgentSettingsTabProps) {
   const queryClient = useQueryClient()
+  const service = useService()
   const [showApiKey, setShowApiKey] = useState(false)
   const [newApiKey, setNewApiKey] = useState('')
 
   const { data: agentConfig, isLoading, error } = useQuery({
     queryKey: ['agent', 'config'],
-    queryFn: api.getAgentConfig,
+    queryFn: () => service.getAgentConfig(),
     retry: false
   })
 
   const { data: llmConfig, isLoading: llmLoading } = useQuery<LLMConfig>({
     queryKey: ['agent', 'llm-config'],
-    queryFn: api.getLLMConfig,
+    queryFn: () => service.getLLMConfig(),
     retry: false
   })
 
   const updateMutation = useMutation({
-    mutationFn: api.updateAgentConfig,
+    mutationFn: (config: any) => service.updateAgentConfig(config),
     onSuccess: () => {
       toast.success(isRTL ? 'הגדרות AI עודכנו' : 'Agent settings updated')
       queryClient.invalidateQueries({ queryKey: ['agent', 'config'] })
@@ -52,7 +53,7 @@ export default function AgentSettingsTab({ isRTL }: AgentSettingsTabProps) {
   })
 
   const updateLLMMutation = useMutation({
-    mutationFn: api.updateLLMConfig,
+    mutationFn: (config: { model?: string; api_key?: string }) => service.updateLLMConfig(config),
     onSuccess: () => {
       toast.success(isRTL ? 'הגדרות LLM עודכנו' : 'LLM settings updated')
       queryClient.invalidateQueries({ queryKey: ['agent', 'llm-config'] })
@@ -64,7 +65,7 @@ export default function AgentSettingsTab({ isRTL }: AgentSettingsTabProps) {
   })
 
   const clearApiKeyMutation = useMutation({
-    mutationFn: api.clearCustomApiKey,
+    mutationFn: () => service.clearCustomApiKey(),
     onSuccess: () => {
       toast.success(isRTL ? 'מפתח API מותאם נמחק' : 'Custom API key cleared')
       queryClient.invalidateQueries({ queryKey: ['agent', 'llm-config'] })

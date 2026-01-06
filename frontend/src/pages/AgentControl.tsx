@@ -1,41 +1,40 @@
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bot, Zap, Hand, Check, X, Clock, AlertCircle } from 'lucide-react'
-import { api } from '../services/api'
-import { useDemoMode } from '../hooks/useDemoMode'
+import { useService, useServiceMode } from '../services'
 import { toast } from '../store/toastStore'
 
 export default function AgentControl() {
   const { t, i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
   const queryClient = useQueryClient()
-  const { isViewer, isDemoHost } = useDemoMode()
-  const isInDemoMode = isViewer && isDemoHost
+  const service = useService()
+  const { isDemoMode: isInDemoMode } = useServiceMode()
 
   const { data: config } = useQuery({
     queryKey: ['agentConfig'],
-    queryFn: api.getAgentConfig,
+    queryFn: () => service.getAgentConfig(),
   })
 
   const { data: status } = useQuery({
     queryKey: ['agentStatus'],
-    queryFn: api.getAgentStatus,
+    queryFn: () => service.getAgentStatus(),
     refetchInterval: 5000,
   })
 
   const { data: pendingActions } = useQuery({
     queryKey: ['pendingActions'],
-    queryFn: api.getPendingActions,
+    queryFn: () => service.getPendingActions(),
     refetchInterval: 10000,
   })
 
   const { data: decisions } = useQuery({
     queryKey: ['agentDecisions'],
-    queryFn: () => api.getDecisions(20),
+    queryFn: () => service.getDecisions(20),
   })
 
   const setModeMutation = useMutation({
-    mutationFn: (mode: 'full_automation' | 'prompt') => api.setAgentMode(mode),
+    mutationFn: (mode: 'full_automation' | 'prompt') => service.setAgentMode(mode),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agentConfig'] })
       queryClient.invalidateQueries({ queryKey: ['agentStatus'] })
@@ -43,14 +42,14 @@ export default function AgentControl() {
   })
 
   const approveMutation = useMutation({
-    mutationFn: (id: string) => api.approveAction(id),
+    mutationFn: (id: string) => service.approveAction(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pendingActions'] })
     },
   })
 
   const rejectMutation = useMutation({
-    mutationFn: (id: string) => api.rejectAction(id),
+    mutationFn: (id: string) => service.rejectAction(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pendingActions'] })
     },
@@ -162,8 +161,8 @@ export default function AgentControl() {
 
             <div className="flex items-center justify-between p-3 bg-dark-700/30 rounded-xl border border-white/5">
               <span className="text-dark-400">Pending</span>
-              <span className={`font-medium ${status?.pending_actions > 0 ? 'text-amber-400' : 'text-dark-100'}`}>
-                {status?.pending_actions || 0}
+              <span className={`font-medium ${(status?.pending_actions ?? 0) > 0 ? 'text-amber-400' : 'text-dark-100'}`}>
+                {status?.pending_actions ?? 0}
               </span>
             </div>
 

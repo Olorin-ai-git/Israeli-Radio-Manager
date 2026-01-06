@@ -1,21 +1,23 @@
 import { useQuery } from '@tanstack/react-query'
 import { AlertCircle, TrendingUp, Music, Tv, Radio, Mic, User, Clock, MessageSquare } from 'lucide-react'
-import api from '../../services/api'
+import { useService } from '../../services'
 
 interface ContentManagementTabProps {
   isRTL: boolean
 }
 
 export default function ContentManagementTab({ isRTL }: ContentManagementTabProps) {
+  const service = useService()
+
   const { data: contentStats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ['admin', 'content', 'stats'],
-    queryFn: api.getAdminContentStats,
+    queryFn: () => service.getAdminContentStats(),
     retry: false
   })
 
   const { data: qualityIssues, isLoading: issuesLoading, error: issuesError } = useQuery({
     queryKey: ['admin', 'content', 'quality-issues'],
-    queryFn: api.getAdminQualityIssues,
+    queryFn: () => service.getAdminQualityIssues(),
     retry: false
   })
 

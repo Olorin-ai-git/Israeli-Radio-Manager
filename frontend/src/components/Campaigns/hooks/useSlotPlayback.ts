@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Campaign, getSlotPlayCount } from '../../../store/campaignStore'
-import { api } from '../../../services/api'
+import { useService } from '../../../services'
 
 export function useSlotPlayback(campaigns: Campaign[]) {
+  const service = useService()
   const [playingSlot, setPlayingSlot] = useState<{ slotDate: string; slotIndex: number } | null>(null)
   const [playQueue, setPlayQueue] = useState<string[]>([])
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -26,7 +27,7 @@ export function useSlotPlayback(campaigns: Campaign[]) {
     }
 
     const currentContentId = playQueue[0]
-    const streamUrl = api.getStreamUrl(currentContentId)
+    const streamUrl = service.getStreamUrl(currentContentId)
 
     if (!audioRef.current) {
       audioRef.current = new Audio()

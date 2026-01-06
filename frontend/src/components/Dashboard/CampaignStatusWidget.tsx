@@ -3,32 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Megaphone, PlayCircle, TrendingUp, Clock, ChevronRight, ChevronLeft } from 'lucide-react'
-import { api } from '../../services/api'
+import { useService } from '../../services'
 import { useAuth } from '../../contexts/AuthContext'
-
-interface Campaign {
-  _id: string
-  name: string
-  name_he?: string
-  status: string
-  priority: number
-  schedule_grid: Array<{ play_count: number; slot_index: number }>
-  content_refs: Array<{ content_id: string; weight: number }>
-  monthly_budget?: number
-  contract_value?: number
-  price_per_slot?: number
-}
-
-interface DailySlot {
-  slot_index: number
-  time: string
-  commercials: Array<{
-    campaign_id: string
-    name: string
-    priority: number
-    play_count: number
-  }>
-}
 
 export default function CampaignStatusWidget() {
   const { i18n } = useTranslation()
@@ -36,19 +12,20 @@ export default function CampaignStatusWidget() {
   const navigate = useNavigate()
   const { role } = useAuth()
   const isAdmin = role === 'admin'
+  const service = useService()
 
   // Fetch active campaigns
-  const { data: campaigns = [] } = useQuery<Campaign[]>({
+  const { data: campaigns = [] } = useQuery({
     queryKey: ['campaigns', 'active'],
-    queryFn: () => api.getCampaigns('active'),
+    queryFn: () => service.getCampaigns('active'),
     refetchInterval: 60000,
   })
 
   // Fetch today's preview
   const today = new Date().toISOString().split('T')[0]
-  const { data: dailyPreview } = useQuery<{ slots: DailySlot[] }>({
+  const { data: dailyPreview } = useQuery({
     queryKey: ['campaignDailyPreview', today],
-    queryFn: () => api.getCampaignDailyPreview(today),
+    queryFn: () => service.getCampaignDailyPreview(today),
     refetchInterval: 60000,
   })
 

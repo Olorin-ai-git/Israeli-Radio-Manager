@@ -18,7 +18,7 @@ import {
   UserPlus,
   Lock
 } from 'lucide-react'
-import api from '../../services/api'
+import { useService } from '../../services'
 import { useAuth } from '../../contexts/AuthContext'
 import { Select, Checkbox } from '../Form'
 
@@ -72,6 +72,7 @@ const roleIcons = {
 
 export default function UsersTab({ isRTL }: UsersTabProps) {
   const queryClient = useQueryClient()
+  const service = useService()
   const { dbUser: currentUser } = useAuth()
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('')
@@ -103,7 +104,7 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
   // Fetch users
   const { data: usersData, isLoading, error } = useQuery({
     queryKey: ['admin', 'users', roleFilter, showInactive],
-    queryFn: () => api.listUsers({
+    queryFn: () => service.listUsers({
       role: roleFilter || undefined,
       include_inactive: showInactive,
       limit: 200
@@ -114,14 +115,14 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
   // Fetch user stats
   const { data: userStats } = useQuery({
     queryKey: ['admin', 'users', 'stats'],
-    queryFn: api.getUserStats,
+    queryFn: () => service.getUserStats(),
     retry: false
   })
 
   // Change role mutation
   const changeRoleMutation = useMutation({
     mutationFn: ({ uid, role }: { uid: string; role: 'admin' | 'editor' | 'viewer' }) =>
-      api.setUserRole(uid, role),
+      service.setUserRole(uid, role),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
     }
@@ -129,7 +130,7 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
 
   // Deactivate user mutation
   const deactivateMutation = useMutation({
-    mutationFn: (uid: string) => api.deactivateUser(uid),
+    mutationFn: (uid: string) => service.deactivateUser(uid),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
     }
@@ -137,7 +138,7 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
 
   // Reactivate user mutation
   const reactivateMutation = useMutation({
-    mutationFn: (uid: string) => api.reactivateUser(uid),
+    mutationFn: (uid: string) => service.reactivateUser(uid),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
     }
@@ -146,7 +147,7 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
   // Update user mutation
   const updateUserMutation = useMutation({
     mutationFn: ({ uid, data }: { uid: string; data: { display_name?: string; photo_url?: string } }) =>
-      api.updateUser(uid, data),
+      service.updateUser(uid, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
       setEditingUser(null)
@@ -156,7 +157,7 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
   // Create user mutation
   const createUserMutation = useMutation({
     mutationFn: (data: { email: string; role: 'admin' | 'editor' | 'viewer'; display_name?: string }) =>
-      api.createUser(data),
+      service.createUser(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
       setShowCreateModal(false)
@@ -165,7 +166,7 @@ export default function UsersTab({ isRTL }: UsersTabProps) {
   })
 
   // Filter users by search query
-  const users: User[] = usersData?.users || []
+  const users = (usersData?.users || []) as User[]
   const filteredUsers = users.filter(user =>
     user.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     user.email.toLowerCase().includes(searchQuery.toLowerCase())

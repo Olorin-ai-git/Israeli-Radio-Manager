@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Upload as UploadIcon, File, CheckCircle, XCircle, Loader2, X, Music, Radio, Megaphone, Disc, AudioLines, Newspaper } from 'lucide-react'
-import { api } from '../services/api'
+import { useService } from '../services'
 
 interface UploadedFile {
   file: File
@@ -49,6 +49,7 @@ export default function Upload() {
   const { t, i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
   const queryClient = useQueryClient()
+  const service = useService()
   const [files, setFiles] = useState<UploadedFile[]>([])
   const [dragActive, setDragActive] = useState(false)
   const [editingUpload, setEditingUpload] = useState<PendingUpload | null>(null)
@@ -61,11 +62,11 @@ export default function Upload() {
 
   const { data: pendingUploads } = useQuery({
     queryKey: ['pendingUploads'],
-    queryFn: api.getPendingUploads,
+    queryFn: () => service.getPendingUploads(),
   })
 
   const uploadMutation = useMutation({
-    mutationFn: (file: File) => api.uploadFile(file, { auto_categorize: true }),
+    mutationFn: (file: File) => service.uploadFile(file, { auto_categorize: true }),
     onSuccess: (result, file) => {
       setFiles((prev) =>
         prev.map((f) =>
@@ -85,7 +86,7 @@ export default function Upload() {
 
   const confirmMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: EditFormData }) =>
-      api.confirmUpload(id, {
+      service.confirmUpload(id, {
         content_type: data.content_type,
         genre: data.genre || undefined,
         title: data.title || undefined,
@@ -99,7 +100,7 @@ export default function Upload() {
   })
 
   const cancelMutation = useMutation({
-    mutationFn: (id: string) => api.cancelPendingUpload(id),
+    mutationFn: (id: string) => service.cancelPendingUpload(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pendingUploads'] })
     },

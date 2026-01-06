@@ -1,12 +1,11 @@
-import { useState, useEffect, ChangeEvent } from 'react'
+import { useState, useEffect, ChangeEvent, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Globe, Bell, Mail, Smartphone, MessageSquare, Send, Loader2, Check } from 'lucide-react'
 import Checkbox from '../components/Form/Checkbox'
 import Input from '../components/Form/Input'
-import api from '../services/api'
+import { useService, useServiceMode } from '../services'
 import { useToastStore } from '../store/toastStore'
 import { useAuth } from '../contexts/AuthContext'
-import { useDemoMode } from '../hooks/useDemoMode'
 
 interface Settings {
   notifications: {
@@ -25,8 +24,8 @@ export default function Settings() {
   const { t, i18n } = useTranslation()
   const { addToast } = useToastStore()
   const { refreshUser } = useAuth()
-  const { isViewer, isDemoHost } = useDemoMode()
-  const isInDemoMode = isViewer && isDemoHost
+  const service = useService()
+  const { isDemoMode: isInDemoMode } = useServiceMode()
   const isRTL = i18n.language === 'he'
 
   // Loading states
@@ -52,16 +51,16 @@ export default function Settings() {
     checkPushSupport()
   }, [])
 
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     try {
-      const data = await api.getSettings()
+      const data = await service.getSettings()
       setSettings(data)
     } catch (error) {
       addToast('Failed to load settings', 'error')
     } finally {
       setLoading(false)
     }
-  }
+  }, [service, addToast])
 
   const checkPushSupport = async () => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
@@ -86,7 +85,7 @@ export default function Settings() {
 
     setSaving(true)
     try {
-      await api.updateSettings({
+      await service.updateSettings({
         notifications: settings.notifications,
         admin_contact: settings.admin_contact
       })
@@ -118,7 +117,7 @@ export default function Settings() {
         applicationServerKey: vapidKey as BufferSource
       })
 
-      await api.subscribeToPush(subscription.toJSON())
+      await service.subscribeToPush(subscription.toJSON())
       setPushSubscribed(true)
       addToast('Push notifications enabled', 'success')
     } catch (error) {
@@ -136,7 +135,7 @@ export default function Settings() {
 
     setTestingChannel(channel)
     try {
-      const result = await api.testNotification(channel)
+      const result = await service.testNotification(channel)
       if (result.success) {
         addToast(`Test ${channel} notification sent`, 'success')
       } else {
@@ -169,7 +168,7 @@ export default function Settings() {
       // Update i18n locally
       i18n.changeLanguage(selectedLanguage)
       // Save to user profile
-      await api.updateUserPreferences({ language: selectedLanguage })
+      await service.updateUserPreferences({ language: selectedLanguage })
       await refreshUser()
       addToast(t('settings.saved') || 'Language saved', 'success')
     } catch (error) {

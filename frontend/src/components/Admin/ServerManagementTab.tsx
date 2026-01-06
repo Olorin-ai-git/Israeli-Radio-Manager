@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Server, Activity, Cpu, HardDrive, RefreshCw, Power, Trash2, AlertTriangle } from 'lucide-react'
-import api from '../../services/api'
+import { useService } from '../../services'
 import { toast } from '../../store/toastStore'
 import { Checkbox } from '../Form'
 
@@ -11,18 +11,19 @@ interface ServerManagementTabProps {
 
 export default function ServerManagementTab({ isRTL }: ServerManagementTabProps) {
   const queryClient = useQueryClient()
+  const service = useService()
   const [includeLogs, setIncludeLogs] = useState(false)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
 
   const { data: health, isLoading, refetch } = useQuery({
     queryKey: ['server', 'health'],
-    queryFn: api.getServerHealth,
+    queryFn: () => service.getServerHealth(),
     refetchInterval: 10000, // Refresh every 10 seconds
     retry: false
   })
 
   const clearCacheMutation = useMutation({
-    mutationFn: () => api.clearCache(undefined, includeLogs),
+    mutationFn: () => service.clearCache(undefined, includeLogs),
     onSuccess: (data) => {
       const message = includeLogs && data.logs_deleted > 0
         ? isRTL
@@ -41,7 +42,7 @@ export default function ServerManagementTab({ isRTL }: ServerManagementTabProps)
   })
 
   const restartServerMutation = useMutation({
-    mutationFn: api.restartServer,
+    mutationFn: () => service.restartServer(),
     onSuccess: () => {
       toast.warning(isRTL ? 'השרת מתאתחל...' : 'Server restarting...')
       setShowRestartConfirm(false)
@@ -50,7 +51,7 @@ export default function ServerManagementTab({ isRTL }: ServerManagementTabProps)
       setTimeout(() => {
         const checkHealth = setInterval(async () => {
           try {
-            await api.getServerHealth()
+            await service.getServerHealth()
             toast.success(isRTL ? 'השרת חזר לפעילות' : 'Server back online')
             clearInterval(checkHealth)
             queryClient.invalidateQueries()

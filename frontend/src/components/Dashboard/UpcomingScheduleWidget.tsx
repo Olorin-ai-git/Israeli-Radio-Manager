@@ -3,34 +3,24 @@ import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Calendar, Music, Radio, Megaphone, Clock, RefreshCw, ChevronRight, ChevronLeft } from 'lucide-react'
-import { api } from '../../services/api'
-
-interface CalendarEvent {
-  id: string
-  summary: string
-  start: { dateTime?: string; date?: string }
-  extendedProperties?: {
-    private?: {
-      radio_content_type?: string
-    }
-  }
-}
+import { useService } from '../../services'
 
 export default function UpcomingScheduleWidget() {
   const { i18n } = useTranslation()
   const isRTL = i18n.language === 'he'
   const navigate = useNavigate()
+  const service = useService()
 
-  const { data: calendarEvents, refetch, isRefetching } = useQuery<CalendarEvent[]>({
+  const { data: calendarEvents, refetch, isRefetching } = useQuery({
     queryKey: ['calendarEvents'],
-    queryFn: () => api.getCalendarEvents(7),
+    queryFn: () => service.getCalendarEvents(7),
     refetchInterval: 30000,
   })
 
   // Filter to only show upcoming events
   const upcomingEvents = useMemo(() => {
     return (Array.isArray(calendarEvents) ? calendarEvents : [])
-      .filter((event: CalendarEvent) => {
+      .filter((event) => {
         const startTime = new Date(event.start?.dateTime || event.start?.date || '')
         return startTime > new Date()
       })
@@ -106,7 +96,7 @@ export default function UpcomingScheduleWidget() {
       {/* Events List */}
       <div className="space-y-1.5 flex-1 min-h-0 overflow-y-auto">
         {upcomingEvents.length > 0 ? (
-          upcomingEvents.map((event: CalendarEvent) => {
+          upcomingEvents.map((event) => {
             const startTime = new Date(event.start?.dateTime || event.start?.date || '')
             const contentType = event.extendedProperties?.private?.radio_content_type || 'content'
             const config = getTypeConfig(contentType)

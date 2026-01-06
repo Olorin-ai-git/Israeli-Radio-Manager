@@ -34,7 +34,7 @@ import {
   verticalListSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable'
-import { api } from '../../services/api'
+import { useService } from '../../services'
 import { Input, Textarea, Select } from '../Form'
 
 // Import types and constants
@@ -65,6 +65,7 @@ interface FlowsPanelProps {
 export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPanelProps) {
   const { i18n } = useTranslation()
   const queryClient = useQueryClient()
+  const service = useService()
   const isRTL = i18n.language === 'he'
 
   // Modal states
@@ -110,7 +111,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
 
     const timer = setTimeout(async () => {
       try {
-        const result = await api.parseNaturalFlow(flowDescription)
+        const result = await service.parseNaturalFlow(flowDescription)
         if (result.actions) setPreviewActions(result.actions)
       } catch (error) {
         console.error('Failed to parse flow description:', error)
@@ -129,7 +130,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
 
     const timer = setTimeout(async () => {
       try {
-        const result = await api.parseNaturalFlow(editFlowDescription)
+        const result = await service.parseNaturalFlow(editFlowDescription)
         if (result.actions) setEditParsedActions(result.actions)
       } catch (error) {
         console.error('Failed to parse flow description:', error)
@@ -142,17 +143,17 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
   // Fetch flows
   const { data: flows, isLoading } = useQuery<Flow[]>({
     queryKey: ['flows'],
-    queryFn: () => api.getFlows(),
+    queryFn: () => service.getFlows() as Promise<Flow[]>,
   })
 
   // Mutations
   const toggleMutation = useMutation({
-    mutationFn: (flowId: string) => api.toggleFlow(flowId),
+    mutationFn: (flowId: string) => service.toggleFlow(flowId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['flows'] }),
   })
 
   const runMutation = useMutation({
-    mutationFn: (flowId: string) => api.runFlow(flowId),
+    mutationFn: (flowId: string) => service.runFlow(flowId),
     onMutate: (flowId) => {
       setRunningFlowIds(prev => new Set(prev).add(flowId))
     },
@@ -177,17 +178,17 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
   })
 
   const resetMutation = useMutation({
-    mutationFn: (flowId: string) => api.resetFlow(flowId),
+    mutationFn: (flowId: string) => service.resetFlow(flowId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['flows'] }),
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (flowId: string) => api.deleteFlow(flowId),
+    mutationFn: (flowId: string) => service.deleteFlow(flowId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['flows'] }),
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createFlow(data),
+    mutationFn: (data: any) => service.createFlow(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['flows'] })
       handleCloseCreateModal()
@@ -199,7 +200,7 @@ export default function FlowsPanel({ collapsed, onToggle, width = 288 }: FlowsPa
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ flowId, data }: { flowId: string; data: any }) => api.updateFlow(flowId, data),
+    mutationFn: ({ flowId, data }: { flowId: string; data: any }) => service.updateFlow(flowId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['flows'] })
       closeEditModal()
