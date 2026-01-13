@@ -213,13 +213,14 @@ class CommercialSchedulerService:
                 return None
 
         # Campaign-specific file
-        if content_ref.get("file_google_drive_id") or content_ref.get("file_local_path"):
+        if content_ref.get("file_gcs_path") or content_ref.get("file_local_path"):
+            file_id = content_ref.get("file_gcs_path") or content_ref.get("file_local_path", "")
             return {
-                "_id": f"campaign_file_{content_ref.get('file_google_drive_id', '')}",
+                "_id": f"campaign_file_{hash(file_id)}",
                 "type": "commercial",
                 "title": content_ref.get("file_title", "Campaign Commercial"),
                 "duration_seconds": content_ref.get("file_duration_seconds", 30),
-                "google_drive_id": content_ref.get("file_google_drive_id"),
+                "gcs_path": content_ref.get("file_gcs_path"),
                 "local_cache_path": content_ref.get("file_local_path"),
             }
 

@@ -8,7 +8,6 @@ interface Track {
   type: string
   duration_seconds?: number
   genre?: string
-  google_drive_path?: string
   play_count?: number
   last_played?: string
   created_at?: string

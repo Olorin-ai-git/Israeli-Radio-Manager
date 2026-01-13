@@ -11,7 +11,6 @@ export interface WeeklySlot {
 
 export interface ContentRef {
   content_id?: string
-  file_google_drive_id?: string
   file_local_path?: string
   file_title?: string
   file_duration_seconds?: number

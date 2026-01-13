@@ -46,8 +46,7 @@ class ContentBase(BaseModel):
 
 class ContentCreate(ContentBase):
     """Model for creating new content."""
-    google_drive_id: str
-    google_drive_path: str
+    gcs_path: Optional[str] = None
 
 
 class ContentUpdate(BaseModel):
@@ -63,8 +62,7 @@ class ContentUpdate(BaseModel):
 class Content(ContentBase):
     """Full content model with database fields."""
     id: str = Field(alias="_id")
-    google_drive_id: str
-    google_drive_path: str
+    gcs_path: Optional[str] = None  # GCS storage path
     local_cache_path: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_played: Optional[datetime] = None

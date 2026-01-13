@@ -22,7 +22,6 @@ class CampaignContentRef(BaseModel):
     content_id: Optional[str] = None
 
     # OR campaign-specific uploaded file
-    file_google_drive_id: Optional[str] = None
     file_local_path: Optional[str] = None
     file_title: Optional[str] = None
     file_duration_seconds: Optional[int] = None

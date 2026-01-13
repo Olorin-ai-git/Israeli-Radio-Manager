@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Music, Radio, Megaphone, Search, Play, Plus,
-  Clock, Calendar, Disc3, RefreshCw, ListPlus, X as XIcon, FolderSync,
+  Clock, Calendar, Disc3, ListPlus, X as XIcon,
   AudioLines, Layers, Newspaper, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Save, Trash2, AlertTriangle
 } from 'lucide-react'
 import { useService, useServiceMode } from '../services'
@@ -70,73 +70,6 @@ export default function Library() {
   const { play, addToQueue, currentTrack } = useDemoAwarePlayer()
   const queryClient = useQueryClient()
 
-  // Metadata refresh mutation
-  const refreshMetadataMutation = useMutation({
-    mutationFn: () => service.refreshMetadata(),
-    onSuccess: (data: any) => {
-      // Invalidate queries to refetch with new metadata
-      queryClient.invalidateQueries({ queryKey: ['songs'] })
-      queryClient.invalidateQueries({ queryKey: ['shows'] })
-      queryClient.invalidateQueries({ queryKey: ['commercials'] })
-      queryClient.invalidateQueries({ queryKey: ['jingles'] })
-      queryClient.invalidateQueries({ queryKey: ['samples'] })
-      queryClient.invalidateQueries({ queryKey: ['newsflashes'] })
-
-      const updated = data?.stats?.updated ?? data?.updated ?? 0
-      toast.success(
-        isRTL
-          ? `מטה-דאטה עודכן: ${updated} פריטים`
-          : `Metadata updated: ${updated} items`
-      )
-    },
-    onError: () => {
-      toast.error(
-        isRTL
-          ? 'שגיאה בעדכון מטה-דאטה'
-          : 'Failed to refresh metadata'
-      )
-    }
-  })
-
-  // Google Drive sync mutation
-  const syncMutation = useMutation({
-    mutationFn: async () => {
-      console.log('Starting Google Drive sync...')
-      const result = await service.startSync(true) // downloadFiles = true
-      console.log('Sync result:', result)
-      return result
-    },
-    onSuccess: (data: any) => {
-      console.log('Sync completed successfully:', data)
-      // Invalidate queries to refetch with new content
-      queryClient.invalidateQueries({ queryKey: ['songs'] })
-      queryClient.invalidateQueries({ queryKey: ['shows'] })
-      queryClient.invalidateQueries({ queryKey: ['commercials'] })
-      queryClient.invalidateQueries({ queryKey: ['jingles'] })
-      queryClient.invalidateQueries({ queryKey: ['samples'] })
-      queryClient.invalidateQueries({ queryKey: ['newsflashes'] })
-      queryClient.invalidateQueries({ queryKey: ['genres'] })
-
-      const stats = data?.stats || {}
-      const filesFound = stats.files_found || 0
-      const filesAdded = stats.files_added || 0
-      const filesUpdated = stats.files_updated || 0
-
-      toast.success(
-        isRTL
-          ? `סונכרנו ${filesFound} קבצים (${filesAdded} חדשים, ${filesUpdated} עודכנו)`
-          : `Synced ${filesFound} files (${filesAdded} new, ${filesUpdated} updated)`
-      )
-    },
-    onError: (error: any) => {
-      console.error('Sync error:', error)
-      toast.error(
-        isRTL
-          ? 'שגיאה בסנכרון עם Google Drive'
-          : 'Failed to sync with Google Drive'
-      )
-    }
-  })
 
   // Update content mutation
   const updateContentMutation = useMutation({
@@ -416,43 +349,6 @@ export default function Library() {
         <h1 className="text-2xl font-bold text-dark-100">
           {isRTL ? 'ספריית מדיה' : 'Media Library'}
         </h1>
-        {canWrite && (
-          <div className="flex items-center gap-4">
-            <div className="tooltip-trigger">
-              <button
-                onClick={() => {
-                  console.log('Sync button clicked!')
-                  syncMutation.mutate()
-                }}
-                disabled={syncMutation.isPending}
-                className="glass-button-primary flex items-center gap-2 px-4 py-2"
-              >
-                <FolderSync size={16} className={syncMutation.isPending ? 'animate-spin' : ''} />
-                <span className="hidden sm:inline">
-                  {isRTL ? 'סנכרן עם Drive' : 'Sync with Drive'}
-                </span>
-              </button>
-              <div className="tooltip tooltip-bottom">
-                {isRTL ? 'סנכרן עם Google Drive' : 'Sync with Google Drive'}
-              </div>
-            </div>
-            <div className="tooltip-trigger">
-              <button
-                onClick={() => refreshMetadataMutation.mutate()}
-                disabled={refreshMetadataMutation.isPending}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-dark-800 text-dark-100 hover:bg-dark-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <RefreshCw size={16} className={refreshMetadataMutation.isPending ? 'animate-spin' : ''} />
-                <span className="hidden sm:inline">
-                  {isRTL ? 'רענן מטה-דאטה' : 'Refresh Metadata'}
-                </span>
-              </button>
-              <div className="tooltip tooltip-bottom">
-                {isRTL ? 'רענן מטה-דאטה מקבצי שמע' : 'Refresh metadata from audio files'}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Tabs */}

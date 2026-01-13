@@ -21,7 +21,6 @@ from app.services.email_watcher import EmailWatcherService
 from app.services.metadata_refresher import MetadataRefresherService
 from app.services.flow_monitor import FlowMonitorService
 from app.services.playback_monitor import PlaybackMonitorService
-from app.services.content_sync_scheduler import ContentSyncScheduler
 from app.services.health_monitor import HealthMonitorService
 from app.services.user_service import UserService
 
@@ -86,16 +85,6 @@ async def lifespan(app: FastAPI):
         drive_service=None  # Not using Google Drive anymore
     )
     logger.info("Content sync service initialized (GCS only)")
-
-    # Initialize and start content sync scheduler (periodic GCS sync)
-    app.state.content_sync_scheduler = ContentSyncScheduler(
-        db=app.state.db,
-        content_sync=app.state.content_sync,
-        sync_interval=3600,  # Sync every hour
-        enabled=True
-    )
-    await app.state.content_sync_scheduler.start()
-    logger.info("Content sync scheduler started - syncing to GCS every hour")
 
     # Initialize Google Calendar service
     app.state.calendar_service = GoogleCalendarService(
@@ -260,8 +249,6 @@ async def lifespan(app: FastAPI):
         await app.state.playback_monitor.stop()
     if hasattr(app.state, 'flow_monitor'):
         await app.state.flow_monitor.stop()
-    if hasattr(app.state, 'content_sync_scheduler'):
-        await app.state.content_sync_scheduler.stop()
     if hasattr(app.state, 'metadata_refresher'):
         await app.state.metadata_refresher.stop()
     if app.state.email_watcher:

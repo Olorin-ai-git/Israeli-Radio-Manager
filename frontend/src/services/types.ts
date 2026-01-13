@@ -16,8 +16,6 @@ export interface Track {
   type: 'song' | 'show' | 'commercial' | 'jingle' | 'sample' | 'newsflash'
   duration_seconds?: number
   genre?: string
-  google_drive_path?: string
-  google_drive_id?: string
   play_count?: number
   created_at?: string
   updated_at?: string
@@ -86,7 +84,6 @@ export interface WeeklySlot {
 
 export interface ContentRef {
   content_id?: string
-  file_google_drive_id?: string
   file_local_path?: string
   file_title?: string
   file_duration_seconds?: number

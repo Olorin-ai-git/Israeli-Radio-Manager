@@ -56,7 +56,6 @@ class TaskType(str, Enum):
     # Help/FAQ
     GET_HELP = "get_help"                   # Get help and available commands
     # Admin operations
-    SYNC_DRIVE = "sync_drive"               # Trigger Google Drive sync
     GET_SYNC_STATUS = "get_sync_status"     # Get sync status
     UNKNOWN = "unknown"                     # Unknown task
 
@@ -194,9 +193,6 @@ class TaskExecutor:
         "פקודות": TaskType.GET_HELP,
         "איך": TaskType.GET_HELP,
         # Admin/sync commands
-        "סנכרן": TaskType.SYNC_DRIVE,
-        "סנכרון": TaskType.SYNC_DRIVE,
-        "סנכרן דרייב": TaskType.SYNC_DRIVE,
         "סטטוס סנכרון": TaskType.GET_SYNC_STATUS,
         "מצב סנכרון": TaskType.GET_SYNC_STATUS,
     }
@@ -297,8 +293,6 @@ class TaskExecutor:
             elif task.task_type == TaskType.GET_HELP:
                 return await self._execute_get_help(task)
             # Admin
-            elif task.task_type == TaskType.SYNC_DRIVE:
-                return await self._execute_sync_drive(task)
             elif task.task_type == TaskType.GET_SYNC_STATUS:
                 return await self._execute_get_sync_status(task)
             else:
@@ -2329,33 +2323,6 @@ Return the JSON array:"""
 
     # Admin methods
 
-    async def _execute_sync_drive(self, task: ParsedTask) -> Dict[str, Any]:
-        """Trigger Google Drive sync."""
-        if not self._content_sync:
-            return {
-                "success": False,
-                "message": "❌ שירות הסנכרון אינו זמין",
-                "message_en": "Sync service not available"
-            }
-
-        try:
-            # Start sync in background
-            import asyncio
-            asyncio.create_task(self._content_sync.sync_from_drive())
-
-            return {
-                "success": True,
-                "message": "🔄 סנכרון מגוגל דרייב התחיל... ייתכן שייקח מספר דקות",
-                "message_en": "Google Drive sync started... this may take a few minutes",
-                "action": "sync_started"
-            }
-        except Exception as e:
-            logger.error(f"Drive sync error: {e}")
-            return {
-                "success": False,
-                "message": f"❌ שגיאה בהתחלת סנכרון: {str(e)}",
-                "message_en": f"Sync error: {str(e)}"
-            }
 
     async def _execute_get_sync_status(self, task: ParsedTask) -> Dict[str, Any]:
         """Get sync status."""

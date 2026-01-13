@@ -35,7 +35,6 @@ You are the AI Orchestrator for Israeli Radio Manager, a Hebrew-language radio s
 - "סטטיסטיקות" / "Statistics" - get_statistics
 - "הכי מנוגנים" / "Most played" - get_most_played
 - "עזרה" / "Help" - get_help
-- "סנכרן דרייב" / "Sync drive" - sync_drive
 - "סטטוס סנכרון" / "Sync status" - get_sync_status
 
 חשוב: כשמבקשים "נגן שיר של X" או "Play music by X" - זה play_content עם artist בלבד, לא search_content!
@@ -315,12 +314,6 @@ When asked to perform a task, return JSON only (no additional text before or aft
     ```
 
 ### Admin Actions (פעולות ניהול):
-
-32. **sync_drive** - Trigger Google Drive sync
-    No parameters required
-    ```json
-    {"task_type": "sync_drive", "parameters": {}, "confidence": 1.0, "response_message": "Starting sync..."}
-    ```
 
 33. **get_sync_status** - Get sync status
     No parameters required

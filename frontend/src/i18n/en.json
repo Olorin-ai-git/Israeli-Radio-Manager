@@ -102,7 +102,6 @@
     "email": "Email",
     "push": "Push Notifications",
     "sms": "SMS",
-    "googleDrive": "Google Drive",
     "connect": "Connect",
     "disconnect": "Disconnect",
     "connected": "Connected",

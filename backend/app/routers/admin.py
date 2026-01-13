@@ -209,16 +209,16 @@ async def get_storage_stats(
             "bucket_name": env_settings.gcs_bucket_name
         }
 
-    # Google Drive statistics - get from database (synced content)
+    # GCS statistics - get from database (cloud-stored content)
     try:
         db = request.app.state.db
         content_sync = request.app.state.content_sync
-        root_folder_id = content_sync.drive.root_folder_id if content_sync and content_sync.drive else None
+        bucket_name = content_sync.gcs.bucket_name if content_sync and content_sync.gcs and content_sync.gcs.is_available else "Not configured"
 
-        # Get stats from synced content in database
+        # Get stats from GCS-stored content in database
         # file_size can be at root level or in metadata.file_size
         pipeline = [
-            {"$match": {"google_drive_id": {"$exists": True, "$ne": None}}},
+            {"$match": {"gcs_path": {"$exists": True, "$ne": None}}},
             {"$group": {
                 "_id": None,
                 "total_size": {"$sum": {
@@ -234,7 +234,7 @@ async def get_storage_stats(
 
         # Also get breakdown by content type
         type_pipeline = [
-            {"$match": {"google_drive_id": {"$exists": True, "$ne": None}}},
+            {"$match": {"gcs_path": {"$exists": True, "$ne": None}}},
             {"$group": {
                 "_id": "$type",
                 "count": {"$sum": 1},
@@ -249,24 +249,24 @@ async def get_storage_stats(
         type_breakdown = await db.content.aggregate(type_pipeline).to_list(100)
 
         if result:
-            stats["drive"] = {
+            stats["gcs"] = {
                 "size_bytes": result[0].get("total_size", 0),
                 "file_count": result[0].get("file_count", 0),
-                "folder_id": root_folder_id or "Not configured",
+                "bucket": bucket_name,
                 "by_type": {t["_id"]: {"count": t["count"], "size_bytes": t["size"]} for t in type_breakdown if t["_id"]},
                 "source": "database"
             }
         else:
-            stats["drive"] = {
+            stats["gcs"] = {
                 "size_bytes": 0,
                 "file_count": 0,
-                "folder_id": root_folder_id or "Not configured",
+                "bucket": bucket_name,
                 "by_type": {},
-                "source": "database (no synced content)"
+                "source": "database (no cloud-stored content)"
             }
 
     except Exception as e:
-        logger.error(f"Failed to get Google Drive statistics: {e}")
+        logger.error(f"Failed to get GCS statistics: {e}")
         stats["drive"] = {
             "error": str(e)
         }

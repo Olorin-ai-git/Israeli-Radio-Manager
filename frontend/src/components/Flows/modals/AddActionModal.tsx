@@ -427,7 +427,7 @@ export default function AddActionModal({
                   { value: '', label: isRTL ? "בחר ג'ינגל..." : 'Select a jingle...' },
                   ...(jingles || []).map((j: any) => ({
                     value: j._id,
-                    label: j.title || j.google_drive_path,
+                    label: j.title || 'Untitled',
                   })),
                 ]}
               />

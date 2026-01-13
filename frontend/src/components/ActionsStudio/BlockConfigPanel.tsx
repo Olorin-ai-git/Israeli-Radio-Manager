@@ -342,13 +342,13 @@ export default function BlockConfigPanel({ action, isRTL, onClose }: BlockConfig
                         key={item._id}
                         onClick={() => {
                           setSelectedContentId(item._id)
-                          setSelectedContentTitle(item.title || item.google_drive_path)
+                          setSelectedContentTitle(item.title || 'Untitled')
                           setContentSearch('')
                         }}
                         className="w-full p-2 text-left hover:bg-white/10 rounded-lg transition-colors flex items-center justify-between"
                       >
                         <div>
-                          <p className="text-sm text-dark-200">{item.title || item.google_drive_path}</p>
+                          <p className="text-sm text-dark-200">{item.title || 'Untitled'}</p>
                         </div>
                         {selectedContentId === item._id && (
                           <Check size={16} className="text-primary-400" />

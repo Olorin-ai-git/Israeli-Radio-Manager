@@ -65,12 +65,6 @@ export const api = {
 
   // Sync
   getSyncStatus: () => client.get('/content/sync/status').then((r) => r.data),
-  startSync: (downloadFiles?: boolean) =>
-    client.post('/content/sync/start', null, { params: { download_files: downloadFiles } }).then((r) => r.data),
-  refreshMetadata: () => client.post('/content/sync/refresh-metadata').then((r) => r.data),
-  getSyncSchedulerStatus: () => client.get('/content/sync/scheduler/status').then((r) => r.data),
-  getSyncProgress: () => client.get('/content/sync/scheduler/progress').then((r) => r.data),
-  triggerGcsSync: () => client.post('/content/sync/scheduler/trigger').then((r) => r.data),
 
   // Schedule
   getSchedule: () => client.get('/schedule/').then((r) => r.data),
@@ -367,7 +361,6 @@ export const api = {
     priority?: number
     content_refs?: Array<{
       content_id?: string
-      file_google_drive_id?: string
       file_local_path?: string
       file_title?: string
       file_duration_seconds?: number
@@ -388,7 +381,7 @@ export const api = {
     client.put(`/campaigns/${campaignId}/schedule-grid`, grid).then((r) => r.data),
   updateCampaignSlot: (campaignId: string, slotDate: string, slotIndex: number, playCount: number) =>
     client.patch(`/campaigns/${campaignId}/schedule-slot`, null, { params: { slot_date: slotDate, slot_index: slotIndex, play_count: playCount } }).then((r) => r.data),
-  addCampaignContent: (campaignId: string, contentRef: { content_id?: string; file_google_drive_id?: string; file_title?: string }) =>
+  addCampaignContent: (campaignId: string, contentRef: { content_id?: string; file_title?: string }) =>
     client.post(`/campaigns/${campaignId}/content`, contentRef).then((r) => r.data),
   removeCampaignContent: (campaignId: string, contentIndex: number) =>
     client.delete(`/campaigns/${campaignId}/content/${contentIndex}`).then((r) => r.data),
