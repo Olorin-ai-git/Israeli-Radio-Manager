@@ -34,9 +34,9 @@ Updated stream validator to explicitly validate **ALL streaming URLs** for acces
 
 ### 3. **API Keys Configured**
 
-✅ **ANTHROPIC_API_KEY** - Found and configured from BayitPlus project
+✅ **ANTHROPIC_API_KEY** - Configured (rotated for security)
 ```
-sk-ant-api03-XXXX...XXXX
+sk-ant-api03-XXXX...XXXX  # REDACTED
 ```
 
 ✅ **ADMIN_EMAIL_ADDRESSES** - Set to `admin@olorin.ai`

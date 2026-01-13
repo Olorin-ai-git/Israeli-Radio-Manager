@@ -116,7 +116,7 @@ Add to your `.env` file:
 
 ```bash
 # Required for full functionality
-ANTHROPIC_API_KEY=sk-ant-api03-XXXX...XXXX
+ANTHROPIC_API_KEY=sk-ant-api03-XXXX...XXXX  # REDACTED - rotated for security
 TMDB_API_KEY=your-tmdb-key
 GCP_PROJECT_ID=israeli-radio-475c9
 
