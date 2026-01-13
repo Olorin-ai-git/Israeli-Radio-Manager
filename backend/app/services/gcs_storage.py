@@ -31,12 +31,44 @@ class GCSStorageService:
         self._initialized = False
 
         try:
-            self.client = storage.Client()
+            # Try to use service account file if it exists
+            import os
+            service_account_path = None
+            
+            # Check multiple possible locations
+            possible_paths = [
+                settings.google_service_account_file,  # Relative path from config
+                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), settings.google_service_account_file),  # backend/service-account.json
+                "/Users/olorin/Documents/Israeli-Radio-Manager/backend/service-account.json",  # Absolute path
+            ]
+            
+            for path in possible_paths:
+                if os.path.exists(path):
+                    service_account_path = path
+                    logger.info(f"Found service account file at: {path}")
+                    break
+            
+            # Initialize client with credentials
+            if service_account_path:
+                from google.oauth2 import service_account
+                credentials = service_account.Credentials.from_service_account_file(
+                    service_account_path,
+                    scopes=['https://www.googleapis.com/auth/cloud-platform']
+                )
+                self.client = storage.Client(credentials=credentials, project=credentials.project_id)
+                logger.info(f"GCS client initialized with service account: {service_account_path}")
+            else:
+                # Fall back to default credentials (ADC)
+                self.client = storage.Client()
+                logger.info("GCS client initialized with default credentials")
+            
             self.bucket = self.client.bucket(self.bucket_name)
             self._initialized = True
             logger.info(f"GCS service initialized with bucket: {self.bucket_name}")
+            
         except Exception as e:
             logger.warning(f"GCS service initialization failed: {e}. GCS features will be unavailable.")
+            logger.warning(f"Tried paths: {possible_paths if 'possible_paths' in locals() else 'none'}")
 
     @property
     def is_available(self) -> bool:
