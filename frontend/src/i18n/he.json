@@ -60,7 +60,9 @@
     "search": "חיפוש...",
     "filter": "סינון",
     "sortBy": "מיון לפי",
-    "noContent": "לא נמצא תוכן"
+    "noContent": "לא נמצא תוכן",
+    "refresh": "רענן ספרייה",
+    "refreshed": "הספרייה רועננה"
   },
   "upload": {
     "title": "העלאת תוכן",

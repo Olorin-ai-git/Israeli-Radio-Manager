@@ -202,12 +202,14 @@ async def fix_gcs_urls(
                 if not gcs_path or not gcs_path.startswith("gs://"):
                     continue
                 
-                # Convert to HTTPS URL (try public first, fallback to signed)
-                https_url = gcs_service.get_public_url(gcs_path)
+                # Convert to HTTPS URL
+                # Use signed URLs since bucket is not public (public URLs return 403)
+                https_url = gcs_service.get_signed_url(gcs_path)
                 
                 if not https_url:
-                    # Fallback to signed URL
-                    https_url = gcs_service.get_signed_url(gcs_path)
+                    # Try public URL as fallback (in case bucket permissions change)
+                    https_url = gcs_service.get_public_url(gcs_path)
+                    logger.warning(f"Using public URL for {gcs_path} - may return 403 if bucket not public")
                 
                 if not https_url:
                     logger.warning(f"Failed to convert {gcs_path} to HTTPS")
@@ -445,20 +447,30 @@ async def extract_metadata(
                 results["metadata_failed"] += 1
                 results["errors"].append(str(e))
         
-        if dry_run and results['metadata_extracted'] > 0:
-            logger.info(f"✅ Would extract metadata for {results['metadata_extracted']} items in live mode, {results['metadata_failed']} failed")
-            await add_execution_log(
-                db, audit_id, "success",
-                f"✅ Would extract metadata for {results['metadata_extracted']} items in live mode (DRY RUN - no changes made)",
-                "auto_fixer"
-            )
+        # Determine log level based on results
+        if results['metadata_extracted'] == 0 and results['metadata_failed'] > 0:
+            # All failed - this is an error
+            log_level = "error"
+            log_message = f"❌ Metadata extraction failed for all {results['metadata_failed']} items - check file accessibility and format"
+        elif results['metadata_failed'] > results['metadata_extracted']:
+            # More failures than successes - warning
+            log_level = "warn"
+            log_message = f"⚠️ Extracted metadata for {results['metadata_extracted']} items, but {results['metadata_failed']} failed"
+        elif results['metadata_failed'] > 0:
+            # Some failures - warning but mostly successful
+            log_level = "warn"
+            log_message = f"⚠️ Extracted metadata for {results['metadata_extracted']} items, {results['metadata_failed']} failed"
+        elif dry_run:
+            # Dry run success
+            log_level = "success"
+            log_message = f"✅ Would extract metadata for {results['metadata_extracted']} items in live mode (DRY RUN - no changes made)"
         else:
-            logger.info(f"✅ Extracted metadata for {results['metadata_extracted']} items, {results['metadata_failed']} failed")
-            await add_execution_log(
-                db, audit_id, "success",
-                f"✅ Extracted metadata for {results['metadata_extracted']} items, {results['metadata_failed']} failed",
-                "auto_fixer"
-            )
+            # Complete success
+            log_level = "success"
+            log_message = f"✅ Extracted metadata for {results['metadata_extracted']} items successfully"
+        
+        logger.info(log_message)
+        await add_execution_log(db, audit_id, log_level, log_message, "auto_fixer")
         
     except Exception as e:
         logger.error(f"Metadata extraction failed: {e}")

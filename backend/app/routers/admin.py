@@ -971,12 +971,12 @@ async def get_audit_reports(
     reports_cursor = db.audit_reports.find(query).sort([("audit_date", -1)]).limit(limit)
     reports = await reports_cursor.to_list(length=limit)
     
-    # Get action counts for each report
+    # Get correct issue and fix counts from report summary
     for report in reports:
-        audit_id = report.get("audit_id")
-        action_count = await db.librarian_actions.count_documents({"audit_id": audit_id})
-        report["issues_count"] = action_count
-        report["fixes_count"] = action_count
+        # Get counts from the audit report summary (correct source)
+        summary = report.get("summary", {})
+        report["issues_count"] = summary.get("issues_found", 0)
+        report["fixes_count"] = summary.get("issues_fixed", 0)
         
         # Convert ObjectId to string
         if "_id" in report:
@@ -1003,10 +1003,10 @@ async def get_audit_report_detail(
     if "_id" in report:
         report["_id"] = str(report["_id"])
     
-    # Get action count
-    action_count = await db.librarian_actions.count_documents({"audit_id": audit_id})
-    report["issues_count"] = action_count
-    report["fixes_count"] = action_count
+    # Get correct counts from report summary
+    summary = report.get("summary", {})
+    report["issues_count"] = summary.get("issues_found", 0)
+    report["fixes_count"] = summary.get("issues_fixed", 0)
     
     return report
 
@@ -1069,3 +1069,150 @@ async def rollback_librarian_action(
         }
     else:
         raise HTTPException(status_code=400, detail=result.get("error_message", "Rollback failed"))
+
+
+# ============================================================================
+# Backup Management Endpoints
+# ============================================================================
+
+@router.get("/backups/statistics")
+async def get_backup_statistics(
+    request: Request,
+    user: Dict = Depends(firebase_auth.require_admin)
+):
+    """Get backup system statistics."""
+    from app.services.backup_service import BackupService
+    from app.services.gcs_storage import GCSStorageService
+    
+    db = request.app.state.db
+    
+    # Get GCS service if available
+    gcs_service = None
+    try:
+        gcs_service = GCSStorageService()
+        if not gcs_service.is_available:
+            gcs_service = None
+    except:
+        pass
+    
+    backup_service = BackupService(db, gcs_service=gcs_service)
+    stats = await backup_service.get_backup_statistics()
+    
+    return stats
+
+
+@router.get("/backups/list")
+async def list_backups(
+    request: Request,
+    user: Dict = Depends(firebase_auth.require_admin),
+    limit: int = 20
+):
+    """Get list of available backups."""
+    from app.services.backup_service import BackupService
+    
+    db = request.app.state.db
+    backup_service = BackupService(db)
+    backups = await backup_service.list_backups(limit=limit)
+    
+    return {"backups": backups}
+
+
+@router.post("/backups/create")
+async def create_backup(
+    request: Request,
+    user: Dict = Depends(firebase_auth.require_admin),
+    backup_type: str = "manual",
+    include_logs: bool = False
+):
+    """Create a manual backup."""
+    from app.services.backup_service import BackupService
+    from app.services.gcs_storage import GCSStorageService
+    
+    db = request.app.state.db
+    
+    # Get GCS service if available
+    gcs_service = None
+    try:
+        gcs_service = GCSStorageService()
+        if not gcs_service.is_available:
+            gcs_service = None
+    except:
+        pass
+    
+    backup_service = BackupService(db, gcs_service=gcs_service)
+    result = await backup_service.create_backup(backup_type=backup_type, include_logs=include_logs)
+    
+    if result.get("status") == "success":
+        return result
+    else:
+        raise HTTPException(status_code=500, detail=result.get("error", "Backup failed"))
+
+
+@router.post("/backups/verify/{backup_name}")
+async def verify_backup(
+    request: Request,
+    backup_name: str,
+    user: Dict = Depends(firebase_auth.require_admin)
+):
+    """Verify backup integrity."""
+    from app.services.backup_service import BackupService
+    
+    db = request.app.state.db
+    backup_service = BackupService(db)
+    result = await backup_service.verify_backup(backup_name)
+    
+    return result
+
+
+@router.post("/backups/cleanup")
+async def cleanup_old_backups(
+    request: Request,
+    user: Dict = Depends(firebase_auth.require_admin),
+    retention_days: int = 30,
+    keep_minimum: int = 5
+):
+    """Clean up old backups."""
+    from app.services.backup_service import BackupService
+    
+    db = request.app.state.db
+    backup_service = BackupService(db)
+    result = await backup_service.cleanup_old_backups(
+        retention_days=retention_days,
+        keep_minimum=keep_minimum
+    )
+    
+    return result
+
+
+@router.post("/internal/backups/scheduled")
+async def scheduled_backup(request: Request):
+    """
+    Endpoint for Google Cloud Scheduler to trigger automatic backups.
+    Called weekly.
+    """
+    from app.services.backup_service import BackupService
+    from app.services.gcs_storage import GCSStorageService
+    
+    db = request.app.state.db
+    
+    # Get GCS service
+    gcs_service = None
+    try:
+        gcs_service = GCSStorageService()
+        if not gcs_service.is_available:
+            gcs_service = None
+    except:
+        pass
+    
+    backup_service = BackupService(db, gcs_service=gcs_service)
+    
+    # Create weekly backup
+    result = await backup_service.create_backup(backup_type="weekly", include_logs=False)
+    
+    # Cleanup old backups (keep last 30 days, minimum 5 backups)
+    cleanup_result = await backup_service.cleanup_old_backups(retention_days=30, keep_minimum=5)
+    
+    return {
+        "backup": result,
+        "cleanup": cleanup_result
+    }

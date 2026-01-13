@@ -330,6 +330,13 @@ async def init_database(db):
     await db.classification_verification_cache.create_index("expires_at")
     await db.classification_verification_cache.create_index("is_correct")
 
+    # Backup collection indexes
+    await db.backups.create_index("created_at")
+    await db.backups.create_index("backup_type")
+    await db.backups.create_index("backup_name", unique=True)
+    await db.backups.create_index([("backup_type", 1), ("created_at", -1)])
+    await db.backups.create_index("status")
+
     logger.info("Database indexes created")
 
 

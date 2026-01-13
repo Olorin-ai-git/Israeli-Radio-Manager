@@ -51,6 +51,7 @@ class ContentCreate(ContentBase):
 
 class ContentUpdate(BaseModel):
     """Model for updating content."""
+    type: Optional[ContentType] = None
     title: Optional[str] = None
     title_he: Optional[str] = None
     artist: Optional[str] = None

@@ -74,6 +74,13 @@ export default function Upload() {
         )
       )
       queryClient.invalidateQueries({ queryKey: ['pendingUploads'] })
+      // Refresh library after upload
+      queryClient.invalidateQueries({ queryKey: ['songs'] })
+      queryClient.invalidateQueries({ queryKey: ['shows'] })
+      queryClient.invalidateQueries({ queryKey: ['commercials'] })
+      queryClient.invalidateQueries({ queryKey: ['jingles'] })
+      queryClient.invalidateQueries({ queryKey: ['samples'] })
+      queryClient.invalidateQueries({ queryKey: ['newsflashes'] })
     },
     onError: (error: any, file) => {
       setFiles((prev) =>
@@ -95,6 +102,13 @@ export default function Upload() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pendingUploads'] })
       queryClient.invalidateQueries({ queryKey: ['content'] })
+      // Refresh library after confirming upload
+      queryClient.invalidateQueries({ queryKey: ['songs'] })
+      queryClient.invalidateQueries({ queryKey: ['shows'] })
+      queryClient.invalidateQueries({ queryKey: ['commercials'] })
+      queryClient.invalidateQueries({ queryKey: ['jingles'] })
+      queryClient.invalidateQueries({ queryKey: ['samples'] })
+      queryClient.invalidateQueries({ queryKey: ['newsflashes'] })
       setEditingUpload(null)
     },
   })

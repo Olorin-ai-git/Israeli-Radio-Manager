@@ -148,9 +148,49 @@ async def run_daily_audit(
         else:
             metadata_results = {"metadata_extracted": 0, "metadata_failed": 0}
 
-        # Step 3: Audit all content types in parallel
-        logger.info("\n🔍 Step 3: Running content audits...")
-        await add_execution_log(db, audit_id, "info", "🔍 Step 3: Running content audits...", "orchestrator")
+        # Step 3: Ensure local cache is healthy
+        logger.info("\n💾 Step 3: Checking local cache...")
+        await add_execution_log(db, audit_id, "info", "💾 Step 3: Ensuring minimum local cache...", "cache_manager")
+        
+        from app.services.local_cache_manager import LocalCacheManager
+        from app.config import settings
+        
+        # Get GCS service if available
+        gcs_service = None
+        try:
+            from app.services.gcs_storage import GCSStorageService
+            gcs_service = GCSStorageService()
+            if not gcs_service.is_available:
+                gcs_service = None
+        except:
+            pass
+        
+        cache_manager = LocalCacheManager(db, settings.cache_dir, gcs_service)
+        cache_results = await cache_manager.ensure_minimum_cache()
+        
+        if cache_results["status"] == "healthy":
+            await add_execution_log(
+                db, audit_id, "info",
+                f"   ✅ Local cache healthy: {cache_results['cached_items']}/{cache_results['min_required']} items cached",
+                "cache_manager"
+            )
+        elif cache_results["status"] == "critical":
+            await add_execution_log(
+                db, audit_id, "error",
+                f"   ❌ Local cache critical: only {cache_results['cached_items']}/{cache_results['min_required']} items cached",
+                "cache_manager"
+            )
+        
+        if cache_results.get("items_downloaded", 0) > 0:
+            await add_execution_log(
+                db, audit_id, "info",
+                f"   📥 Downloaded {cache_results['items_downloaded']} items to local cache",
+                "cache_manager"
+            )
+
+        # Step 4: Audit all content types in parallel
+        logger.info("\n🔍 Step 4: Running content audits...")
+        await add_execution_log(db, audit_id, "info", "🔍 Step 4: Running content audits...", "orchestrator")
 
         # Import services here to avoid circular imports
         from app.services.content_auditor import audit_content_items
@@ -159,7 +199,7 @@ async def run_daily_audit(
 
         # Run audits in parallel
         await add_execution_log(db, audit_id, "info", "   → Checking content metadata completeness", "auditor")
-        await add_execution_log(db, audit_id, "info", "   → Validating streaming URLs", "validator")
+        await add_execution_log(db, audit_id, "info", "   → Validating ALL streaming URLs", "validator")
         await add_execution_log(db, audit_id, "info", "   → Running database health checks", "maintenance")
         
         content_results, stream_results, db_health = await asyncio.gather(
@@ -185,9 +225,9 @@ async def run_daily_audit(
             await add_execution_log(db, audit_id, "error", f"❌ Database maintenance failed: {str(db_health)}", "maintenance")
             db_health = {"status": "failed", "error": str(db_health)}
 
-        # Step 4: Compile results
-        logger.info("\n📊 Step 4: Compiling audit results...")
-        await add_execution_log(db, audit_id, "info", "📊 Step 4: Compiling audit results...", "orchestrator")
+        # Step 5: Compile results
+        logger.info("\n📊 Step 5: Compiling audit results...")
+        await add_execution_log(db, audit_id, "info", "📊 Step 5: Compiling audit results...", "orchestrator")
         
         # Extract issues from results
         broken_streams = stream_results.get("broken_streams", [])
@@ -222,16 +262,32 @@ async def run_daily_audit(
             len(misclassifications) +
             len(orphaned_items)
         )
+        
+        # Calculate unique items with issues (an item can have multiple issues)
+        items_with_issues = set()
+        for stream in broken_streams:
+            items_with_issues.add(stream.get("content_id"))
+        for meta in missing_metadata:
+            items_with_issues.add(meta.get("content_id"))
+        for misc in misclassifications:
+            items_with_issues.add(misc.get("content_id"))
+        for orphan in orphaned_items:
+            items_with_issues.add(orphan.get("_id") or orphan.get("content_id"))
+        
+        # Healthy items = total items - unique items with issues
+        unique_items_with_issues = len(items_with_issues)
+        healthy_items_count = max(0, len(scope.content_ids) - unique_items_with_issues)
 
         summary = {
             "total_items": len(scope.content_ids) + len(scope.schedule_slot_ids),
             "issues_found": total_issues,
             "issues_fixed": len(fixes_applied),
             "manual_review_needed": len([]),
-            "healthy_items": (len(scope.content_ids) - total_issues),
+            "healthy_items": healthy_items_count,
+            "unique_items_with_issues": unique_items_with_issues,
         }
 
-        # Step 5: Generate AI insights
+        # Step 6: Generate AI insights
         logger.info("\n🧠 Step 5: Generating AI insights...")
         await add_execution_log(db, audit_id, "info", "🧠 Step 5: Generating AI insights...", "orchestrator")
         
