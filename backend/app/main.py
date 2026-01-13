@@ -352,6 +352,8 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://israeliradio.live",  # Production domain
+        "https://www.israeliradio.live",  # WWW variant
         "https://radio.olorin.ai",
         "https://demo.radio.olorin.ai",  # Demo site
         "https://israeli-radio-475c9.web.app",
