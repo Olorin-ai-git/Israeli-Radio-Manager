@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Music, Radio, Megaphone, Search, Play, Plus,
   Clock, Calendar, Disc3, ListPlus, X as XIcon,
-  AudioLines, Layers, Newspaper, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Save, Trash2, AlertTriangle
+  AudioLines, Layers, Newspaper, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Save, Trash2, AlertTriangle, RefreshCw
 } from 'lucide-react'
 import { useService, useServiceMode } from '../services'
 import { toast } from '../store/toastStore'
@@ -13,6 +13,15 @@ import { useDemoAwarePlayer } from '../hooks/useDemoAwarePlayer'
 
 type SortField = 'title' | 'genre' | 'duration_seconds' | 'type' | 'created_at'
 type SortDirection = 'asc' | 'desc'
+
+const contentTypeOptions = [
+  { value: 'song', label: 'Song', labelHe: 'שיר', icon: Music },
+  { value: 'show', label: 'Show', labelHe: 'תוכנית', icon: Radio },
+  { value: 'commercial', label: 'Commercial', labelHe: 'פרסומת', icon: Megaphone },
+  { value: 'jingle', label: 'Jingle', labelHe: "ג'ינגל", icon: Disc3 },
+  { value: 'sample', label: 'Sample', labelHe: 'סאמפל', icon: AudioLines },
+  { value: 'newsflash', label: 'Newsflash', labelHe: 'מבזק חדשות', icon: Newspaper },
+]
 
 // Component to display album cover with fallback
 function AlbumCover({ isPlaying, type, coverUrl }: { contentId: string; isPlaying: boolean; type: string; coverUrl: string }) {
@@ -62,7 +71,7 @@ export default function Library() {
   const [sortField, setSortField] = useState<SortField>('title')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [editingItem, setEditingItem] = useState<any>(null)
-  const [editForm, setEditForm] = useState({ title: '', artist: '', genre: '' })
+  const [editForm, setEditForm] = useState({ title: '', artist: '', genre: '', type: '' })
   const [confirmDelete, setConfirmDelete] = useState<any>(null)
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false)
 
@@ -142,7 +151,8 @@ export default function Library() {
     setEditForm({
       title: item.title || '',
       artist: item.artist || '',
-      genre: item.genre || ''
+      genre: item.genre || '',
+      type: item.type || ''
     })
   }
 
@@ -153,7 +163,8 @@ export default function Library() {
       data: {
         title: editForm.title,
         artist: editForm.artist,
-        genre: editForm.genre
+        genre: editForm.genre,
+        type: editForm.type
       }
     })
   }
@@ -257,7 +268,8 @@ export default function Library() {
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       // Toggle direction if same field
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
+      const newDirection = sortDirection === 'asc' ? 'desc' : 'asc'
+      setSortDirection(newDirection)
     } else {
       // Set new field with ascending direction
       setSortField(field)
@@ -325,6 +337,18 @@ export default function Library() {
   const handleTabChange = (tab: ContentTab) => {
     setActiveTab(tab)
     clearSelection()
+  }
+
+  // Manual refresh function
+  const handleRefresh = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['songs'] })
+    await queryClient.invalidateQueries({ queryKey: ['shows'] })
+    await queryClient.invalidateQueries({ queryKey: ['commercials'] })
+    await queryClient.invalidateQueries({ queryKey: ['jingles'] })
+    await queryClient.invalidateQueries({ queryKey: ['samples'] })
+    await queryClient.invalidateQueries({ queryKey: ['newsflashes'] })
+    await queryClient.invalidateQueries({ queryKey: ['genres'] })
+    toast.success(isRTL ? 'הספרייה רועננה' : 'Library refreshed')
   }
 
   const tabs = [
@@ -424,6 +448,16 @@ export default function Library() {
             <span className="text-sm text-dark-400 ml-1">{isRTL ? 'פריטים' : 'items'}</span>
           </div>
         )}
+
+        {/* Refresh Button */}
+        <button
+          onClick={handleRefresh}
+          disabled={isLoading}
+          className="p-2.5 glass-button hover:bg-white/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          title={isRTL ? 'רענן ספרייה' : 'Refresh library'}
+        >
+          <RefreshCw size={20} className={`${isLoading ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
       {/* Bulk Actions Bar */}
@@ -798,14 +832,25 @@ export default function Library() {
                 )}
               </div>
 
-              {/* Type (read-only) */}
+              {/* Type (editable) */}
               <div>
                 <label className="block text-sm font-medium text-dark-300 mb-2">
                   {isRTL ? 'סוג' : 'Type'}
                 </label>
-                <div className="px-4 py-2 bg-dark-800/50 rounded-lg text-dark-400 capitalize">
-                  {editingItem.type}
-                </div>
+                <select
+                  value={editForm.type}
+                  onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
+                  className="w-full px-4 py-2 glass-input capitalize"
+                >
+                  {contentTypeOptions.map((option) => {
+                    const Icon = option.icon
+                    return (
+                      <option key={option.value} value={option.value}>
+                        {isRTL ? option.labelHe : option.label}
+                      </option>
+                    )
+                  })}
+                </select>
               </div>
             </div>
 
