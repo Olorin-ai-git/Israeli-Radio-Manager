@@ -6,7 +6,7 @@ import type { RadioService } from './types'
 const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
 const API_BASE_URL = isLocalDev
   ? '/api'
-  : 'https://israeli-radio-manager-624470113582.us-east1.run.app/api'
+  : 'https://israeli-radio-manager-534446777606.us-east1.run.app/api'
 
 const client = axios.create({
   baseURL: API_BASE_URL,
