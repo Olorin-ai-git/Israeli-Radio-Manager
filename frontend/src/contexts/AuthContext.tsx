@@ -57,10 +57,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   // Fetch user data from MongoDB
   const fetchDbUser = async () => {
     try {
+      console.log('[AuthContext] Fetching database user...');
       const userData = await api.getCurrentUser();
+      console.log('[AuthContext] Database user fetched:', userData);
       setDbUser(userData);
     } catch (error) {
-      console.error('Failed to fetch user from API:', error);
+      console.error('[AuthContext] Failed to fetch user from API:', error);
       setDbUser(null);
     }
   };
@@ -74,13 +76,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   useEffect(() => {
     const unsubscribe = onAuthChange(async (firebaseUser) => {
+      console.log('[AuthContext] Auth state changed:', firebaseUser?.email || 'null');
       setUser(firebaseUser);
 
       if (firebaseUser) {
         // User signed in - fetch/create user in database
+        console.log('[AuthContext] User signed in, fetching DB user');
         await fetchDbUser();
       } else {
         // User signed out - clear database user
+        console.log('[AuthContext] User signed out');
         setDbUser(null);
       }
 

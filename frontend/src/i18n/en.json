@@ -187,5 +187,55 @@
         "failedToLoad": "Failed to load librarian data"
       }
     }
+  },
+  "login": {
+    "title": "Israeli Radio Manager",
+    "tagline": "Professional Broadcasting Solution",
+    "welcome": "Welcome Back",
+    "subtitle": "Sign in to continue to your radio station",
+    "signInButton": "Sign in with Google",
+    "security": "Secure authentication powered by Google OAuth 2.0",
+    "features": {
+      "title": "Everything you need to run a radio station",
+      "content": {
+        "title": "Content Management",
+        "desc": "Manage your music library with ease"
+      },
+      "scheduling": {
+        "title": "Smart Scheduling",
+        "desc": "Schedule programs and commercials automatically"
+      },
+      "announcements": {
+        "title": "AI Announcements",
+        "desc": "Create professional announcements with AI"
+      },
+      "broadcasting": {
+        "title": "Live Broadcasting",
+        "desc": "Monitor and control broadcasts in real-time"
+      },
+      "workflows": {
+        "title": "Custom Workflows",
+        "desc": "Create personalized scheduling flows"
+      },
+      "analytics": {
+        "title": "Analytics",
+        "desc": "Track performance and trends"
+      },
+      "aiAgent": {
+        "title": "AI Orchestrator Agent",
+        "desc": "Intelligent agent manages your entire station autonomously"
+      },
+      "librarian": {
+        "title": "Librarian AI Agent",
+        "desc": "Automated library maintenance and content auditing"
+      }
+    },
+    "stats": {
+      "automated": "Automated Broadcasting",
+      "ai": "AI-Powered Features",
+      "unlimited": "Unlimited Possibilities"
+    },
+    "aiPowered": "Powered by Advanced AI Agents",
+    "aiDescription": "Two specialized AI agents work 24/7 to manage your radio station: the Orchestrator handles scheduling and content flow, while the Librarian maintains your media library and ensures content quality."
   }
 }

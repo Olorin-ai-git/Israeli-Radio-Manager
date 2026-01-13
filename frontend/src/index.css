@@ -321,6 +321,20 @@
   @apply bg-gradient-to-r from-primary-400 to-primary-600 bg-clip-text text-transparent;
 }
 
+/* Drop shadow glow effect */
+.drop-shadow-glow {
+  filter: drop-shadow(0 0 20px rgba(239, 68, 68, 0.4));
+}
+
+/* Shadow glow for hover effects */
+.shadow-glow {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.2), 0 8px 16px rgba(0, 0, 0, 0.3);
+}
+
+.shadow-glow-lg {
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.3), 0 12px 24px rgba(0, 0, 0, 0.4);
+}
+
 /* Stats card hover effect */
 .stat-card {
   @apply glass-card p-6 hover:border-primary-500/30 hover:shadow-glow-lg transition-all duration-300;
