@@ -13,7 +13,6 @@ from app.routers import content, schedule, playback, upload, agent, websocket, c
 from app.services.audio_player import AudioPlayerService
 from app.services.chatterbox import ChatterboxService
 from app.services.notifications import NotificationService
-from app.services.google_drive import GoogleDriveService
 from app.services.content_sync import ContentSyncService
 from app.services.google_calendar import GoogleCalendarService
 from app.services.calendar_watcher import CalendarWatcherService
@@ -81,28 +80,12 @@ async def lifespan(app: FastAPI):
     app.state.audio_player = AudioPlayerService(cache_dir=settings.cache_dir)
     logger.info("Audio player service initialized")
 
-    # Initialize Google Drive service with OAuth
-    app.state.drive_service = GoogleDriveService(
-        credentials_path=settings.google_credentials_file,
-        token_path=settings.google_drive_token_file,
-        service_account_file=settings.google_service_account_file,
-        root_folder_id=settings.google_drive_root_folder_id,
-        cache_dir=settings.cache_dir
-    )
-    # Authenticate Drive service (will trigger OAuth if needed)
-    try:
-        app.state.drive_service.authenticate()
-        logger.info("Google Drive service initialized and authenticated")
-    except Exception as e:
-        logger.warning(f"Google Drive authentication failed: {e}. Drive features will be limited.")
-        # Keep the service but it won't be able to download files
-
-    # Initialize content sync service
+    # Initialize content sync service (GCS only, no Google Drive)
     app.state.content_sync = ContentSyncService(
         db=app.state.db,
-        drive_service=app.state.drive_service
+        drive_service=None  # Not using Google Drive anymore
     )
-    logger.info("Content sync service initialized")
+    logger.info("Content sync service initialized (GCS only)")
 
     # Initialize and start content sync scheduler (periodic GCS sync)
     app.state.content_sync_scheduler = ContentSyncScheduler(
@@ -141,7 +124,7 @@ async def lifespan(app: FastAPI):
             db=app.state.db,
             calendar_service=app.state.calendar_service,
             audio_player=app.state.audio_player,
-            drive_service=app.state.drive_service,
+            drive_service=None,  # Not using Google Drive
             check_interval=15,  # Check every 15 seconds
             lookahead_minutes=2  # Look 2 minutes ahead
         )
@@ -179,7 +162,7 @@ async def lifespan(app: FastAPI):
         app.state.email_watcher = EmailWatcherService(
             db=app.state.db,
             gmail_service=app.state.gmail_service,
-            drive_service=app.state.drive_service,
+            drive_service=None,  # Not using Google Drive
             orchestrator_agent=orchestrator,
             check_interval=60,  # Check every 60 seconds
             auto_approve_threshold=0.8  # Auto-approve if confidence > 80%
@@ -190,7 +173,7 @@ async def lifespan(app: FastAPI):
     # Initialize and start metadata refresher (background task for periodic metadata updates)
     app.state.metadata_refresher = MetadataRefresherService(
         db=app.state.db,
-        drive_service=app.state.drive_service,
+        drive_service=None,  # Not using Google Drive
         check_interval=3600  # Check every hour (3600 seconds)
     )
     await app.state.metadata_refresher.start()
@@ -295,7 +278,6 @@ async def init_database(db):
     # Content collection indexes
     await db.content.create_index("type")
     await db.content.create_index("genre")
-    await db.content.create_index("google_drive_id", unique=True)
     await db.content.create_index("last_played")
 
     # Schedule collection indexes
@@ -353,6 +335,7 @@ app.add_middleware(
         "https://israeli-radio-475c9.firebaseapp.com",
         "http://localhost:5173",
         "http://localhost:3000",
+        "http://localhost:3001",
     ],
     allow_credentials=True,
     allow_methods=["*"],

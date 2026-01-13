@@ -53,7 +53,7 @@ class ContentSyncService:
     def __init__(
         self,
         db: AsyncIOMotorDatabase,
-        drive_service: GoogleDriveService,
+        drive_service: Optional[GoogleDriveService] = None,
         gcs_service: Optional[GCSStorageService] = None
     ):
         self.db = db

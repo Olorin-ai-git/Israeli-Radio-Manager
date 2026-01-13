@@ -427,7 +427,7 @@ async def refresh_metadata(request: Request):
 
     logger = logging.getLogger(__name__)
     db = request.app.state.db
-    drive_service = request.app.state.drive_service
+    drive_service = getattr(request.app.state, 'drive_service', None)
 
     stats = {
         "total": 0,
