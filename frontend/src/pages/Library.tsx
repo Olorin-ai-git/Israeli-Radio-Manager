@@ -842,14 +842,11 @@ export default function Library() {
                   onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
                   className="w-full px-4 py-2 glass-input capitalize"
                 >
-                  {contentTypeOptions.map((option) => {
-                    const Icon = option.icon
-                    return (
-                      <option key={option.value} value={option.value}>
-                        {isRTL ? option.labelHe : option.label}
-                      </option>
-                    )
-                  })}
+                  {contentTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {isRTL ? option.labelHe : option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>

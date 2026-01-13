@@ -23,7 +23,6 @@ import type {
   Settings,
   VoicePreset,
   TTSStatus,
-  SyncStatus,
   ScheduleSlot,
   FlowAction,
   WeeklySlot,
@@ -66,8 +65,6 @@ import {
   DEMO_USER_STATS,
   DEMO_SETTINGS,
   DEMO_JINGLE_SETTINGS,
-  DEMO_SYNC_STATUS,
-  DEMO_SYNC_PROGRESS,
 } from './mockData'
 
 // =============================================================================

@@ -3,7 +3,7 @@
  * Main interface for Librarian system monitoring and control
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Bot, PlayCircle, CheckCircle, FileText, RefreshCw, Calendar, DollarSign, X, Loader2, Copy, Check } from 'lucide-react';
 import {
   getLibrarianConfig,
@@ -20,8 +20,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from '../../store/toastStore';
 
 export default function LibrarianAgentPage() {
-  const { t, i18n } = useTranslation();
-  const isRTL = i18n.language === 'he';
+  const { t } = useTranslation();
   
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState<LibrarianConfig | null>(null);
@@ -184,8 +183,7 @@ export default function LibrarianAgentPage() {
           hour12: false,
           hour: '2-digit',
           minute: '2-digit',
-          second: '2-digit',
-          fractionalSecondDigits: 3
+          second: '2-digit'
         });
         return `[${timestamp}] [${log.level.toUpperCase()}] ${log.message}`;
       }).join('\n');
@@ -250,8 +248,7 @@ ${[...selectedReport.execution_logs].reverse().map(log => {
             hour12: false,
             hour: '2-digit',
             minute: '2-digit',
-            second: '2-digit',
-            fractionalSecondDigits: 3
+            second: '2-digit'
           });
           return `[${timestamp}] [${log.level.toUpperCase()}] ${log.message}`;
         }).join('\n')}
@@ -644,8 +641,7 @@ ${[...selectedReport.execution_logs].reverse().map(log => {
                           hour12: false,
                           hour: '2-digit',
                           minute: '2-digit',
-                          second: '2-digit',
-                          fractionalSecondDigits: 3
+                          second: '2-digit'
                         })}
                       </span>
                       <span className={`uppercase text-xs font-bold shrink-0 w-14 ${getLogLevelColor(log.level)}`}>
@@ -767,8 +763,7 @@ ${[...selectedReport.execution_logs].reverse().map(log => {
                               hour12: false,
                               hour: '2-digit',
                               minute: '2-digit',
-                              second: '2-digit',
-                              fractionalSecondDigits: 3
+                              second: '2-digit'
                             })}
                           </span>
                           <span className={`uppercase font-bold shrink-0 w-14 ${getLogLevelColor(log.level)}`}>
