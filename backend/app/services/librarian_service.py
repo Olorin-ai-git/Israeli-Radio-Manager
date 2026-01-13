@@ -241,8 +241,12 @@ async def run_daily_audit(
             "orchestrator"
         )
 
-        # Get actions taken
-        actions_cursor = db.librarian_actions.find({"audit_id": audit_id})
+        # Get actions taken during audit (exclude preparatory fixes)
+        # Only count actions taken to fix issues found during THIS audit
+        actions_cursor = db.librarian_actions.find({
+            "audit_id": audit_id,
+            "action_type": {"$nin": ["gcs_url_conversion", "metadata_extraction"]}  # Exclude preparatory fixes
+        })
         actions = await actions_cursor.to_list(length=None)
 
         fixes_applied = [
