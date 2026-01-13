@@ -6,7 +6,7 @@ import type { RadioService } from './types'
 const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
 const API_BASE_URL = isLocalDev
   ? '/api'
-  : 'https://israeli-radio-manager-534446777606.us-east1.run.app/api'
+  : 'https://israeli-radio-manager-624470113582.us-east1.run.app/api'
 
 const client = axios.create({
   baseURL: API_BASE_URL,
@@ -62,9 +62,6 @@ export const api = {
     client.patch(`/content/${id}`, data).then((r) => r.data),
   deleteContent: (id: string) => client.delete(`/content/${id}?hard_delete=true`).then((r) => r.data),
   batchDeleteContent: (ids: string[]) => client.post('/content/batch-delete', ids, { params: { hard_delete: true } }).then((r) => r.data),
-
-  // Sync
-  getSyncStatus: () => client.get('/content/sync/status').then((r) => r.data),
 
   // Schedule
   getSchedule: () => client.get('/schedule/').then((r) => r.data),
@@ -461,3 +458,4 @@ export const api = {
 } satisfies RadioService
 
 export default api
+export { client }

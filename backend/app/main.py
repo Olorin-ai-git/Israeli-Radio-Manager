@@ -301,6 +301,35 @@ async def init_database(db):
     await db.commercial_play_logs.create_index([("campaign_id", 1), ("slot_date", 1), ("slot_index", 1)])
     await db.commercial_play_logs.create_index("played_at")
 
+    # Librarian audit reports collection indexes
+    await db.audit_reports.create_index("audit_date")
+    await db.audit_reports.create_index("status")
+    await db.audit_reports.create_index("audit_type")
+    await db.audit_reports.create_index([("audit_type", 1), ("audit_date", 1)])
+
+    # Librarian actions collection indexes
+    await db.librarian_actions.create_index("audit_id")
+    await db.librarian_actions.create_index("content_id")
+    await db.librarian_actions.create_index("timestamp")
+    await db.librarian_actions.create_index("action_type")
+    await db.librarian_actions.create_index([("audit_id", 1), ("action_type", 1)])
+    await db.librarian_actions.create_index([("content_id", 1), ("timestamp", 1)])
+    await db.librarian_actions.create_index("rolled_back")
+
+    # Stream validation cache collection indexes
+    await db.stream_validation_cache.create_index("stream_url")
+    await db.stream_validation_cache.create_index("last_validated")
+    await db.stream_validation_cache.create_index([("stream_url", 1), ("last_validated", 1)])
+    await db.stream_validation_cache.create_index("expires_at")
+    await db.stream_validation_cache.create_index("is_valid")
+
+    # Classification verification cache collection indexes
+    await db.classification_verification_cache.create_index("content_id")
+    await db.classification_verification_cache.create_index([("content_id", 1), ("category_id", 1)])
+    await db.classification_verification_cache.create_index("last_verified")
+    await db.classification_verification_cache.create_index("expires_at")
+    await db.classification_verification_cache.create_index("is_correct")
+
     logger.info("Database indexes created")
 
 

@@ -14,6 +14,7 @@ import HelpPage from './pages/HelpPage'
 import Admin from './pages/Admin'
 import Login from './pages/Login'
 import VoiceManagement from './pages/VoiceManagement'
+import LibrarianAgentPage from './pages/admin/LibrarianAgentPage'
 import ProtectedRoute from './components/Auth/ProtectedRoute'
 import ToastContainer from './components/Toast/ToastContainer'
 import { useAuth } from './contexts/AuthContext'
@@ -91,6 +92,14 @@ function App() {
                     element={
                       <ProtectedRoute requireAdmin>
                         <Admin />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/librarian"
+                    element={
+                      <ProtectedRoute requireAdmin>
+                        <LibrarianAgentPage />
                       </ProtectedRoute>
                     }
                   />

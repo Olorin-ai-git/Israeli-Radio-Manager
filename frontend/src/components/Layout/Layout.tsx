@@ -278,7 +278,8 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/settings', icon: Settings, label: t('nav.settings') },
     { path: '/help', icon: HelpCircle, label: isRTL ? 'עזרה' : 'Help' },
     ...(role === 'admin' ? [
-      { path: '/admin', icon: Shield, label: isRTL ? 'ניהול' : 'Admin' }
+      { path: '/admin', icon: Shield, label: isRTL ? 'ניהול' : 'Admin' },
+      { path: '/admin/librarian', icon: Bot, label: isRTL ? 'ספרן AI' : 'Librarian AI' }
     ] : []),
   ]
 

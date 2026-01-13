@@ -806,3 +806,266 @@ async def restart_server(
         "status": "restarting",
         "message": "Server restart initiated. Server will be back online in ~10 seconds."
     }
+
+
+# ============================================================================
+# Librarian AI Agent Endpoints
+# ============================================================================
+
+class TriggerAuditRequest(BaseModel):
+    """Request model for triggering librarian audit."""
+    audit_type: str = "daily_incremental"  # "daily_incremental", "weekly_full", "manual", "ai_agent"
+    dry_run: bool = False
+    use_ai_agent: bool = False
+    max_iterations: int = 50
+    budget_limit_usd: float = 1.0
+
+
+@router.get("/librarian/config")
+async def get_librarian_config(
+    request: Request,
+    user: Dict = Depends(firebase_auth.require_admin)
+) -> Dict[str, Any]:
+    """Get Librarian AI Agent configuration."""
+    return {
+        "daily_schedule": {
+            "cron": "0 2 * * *",
+            "time": "2:00 AM",
+            "mode": "Rule-based",
+            "cost": "~$0.15/day",
+            "status": "DISABLED",
+            "description": "Daily incremental audit of recent content changes"
+        },
+        "weekly_schedule": {
+            "cron": "0 3 * * 0",
+            "time": "Sunday 3:00 AM",
+            "mode": "AI Agent",
+            "cost": "~$0.50/week",
+            "status": "DISABLED",
+            "description": "Weekly comprehensive audit of entire library"
+        },
+        "audit_limits": {
+            "max_iterations": 50,
+            "default_budget_usd": 1.0,
+            "min_budget_usd": 0.25,
+            "max_budget_usd": 15.0,
+            "budget_step_usd": 0.25
+        },
+        "pagination": {
+            "reports_limit": 10,
+            "actions_limit": 50,
+            "activity_page_size": 20
+        },
+        "ui": {
+            "id_truncate_length": 8,
+            "modal_max_height": 600
+        },
+        "action_types": [
+            {"value": "add_poster", "label": "Add Poster", "color": "success", "icon": "Image"},
+            {"value": "update_metadata", "label": "Update Metadata", "color": "primary", "icon": "FileText"},
+            {"value": "recategorize", "label": "Recategorize", "color": "warning", "icon": "Tag"},
+            {"value": "fix_url", "label": "Fix URL", "color": "secondary", "icon": "Link"},
+            {"value": "clean_title", "label": "Clean Title", "color": "info", "icon": "Type"}
+        ],
+        "gcp_project_id": env_settings.environment
+    }
+
+
+@router.get("/librarian/status")
+async def get_librarian_status(
+    request: Request,
+    user: Dict = Depends(firebase_auth.require_admin)
+) -> Dict[str, Any]:
+    """Get Librarian AI Agent status and statistics."""
+    from app.services.librarian_service import get_latest_audit_report, get_audit_statistics
+    
+    db = request.app.state.db
+    
+    # Get latest report
+    latest_report = await get_latest_audit_report(db)
+    
+    # Get statistics
+    stats = await get_audit_statistics(db, days=30)
+    
+    # Determine system health
+    system_health = "unknown"
+    if stats["total_audits"] > 0:
+        fix_rate = stats["fix_success_rate"]
+        if fix_rate >= 80:
+            system_health = "excellent"
+        elif fix_rate >= 60:
+            system_health = "good"
+        elif fix_rate >= 40:
+            system_health = "fair"
+        else:
+            system_health = "poor"
+    
+    return {
+        "last_audit_date": latest_report.get("audit_date") if latest_report else None,
+        "last_audit_status": latest_report.get("status") if latest_report else None,
+        "total_audits_last_30_days": stats["total_audits"],
+        "avg_execution_time": stats["avg_execution_time"],
+        "total_issues_fixed": stats["total_issues_fixed"],
+        "system_health": system_health
+    }
+
+
+@router.post("/librarian/run-audit")
+async def trigger_librarian_audit(
+    request: Request,
+    audit_request: TriggerAuditRequest,
+    user: Dict = Depends(firebase_auth.require_admin)
+) -> Dict[str, Any]:
+    """Trigger a librarian audit."""
+    from app.services.librarian_service import run_daily_audit
+    from app.services.ai_agent_service import run_ai_agent_audit
+    
+    db = request.app.state.db
+    
+    try:
+        if audit_request.use_ai_agent or audit_request.audit_type == "ai_agent":
+            # AI Agent mode
+            report = await run_ai_agent_audit(
+                db=db,
+                audit_type="ai_agent",
+                dry_run=audit_request.dry_run,
+                max_iterations=audit_request.max_iterations,
+                budget_limit_usd=audit_request.budget_limit_usd,
+                language="en"
+            )
+        else:
+            # Rule-based mode
+            report = await run_daily_audit(
+                db=db,
+                audit_type=audit_request.audit_type,
+                dry_run=audit_request.dry_run,
+                language="en"
+            )
+        
+        return {
+            "audit_id": report.get("audit_id"),
+            "status": "started",
+            "message": f"Audit started ({'DRY RUN' if audit_request.dry_run else 'LIVE'})"
+        }
+    except Exception as e:
+        logger.error(f"Failed to trigger audit: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/librarian/reports")
+async def get_audit_reports(
+    request: Request,
+    limit: int = 10,
+    audit_type: Optional[str] = None,
+    user: Dict = Depends(firebase_auth.require_admin)
+) -> List[Dict[str, Any]]:
+    """Get recent audit reports."""
+    from bson import ObjectId
+    
+    db = request.app.state.db
+    
+    query = {}
+    if audit_type:
+        query["audit_type"] = audit_type
+    
+    reports_cursor = db.audit_reports.find(query).sort([("audit_date", -1)]).limit(limit)
+    reports = await reports_cursor.to_list(length=limit)
+    
+    # Get action counts for each report
+    for report in reports:
+        audit_id = report.get("audit_id")
+        action_count = await db.librarian_actions.count_documents({"audit_id": audit_id})
+        report["issues_count"] = action_count
+        report["fixes_count"] = action_count
+        
+        # Convert ObjectId to string
+        if "_id" in report:
+            report["_id"] = str(report["_id"])
+    
+    return reports
+
+
+@router.get("/librarian/reports/{audit_id}")
+async def get_audit_report_detail(
+    request: Request,
+    audit_id: str,
+    user: Dict = Depends(firebase_auth.require_admin)
+) -> Dict[str, Any]:
+    """Get detailed audit report."""
+    db = request.app.state.db
+    
+    report = await db.audit_reports.find_one({"audit_id": audit_id})
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="Audit report not found")
+    
+    # Convert ObjectId to string
+    if "_id" in report:
+        report["_id"] = str(report["_id"])
+    
+    # Get action count
+    action_count = await db.librarian_actions.count_documents({"audit_id": audit_id})
+    report["issues_count"] = action_count
+    report["fixes_count"] = action_count
+    
+    return report
+
+
+@router.get("/librarian/actions")
+async def get_librarian_actions(
+    request: Request,
+    audit_id: Optional[str] = None,
+    action_type: Optional[str] = None,
+    limit: int = 50,
+    user: Dict = Depends(firebase_auth.require_admin)
+) -> List[Dict[str, Any]]:
+    """Get librarian actions."""
+    db = request.app.state.db
+    
+    query = {}
+    if audit_id:
+        query["audit_id"] = audit_id
+    if action_type:
+        query["action_type"] = action_type
+    
+    actions_cursor = db.librarian_actions.find(query).sort([("timestamp", -1)]).limit(limit)
+    actions = await actions_cursor.to_list(length=limit)
+    
+    # Fetch content titles
+    for action in actions:
+        content_id = action.get("content_id")
+        if content_id:
+            try:
+                from bson import ObjectId
+                content = await db.content.find_one({"_id": ObjectId(content_id)})
+                action["content_title"] = content.get("title") if content else None
+            except:
+                action["content_title"] = None
+        
+        # Convert ObjectId to string
+        if "_id" in action:
+            action["_id"] = str(action["_id"])
+    
+    return actions
+
+
+@router.post("/librarian/actions/{action_id}/rollback")
+async def rollback_librarian_action(
+    request: Request,
+    action_id: str,
+    user: Dict = Depends(firebase_auth.require_admin)
+) -> Dict[str, Any]:
+    """Rollback a specific librarian action."""
+    from app.services.auto_fixer import rollback_action
+    
+    db = request.app.state.db
+    
+    result = await rollback_action(db, action_id)
+    
+    if result.get("success"):
+        return {
+            "success": True,
+            "message": "Action rolled back successfully"
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result.get("error_message", "Rollback failed"))

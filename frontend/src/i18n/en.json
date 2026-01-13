@@ -148,5 +148,42 @@
     "cannotUpload": "Demo mode - uploads are disabled",
     "cannotDelete": "Demo mode - deletions are disabled",
     "cannotEdit": "Demo mode - edits are not saved"
+  },
+  "admin": {
+    "librarian": {
+      "title": "Librarian AI Agent",
+      "subtitle": "Automated library maintenance and content auditing",
+      "loading": "Loading...",
+      "refresh": "Refresh",
+      "stats": {
+        "systemHealth": "System Health",
+        "totalAudits": "Total Audits (30d)",
+        "issuesFixed": "Issues Fixed",
+        "lastAudit": "Last Audit"
+      },
+      "quickActions": {
+        "title": "Quick Actions",
+        "triggerDaily": "Run Daily Audit",
+        "triggerWeekly": "Run Full Audit",
+        "dryRun": "Dry Run",
+        "budgetLabel": "AI Budget",
+        "success": "Audit started successfully!"
+      },
+      "reports": {
+        "title": "Recent Audit Reports",
+        "emptyMessage": "No audits have been run yet",
+        "columns": {
+          "date": "Date",
+          "type": "Type",
+          "status": "Status",
+          "issues": "Issues",
+          "fixes": "Fixes",
+          "actions": "Actions"
+        }
+      },
+      "errors": {
+        "failedToLoad": "Failed to load librarian data"
+      }
+    }
   }
 }

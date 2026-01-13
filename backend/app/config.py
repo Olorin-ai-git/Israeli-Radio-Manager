@@ -73,6 +73,21 @@ class Settings(BaseSettings):
     elevenlabs_voice_id: str = Field(default="56AoDkrOh6qfVPDXZ7Pt")  # Cassidy - Crisp, Direct and Clear
     elevenlabs_model_id: str = Field(default="eleven_v3")  # Eleven V3 (Alpha)
 
+    # Librarian AI Agent
+    tmdb_api_key: str = Field(default="")
+    sendgrid_api_key: str = Field(default="")
+    sendgrid_from_email: str = Field(default="")
+    admin_email_addresses: str = Field(default="")  # Comma-separated list
+    
+    # GCP Configuration
+    gcp_project_id: str = Field(default="")
+    
+    # Librarian Limits
+    librarian_max_iterations: int = Field(default=50)
+    librarian_default_budget_usd: float = Field(default=1.0)
+    librarian_min_budget_usd: float = Field(default=0.25)
+    librarian_max_budget_usd: float = Field(default=15.0)
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

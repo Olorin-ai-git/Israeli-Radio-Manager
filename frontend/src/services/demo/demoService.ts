@@ -199,39 +199,6 @@ export const demoService: RadioService = {
     return { deleted: ids.length }
   },
 
-  // ===========================================================================
-  // Sync (simulated)
-  // ===========================================================================
-
-  async getSyncStatus() {
-    await delay()
-    return DEMO_SYNC_STATUS as SyncStatus
-  },
-
-  async startSync(_downloadFiles?: boolean) {
-    await delay(300)
-    return { message: 'Demo mode - sync simulated' }
-  },
-
-  async refreshMetadata() {
-    await delay(500)
-    return { updated: DEMO_ALL_CONTENT.length }
-  },
-
-  async getSyncSchedulerStatus() {
-    await delay()
-    return DEMO_SYNC_PROGRESS
-  },
-
-  async getSyncProgress() {
-    await delay()
-    return DEMO_SYNC_PROGRESS
-  },
-
-  async triggerGcsSync() {
-    await delay(200)
-    return { message: 'Demo mode - GCS sync simulated' }
-  },
 
   // ===========================================================================
   // Schedule

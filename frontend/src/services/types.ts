@@ -476,14 +476,6 @@ export interface RadioService {
   deleteContent(id: string): Promise<void>
   batchDeleteContent(ids: string[]): Promise<{ deleted: number }>
 
-  // Sync
-  getSyncStatus(): Promise<SyncStatus>
-  startSync(downloadFiles?: boolean): Promise<{ message: string }>
-  refreshMetadata(): Promise<{ updated: number }>
-  getSyncSchedulerStatus(): Promise<any>
-  getSyncProgress(): Promise<any>
-  triggerGcsSync(): Promise<{ message: string }>
-
   // Schedule
   getSchedule(): Promise<ScheduleSlot[]>
   getCurrentSlot(): Promise<ScheduleSlot | null>

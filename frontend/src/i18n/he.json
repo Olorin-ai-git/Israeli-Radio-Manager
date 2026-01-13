@@ -159,5 +159,42 @@
     "cannotUpload": "מצב הדגמה - העלאות מושבתות",
     "cannotDelete": "מצב הדגמה - מחיקות מושבתות",
     "cannotEdit": "מצב הדגמה - עריכות לא נשמרות"
+  },
+  "admin": {
+    "librarian": {
+      "title": "סוכן ספרן AI",
+      "subtitle": "תחזוקה אוטומטית של הספרייה וביקורת תוכן",
+      "loading": "טוען...",
+      "refresh": "רענן",
+      "stats": {
+        "systemHealth": "בריאות המערכת",
+        "totalAudits": "סה״כ ביקורות (30 יום)",
+        "issuesFixed": "בעיות תוקנו",
+        "lastAudit": "ביקורת אחרונה"
+      },
+      "quickActions": {
+        "title": "פעולות מהירות",
+        "triggerDaily": "הרץ ביקורת יומית",
+        "triggerWeekly": "הרץ ביקורת מלאה",
+        "dryRun": "הרצה מדומה",
+        "budgetLabel": "תקציב AI",
+        "success": "הביקורת החלה בהצלחה!"
+      },
+      "reports": {
+        "title": "דוחות ביקורת אחרונים",
+        "emptyMessage": "עדיין לא בוצעו ביקורות",
+        "columns": {
+          "date": "תאריך",
+          "type": "סוג",
+          "status": "סטטוס",
+          "issues": "בעיות",
+          "fixes": "תיקונים",
+          "actions": "פעולות"
+        }
+      },
+      "errors": {
+        "failedToLoad": "נכשל בטעינת נתוני הספרן"
+      }
+    }
   }
 }
