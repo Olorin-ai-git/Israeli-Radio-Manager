@@ -7,7 +7,7 @@ import {
   CampaignStatusWidget,
   QuickStatsWidget,
   UpcomingScheduleWidget,
-  AgentStatusWidget,
+  LibrarianStatusWidget,
   RecentActivityWidget,
 } from '../components/Dashboard'
 
@@ -255,11 +255,11 @@ export default function Dashboard() {
 
       <HorizontalDivider onResize={handleMiddleRowResize} />
 
-      {/* Bottom Row: Activity + Agent */}
-      <CollapsibleSection title={isRTL ? 'פעילות וסוכן AI' : 'Activity & AI Agent'}>
+      {/* Bottom Row: Activity + Librarian */}
+      <CollapsibleSection title={isRTL ? 'פעילות וספרן AI' : 'Activity & Librarian AI'}>
         <ResizableRow
           leftWidget={<RecentActivityWidget />}
-          rightWidget={<AgentStatusWidget />}
+          rightWidget={<LibrarianStatusWidget />}
           leftWidthPercent={bottomRowLeftWidth}
           onLeftWidthChange={setBottomRowLeftWidth}
           minHeight={bottomRowHeight}

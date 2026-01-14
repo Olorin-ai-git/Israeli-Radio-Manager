@@ -1,5 +1,5 @@
 import { ReactNode, useState, useEffect, useRef } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -16,7 +16,8 @@ import {
   ChevronRight,
   Shield,
   Megaphone,
-  HelpCircle
+  HelpCircle,
+  LogOut
 } from 'lucide-react'
 import ChatSidebar from '../Agent/ChatSidebar'
 import AudioPlayer from '../Player/AudioPlayer'
@@ -25,6 +26,7 @@ import { DemoBanner } from '../Demo'
 import { usePlayerStore } from '../../store/playerStore'
 import { useAuth } from '../../contexts/AuthContext'
 import { useDemoMode } from '../../hooks/useDemoMode'
+import { signOut } from '../../lib/firebase'
 
 interface LayoutProps {
   children: ReactNode
@@ -33,6 +35,7 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const { t, i18n } = useTranslation()
   const location = useLocation()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { role } = useAuth()
   const { showDemoBanner } = useDemoMode()
@@ -293,6 +296,15 @@ export default function Layout({ children }: LayoutProps) {
     localStorage.setItem('navCollapsed', String(newValue))
   }
 
+  const handleLogout = async () => {
+    try {
+      await signOut()
+      navigate('/login')
+    } catch (error) {
+      console.error('Logout error:', error)
+    }
+  }
+
   // Resize handlers for Flows panel
   const handleFlowsResizeStart = () => {
     isResizingFlows.current = true
@@ -474,8 +486,9 @@ export default function Layout({ children }: LayoutProps) {
             </div>
           </div>
 
-          {/* Language Toggle */}
-          <div className={`border-t border-white/5 ${navCollapsed ? 'p-2' : 'p-4'}`}>
+          {/* Language Toggle & Logout */}
+          <div className={`border-t border-white/5 ${navCollapsed ? 'p-2' : 'p-4'} space-y-2`}>
+            {/* Language Toggle */}
             <div className={navCollapsed ? 'tooltip-trigger' : ''}>
               <button
                 onClick={toggleLanguage}
@@ -487,6 +500,22 @@ export default function Layout({ children }: LayoutProps) {
               {navCollapsed && (
                 <div className="tooltip tooltip-left">
                   {i18n.language === 'en' ? 'עברית' : 'English'}
+                </div>
+              )}
+            </div>
+
+            {/* Logout Button */}
+            <div className={navCollapsed ? 'tooltip-trigger' : ''}>
+              <button
+                onClick={handleLogout}
+                className={`flex items-center text-red-400 hover:text-red-300 transition-colors ${navCollapsed ? 'justify-center w-full p-2' : 'gap-2'}`}
+              >
+                <LogOut size={20} />
+                {!navCollapsed && <span>{isRTL ? 'התנתק' : 'Logout'}</span>}
+              </button>
+              {navCollapsed && (
+                <div className="tooltip tooltip-left">
+                  {isRTL ? 'התנתק' : 'Logout'}
                 </div>
               )}
             </div>

@@ -335,6 +335,41 @@
   box-shadow: 0 0 30px rgba(239, 68, 68, 0.3), 0 12px 24px rgba(0, 0, 0, 0.4);
 }
 
+/* Neon text glow effect */
+.neon-text {
+  color: #fff;
+  text-shadow: 
+    0 0 10px #fff,
+    0 0 20px #fff,
+    0 0 30px #ef4444,
+    0 0 40px #ef4444,
+    0 0 50px #ef4444,
+    0 0 60px #ef4444,
+    0 0 70px #ef4444;
+  animation: neon-flicker 3s ease-in-out infinite alternate;
+}
+
+@keyframes neon-flicker {
+  0%, 18%, 22%, 25%, 53%, 57%, 100% {
+    text-shadow: 
+      0 0 10px #fff,
+      0 0 20px #fff,
+      0 0 30px #ef4444,
+      0 0 40px #ef4444,
+      0 0 50px #ef4444,
+      0 0 60px #ef4444,
+      0 0 70px #ef4444;
+  }
+  20%, 24%, 55% {    
+    text-shadow: 
+      0 0 5px #fff,
+      0 0 10px #fff,
+      0 0 15px #ef4444,
+      0 0 20px #ef4444,
+      0 0 25px #ef4444;
+  }
+}
+
 /* Stats card hover effect */
 .stat-card {
   @apply glass-card p-6 hover:border-primary-500/30 hover:shadow-glow-lg transition-all duration-300;

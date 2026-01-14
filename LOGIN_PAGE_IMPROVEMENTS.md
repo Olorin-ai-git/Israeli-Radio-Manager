@@ -60,6 +60,14 @@ The two AI agent features have:
 
 ### 🌐 Full Localization
 
+#### Language Switcher
+- **Fixed position** in top-right corner
+- **Glass-styled button** matching design system
+- **Icon + text display**: Shows the language you can switch TO (e.g., "עברית" when in English mode)
+- **Smooth transitions**: All content updates instantly when switching
+- **Hover effects**: Icon scales and button border glows
+- **Accessible**: Proper ARIA labels
+
 #### Translation Keys Structure
 ```json
 "login": {
@@ -80,7 +88,9 @@ The two AI agent features have:
 - Easy content updates without code changes
 - Consistent translations across all languages
 - Professional Hebrew RTL support
+- **One-click language switching**
 - Future language additions simplified
+- User preference persisted across sessions
 
 ### ✨ Visual Effects
 
@@ -145,17 +155,20 @@ The two AI agent features have:
 - Proper TypeScript types
 - i18n best practices
 - Reusable translation keys
+- Clean language switching logic
 
 #### Performance
 - CSS animations (GPU-accelerated)
 - Optimized component structure
 - Efficient re-renders
+- Instant language switching
 
 #### Maintainability
 - All text externalized to i18n files
 - Consistent styling classes
 - Clear component structure
 - Easy to add new features
+- Language switcher can be reused on other pages
 
 ## Updated Files
 
@@ -188,7 +201,40 @@ The login page has been transformed from a basic, uninviting screen to a profess
 ✅ Provides a welcoming user experience
 ✅ Works beautifully on all devices
 ✅ Supports full RTL localization
+✅ **One-click language switching between English and Hebrew**
 ✅ Maintains brand consistency
 ✅ Encourages user sign-in
 
 The new design positions Israeli Radio Manager as a modern, AI-powered professional broadcasting solution.
+
+## Language Switcher Details
+
+### Visual Design
+- **Position**: Fixed top-right corner (6rem from top and right)
+- **Style**: Glass card with hover effects
+- **Icon**: Languages icon from Lucide
+- **Text**: Shows target language (switches between "English" and "עברית")
+- **Animation**: Icon scales on hover, border glows
+
+### User Experience
+1. User lands on page (default language based on browser)
+2. User sees language switcher in top-right
+3. User clicks to switch language
+4. All content updates instantly with smooth transitions
+5. Layout adjusts for RTL/LTR automatically
+6. Language preference persisted by i18n
+
+### Implementation
+```tsx
+<button
+  onClick={toggleLanguage}
+  className="glass-card px-4 py-2.5 flex items-center gap-2 hover:border-primary-500/30 transition-all duration-200 group"
+>
+  <Languages size={18} className="text-primary-400 group-hover:scale-110 transition-transform" />
+  <span className="text-dark-100 font-medium text-sm">
+    {i18n.language === 'he' ? 'English' : 'עברית'}
+  </span>
+</button>
+```
+
+The switcher is non-intrusive but easily discoverable, allowing users to view the platform marketing in their preferred language before signing in.
