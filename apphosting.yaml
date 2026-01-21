@@ -7,7 +7,7 @@ runConfig:
 
 env:
   - variable: MONGODB_URI
-    value: mongodb+srv://admin_db_user:Jersey1973!@cluster0.ydrvaft.mongodb.net/israeli_radio?retryWrites=true&w=majority&appName=Cluster0
+    secret: MONGODB_URI
   - variable: MONGODB_DB
     value: israeli_radio
   - variable: ENVIRONMENT
