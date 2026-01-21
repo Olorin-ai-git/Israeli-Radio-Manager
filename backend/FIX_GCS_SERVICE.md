@@ -19,7 +19,7 @@ Google Cloud Storage service can't initialize due to missing or invalid credenti
 
 2. **Set environment variable:**
    ```bash
-   export GOOGLE_APPLICATION_CREDENTIALS="/Users/olorin/Documents/Israeli-Radio-Manager/backend/service-account.json"
+   export GOOGLE_APPLICATION_CREDENTIALS="/Users/olorin/Documents/olorin/olorin-media/Israeli-Radio-Manager/backend/service-account.json"
    ```
 
 3. **Add to .env file:**

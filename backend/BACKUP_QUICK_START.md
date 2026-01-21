@@ -11,7 +11,7 @@
 ### 1. Deploy the Cloud Scheduler
 
 ```bash
-cd /Users/olorin/Documents/Israeli-Radio-Manager/backend/scripts
+cd /Users/olorin/Documents/olorin/olorin-media/Israeli-Radio-Manager/backend/scripts
 ./setup_backup_scheduler.sh
 ```
 

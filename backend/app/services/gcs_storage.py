@@ -39,7 +39,7 @@ class GCSStorageService:
             possible_paths = [
                 settings.google_service_account_file,  # Relative path from config
                 os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), settings.google_service_account_file),  # backend/service-account.json
-                "/Users/olorin/Documents/Israeli-Radio-Manager/backend/service-account.json",  # Absolute path
+                "/Users/olorin/Documents/olorin/olorin-media/Israeli-Radio-Manager/backend/service-account.json",  # Absolute path
             ]
             
             for path in possible_paths:
