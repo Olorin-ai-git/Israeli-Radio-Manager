@@ -6,9 +6,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from anthropic import Anthropic
-
 from app.config import settings
+from app.services.anthropic_client import create_anthropic_client, request_options
 
 
 def detect_language(text: str) -> str:
@@ -69,7 +68,7 @@ class OrchestratorAgent:
     ):
         self.db = db
         self._default_api_key = anthropic_api_key or settings.anthropic_api_key
-        self._client: Optional[Anthropic] = None
+        self._client: Optional[Any] = None
         self._current_api_key: Optional[str] = None
         self._current_model: Optional[str] = None
         self._config: Optional[AgentConfig] = None
@@ -104,13 +103,13 @@ class OrchestratorAgent:
 
         return api_key, model
 
-    async def get_client(self) -> Anthropic:
+    async def get_client(self) -> Any:
         """Get or create the Anthropic client with current config."""
         api_key, model = await self.get_llm_config()
 
         # Recreate client if API key changed
         if self._client is None or self._current_api_key != api_key:
-            self._client = Anthropic(api_key=api_key)
+            self._client = create_anthropic_client(api_key=api_key)
             self._current_api_key = api_key
 
         self._current_model = model
@@ -288,7 +287,8 @@ class OrchestratorAgent:
             model=model,
             max_tokens=1024,
             system=SYSTEM_PROMPT,
-            messages=messages
+            messages=messages,
+            **request_options()
         )
 
         assistant_message = response.content[0].text
@@ -672,7 +672,8 @@ Agent mode: {(await self.get_config()).mode.value}
             model=model,
             max_tokens=1024,
             system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            **request_options()
         )
 
         content = response.content[0].text

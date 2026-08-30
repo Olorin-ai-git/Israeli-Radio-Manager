@@ -135,7 +135,11 @@ async def generate_ai_insights(audit_report: Dict[str, Any], language: str = "en
             logger.warning("Anthropic API key not configured, skipping AI insights")
             return []
 
-        import anthropic
+        from app.services.anthropic_client import (
+            create_anthropic_client,
+            get_anthropic_model,
+            request_options,
+        )
 
         # Prepare audit summary for Claude
         summary_data = {
@@ -176,12 +180,13 @@ Return 3-5 insights as a JSON array of strings: {{"insights": ["...", "..."]}}""
 
         prompt = prompts.get(language, prompts["en"])
 
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        client = create_anthropic_client()
 
         response = client.messages.create(
-            model=settings.anthropic_model,
+            model=get_anthropic_model(),
             max_tokens=1000,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            **request_options(),
         )
 
         response_text = response.content[0].text.strip()

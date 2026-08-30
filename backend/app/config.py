@@ -1,8 +1,32 @@
 """Application configuration loaded from environment variables."""
 
-from typing import Literal
+from typing import Annotated, Literal
+from urllib.parse import urlparse
+
+from pydantic import Field, field_validator
+from pydantic.types import StringConstraints
 from pydantic_settings import BaseSettings
-from pydantic import Field
+
+
+NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+def validate_anthropic_base_url(value: str) -> str:
+    """Validate the provider endpoint allowed by the production client."""
+    normalized = value.strip()
+    parsed = urlparse(normalized)
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            "ANTHROPIC_BASE_URL must be an HTTPS URL without credentials, query, or fragment"
+        )
+    return normalized.rstrip("/")
 
 
 class Settings(BaseSettings):
@@ -27,8 +51,15 @@ class Settings(BaseSettings):
     google_calendar_id: str = Field(default="primary")  # Calendar ID or "primary"
 
     # Claude AI
-    anthropic_api_key: str = Field(default="")
-    anthropic_model: str = Field(default="claude-sonnet-4-5-20250929")
+    anthropic_api_key: NonEmptyString
+    anthropic_base_url: NonEmptyString
+    anthropic_model: NonEmptyString
+    anthropic_task_class: NonEmptyString
+
+    @field_validator("anthropic_base_url")
+    @classmethod
+    def validate_anthropic_base_url(cls, value: str) -> str:
+        return validate_anthropic_base_url(value)
 
     # Twilio
     twilio_account_sid: str = Field(default="")

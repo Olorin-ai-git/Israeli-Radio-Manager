@@ -42,16 +42,21 @@ async def parse_natural_language_flow(text: str) -> Dict:
 async def _parse_with_claude(text: str) -> List[Dict]:
     """Parse flow description using Claude AI."""
     try:
-        import anthropic
+        from app.services.anthropic_client import (
+            create_anthropic_client,
+            get_anthropic_model,
+            request_options,
+        )
 
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        client = create_anthropic_client()
 
         prompt = _build_claude_prompt(text)
 
         response = client.messages.create(
-            model="claude-3-haiku-20240307",
+            model=get_anthropic_model(),
             max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            **request_options(),
         )
 
         # Extract JSON from response

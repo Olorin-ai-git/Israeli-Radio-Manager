@@ -1372,7 +1372,6 @@ class TaskExecutor:
         description = task.parameters.get("description", task.original_text)
 
         # Use Claude AI to parse the flow description (same mechanism as /parse-natural endpoint)
-        import anthropic
         import json
         from app.config import settings
 
@@ -1416,7 +1415,13 @@ class TaskExecutor:
         else:
             # Use Claude AI for parsing
             try:
-                client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+                from app.services.anthropic_client import (
+                    create_anthropic_client,
+                    get_anthropic_model,
+                    request_options,
+                )
+
+                client = create_anthropic_client()
 
                 prompt = f"""Parse this radio flow description into structured actions. Return ONLY a JSON array of actions, no explanations.
 
@@ -1487,9 +1492,10 @@ Now parse this description: {description}
 Return the JSON array:"""
 
                 response = client.messages.create(
-                    model="claude-3-haiku-20240307",
+                    model=get_anthropic_model(),
                     max_tokens=1024,
-                    messages=[{"role": "user", "content": prompt}]
+                    messages=[{"role": "user", "content": prompt}],
+                    **request_options()
                 )
 
                 # Extract JSON from response
